@@ -1,0 +1,16 @@
+.godot/
+.runtime/
+saves/*.json
+artifacts/*.log
+artifacts/*.png
+tests/temp/
+saves/*.json.bak
+saves/*.json.tmp
+artifacts/baseline_v01/
+artifacts/save-*-restaurant.json
+
+artifacts/baseline_v02/
+artifacts/save-*-layout.json
+
+# Keep the documentation preview in the repository.
+!artifacts/restaurant_layout_custom.png
