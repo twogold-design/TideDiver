@@ -101,14 +101,6 @@ func _text(parent: Node3D, text: String, pos: Vector3, size: int = 46, pixel: fl
 	parent.add_child(label)
 	return label
 
-func _plant(parent: Node3D, pos: Vector3, size: float = 1.0) -> void:
-	_cylinder(parent, pos + Vector3(0, 0.22 * size, 0), 0.27 * size, 0.44 * size, Color("c98869"), 0.37 * size)
-	_cylinder(parent, pos + Vector3(0, 0.44 * size, 0), 0.37 * size, 0.07 * size, Color("dfae87"))
-	for i: int in range(7):
-		var angle: float = float(i) * 2.399
-		var leaf: MeshInstance3D = _sphere(parent, pos + Vector3(cos(angle) * 0.22 * size, (0.81 + float(i % 3) * 0.12) * size, sin(angle) * 0.22 * size), Vector3(0.14, 0.51, 0.08) * size, Color("518f73") if i % 2 else Color("7fab7f"))
-		leaf.rotation = Vector3(sin(angle) * 0.35, angle, cos(angle) * 0.35)
-
 func _palm(parent: Node3D, pos: Vector3, size: float) -> void:
 	var crown: Vector3 = pos + Vector3(size * 0.25, size * 2.8, 0)
 	_bar(parent, pos, crown, size * 0.15, Color("ab8c63"))
@@ -321,9 +313,7 @@ func _build_sign() -> void:
 	_room.add_child(glow)
 
 func _build_decor() -> void:
-	# Interior decorations are placed furniture; only terrace plants stay fixed.
-	_plant(_room, Vector3(-8.5, 0.05, 11.1), 1.15)
-	_plant(_room, Vector3(8.5, 0.05, 11.1), 1.15)
+	# Potted plants come exclusively from placed furniture.
 	# Two slender posts support a gentle light string above the open room.
 	for x: float in [-10.8, 10.8]:
 		_cylinder(_room, Vector3(x, 2.0, 9.0), 0.065, 4.0, Color("947250"))

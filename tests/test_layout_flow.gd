@@ -52,6 +52,16 @@ func _run() -> void:
 	_test_variants_and_expanded_floor()
 	_test_viewport_and_camera()
 	await _test_shop_buttons()
+	_test_purchase_cancellation()
+	_test_renovation_gifts_and_return()
+	if "--capture-layout-fixes" in OS.get_cmdline_user_args():
+		game.enter_layout()
+		game.hud.restaurant_ui.layout_ui.set_page("owned")
+		game._physics_process(0.0)
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		await process_frame
+		await RenderingServer.frame_post_draw
+		root.get_texture().get_image().save_png("res://artifacts/layout_gift_storage.png")
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	game.free()
 	await process_frame
@@ -217,6 +227,7 @@ func _test_variants_and_expanded_floor() -> void:
 		game.buy_layout_furniture("lamp",variant)
 		ids.append(game.layout_selected)
 		_check(game.layout_work.furniture_by_uid(game.layout_selected).variant == variant, "Main purchase keeps chosen lamp variant: " + variant)
+		_check(game.place_layout_at(8,2+ids.size()*1.5), "Each variant is placed before confirming another purchase")
 	_check(progress.coins - game.layout_work.coins == 370 and _snapshot() == before, "Three variant prices total 370 only inside isolated draft")
 	game.cancel_layout()
 	_check(_snapshot() == before and progress.saves == saves_before, "Cancelling multi-variant purchases restores all money and ownership")
@@ -225,6 +236,8 @@ func _test_variants_and_expanded_floor() -> void:
 	for variant in ["basic","comfort","premium"]:
 		game.buy_layout_furniture("lamp",variant)
 		ids.append(game.layout_selected)
+		if ids.size() < 3:
+			_check(game.place_layout_at(8,2+ids.size()*1.5), "Earlier variants are confirmed before selecting the next tier")
 	game._physics_process(0.0)
 	var premium_point := _project_floor(9.0,7.5)
 	_check(game.layout_view_rect().has_point(premium_point), "Expanded floor target projects inside enlarged editable viewport")
@@ -340,4 +353,115 @@ func _test_shop_buttons() -> void:
 			_check(_snapshot() == before and progress.saves == saves_before, "Cancelling actual shop selection preserves original progress for " + kind + "/" + variant)
 			await process_frame
 	progress.coins = starting_money
+
+func _test_purchase_cancellation() -> void:
+	var money: int = progress.coins
+	var count: int = progress.furniture_items().size()
+	game.enter_layout()
+	var floor_style: int = (progress.floor_style+1)%3
+	game.set_layout_style("floor",floor_style)
+	game.buy_layout_furniture("plant")
+	var pending_uid: int = game.layout_selected
+	_key(KEY_ESCAPE)
+	_check(game.layout_mode and not game.layout_placing and game.layout_work.coins == money and game.layout_work.furniture_by_uid(pending_uid).is_empty(), "Escape cancels a new purchase and restores its reserved coins immediately")
+	game.save_layout()
+	_check(progress.coins == money and progress.furniture_items().size() == count and progress.floor_style == floor_style, "Save after cancelling placement preserves unrelated edits without charging for the discarded item")
+	game.enter_layout()
+	game.buy_layout_furniture("plant")
+	_mouse_button(MOUSE_BUTTON_RIGHT,Vector2(800,400))
+	game.save_layout()
+	_check(progress.coins == money and progress.furniture_items().size() == count, "Right-click cancellation also removes purchase cost and ownership before Save")
+	game.enter_layout()
+	game.buy_layout_furniture("plant")
+	game.save_layout()
+	_check(progress.coins == money and progress.furniture_items().size() == count, "Saving a preview that was never placed cannot buy invisible storage furniture")
+	game.enter_layout()
+	game.buy_layout_furniture("plant")
+	_check(not game.place_layout_at(0,0), "Invalid purchase placement is still rejected by aisle rules")
+	_key(KEY_ESCAPE)
+	game.save_layout()
+	_check(progress.coins == money and progress.furniture_items().size() == count, "Cancelling a failed placement refunds the pending purchase")
+	game.enter_layout()
+	game.buy_layout_furniture("plant")
+	game.set_layout_style("wall",(progress.wall_style+1)%3)
+	_key(KEY_ESCAPE)
+	game.undo_layout()
+	_check(not game.layout_pending_purchase.is_empty() and game.layout_placing, "Undo cancellation restores a cancellable preview, not an already-owned invisible purchase")
+	game.save_layout()
+	_check(progress.coins == money and progress.furniture_items().size() == count, "Save after undoing cancellation cannot silently charge the restored preview")
+	game.enter_layout()
+	game.buy_layout_furniture("plant")
+	game.select_furniture(1)
+	game.save_layout()
+	_check(progress.coins == money and progress.furniture_items().size() == count, "Selecting existing furniture cancels any unplaced purchase")
+	game.enter_layout()
+	game.buy_layout_furniture("plant")
+	var first_uid: int = game.layout_selected
+	game.buy_layout_furniture("plant","comfort")
+	_check(game.layout_work.coins == money-65 and game.layout_work.furniture_by_uid(first_uid).is_empty(), "Switching products releases the previous reservation instead of buying both")
+	_check(game.place_layout_at(-9,8), "Replacement product can be placed in a free corner")
+	game.undo_layout()
+	_check(game.layout_placing and not game.layout_pending_purchase.is_empty(), "Undoing first placement restores pending purchase state")
+	_key(KEY_ESCAPE)
+	game.save_layout()
+	_check(progress.coins == money and progress.furniture_items().size() == count, "Cancel after undoing placement returns the full price")
+	game.enter_layout()
+	game.buy_layout_furniture("plant")
+	var committed_uid: int = game.layout_selected
+	_check(game.place_layout_at(-9,8), "A confirmed purchase remains available for normal saving")
+	game.save_layout()
+	_check(progress.coins == money-25 and progress.furniture_by_uid(committed_uid).placed, "Successfully placed and saved furniture is charged exactly once")
+	game.enter_layout()
+	game.select_furniture(committed_uid)
+	game.begin_move_furniture()
+	_key(KEY_ESCAPE)
+	game.save_layout()
+	_check(progress.coins == money-25 and progress.furniture_by_uid(committed_uid).placed and progress.furniture_by_uid(committed_uid).x == -9, "Cancelling a move retains existing ownership and position without issuing a refund")
+
+func _visible_kind_count(kind: String) -> int:
+	var count: int = 0
+	for item in progress.furniture_items():
+		if item.kind == kind and game.restaurant_node._furniture_nodes.has(int(item.uid)):
+			count += 1
+	return count
+
+func _test_renovation_gifts_and_return() -> void:
+	# Reproduce the reported layout using isolated memory, without touching the player save.
+	progress = MemoryProgression.new()
+	progress.persistence_enabled = false
+	progress.coins = 2000
+	game.progress = progress
+	for id in ["clean","kitchen","tables"]:
+		game.renovate_shop(id)
+	progress.place_furniture(1,-3.5,0,2)
+	progress.place_furniture(2,3.5,0.5,0)
+	var original_tables: Array = progress.placed_tables().duplicate(true)
+	for z: float in [1.0,3.0]:
+		var uid: int = progress.buy_furniture("plant")
+		progress.place_furniture(uid,-7.5,z,0)
+	game._rebuild_restaurant()
+	_check(_visible_kind_count("plant") == 2, "Reported fixture begins with exactly two purchased plants in the actual restaurant")
+	var before: int = progress.coins
+	game.renovate_shop("expansion")
+	_check(progress.coins == before-140 and progress.seats() == 4 and game.restaurant_node._placed_tables.size() == 4, "Expansion places two real gift tables even when customized tables obstruct both default slots")
+	_check(progress.furniture_by_uid(1) == original_tables[0] and progress.furniture_by_uid(2) == original_tables[1], "Finding gift-table space never moves existing tables")
+	for uid in [3,4]:
+		var item: Dictionary = progress.furniture_by_uid(uid)
+		_check(progress.placement_reason(uid,item.x,item.z,item.rotation).is_empty(), "Auto-placed gift table obeys the same geometry and aisle rules as manual placement")
+	game.renovate_shop("sign")
+	game.renovate_shop("decor")
+	_check(_visible_kind_count("plant") == 2 and not progress.furniture_by_uid(5).placed and not progress.furniture_by_uid(6).placed, "Decor grants two plants to storage without unexpectedly changing the two-plant layout")
+	_check(not progress.furniture_by_uid(7).placed and not progress.furniture_by_uid(8).placed and game.notice.contains("收纳"), "Rug gifts also stay stored and the upgrade announces their location")
+	var expected: Array = progress.furniture_items().duplicate(true)
+	for cycle in range(3):
+		game.return_to_dock()
+		game.start_dive()
+		game.finish_dive(false)
+		progress._apply_save_data(progress._save_data().duplicate(true))
+		game.open_restaurant()
+		_check(progress.furniture_items() == expected and _visible_kind_count("plant") == 2 and game.restaurant_node._placed_tables.size() == 4, "Dive, return, reload and rebuild preserve exact furniture identities and visible counts, cycle " + str(cycle+1))
+	progress.store_furniture(3)
+	progress._apply_save_data(progress._save_data().duplicate(true))
+	game._rebuild_restaurant()
+	_check(not progress.furniture_by_uid(3).placed and game.restaurant_node._placed_tables.size() == 3, "A deliberately stored gift table stays stored after reload")
 

@@ -35,8 +35,8 @@ const RENOVATIONS := {
 	"kitchen": {"name": "基础厨房", "cost": 100, "requires": ["clean"], "description": "安装料理台与炉灶，开业必需"},
 	"tables": {"name": "基础桌椅", "cost": 70, "requires": ["clean"], "description": "设置两组桌椅，开业必需"},
 	"sign": {"name": "海岸招牌", "cost": 80, "requires": ["kitchen", "tables"], "description": "点亮门头，每场顾客 +2"},
-	"expansion": {"name": "增设雅座", "cost": 140, "requires": ["tables"], "description": "座位增至 4 位，每场顾客 +2"},
-	"decor": {"name": "海洋软装", "cost": 110, "requires": ["sign"], "description": "耐心 +8 秒，满意订单小费 +10%"},
+	"expansion": {"name": "增设雅座", "cost": 140, "requires": ["tables"], "description": "赠2套餐桌，座位上限增至4位"},
+	"decor": {"name": "海洋软装", "cost": 110, "requires": ["sign"], "description": "耐心+8秒，小费+10%，赠品入收纳"},
 }
 
 var save_path: String = SAVE_PATH
@@ -491,9 +491,29 @@ func furniture_items() -> Array:
 			continue
 		var item: Dictionary = {"uid":uid,"kind":gift.kind,"variant":"basic","x":gift.x,"z":gift.z,"rotation":0,"color":0,"placed":false}
 		furnishings.append(item)
-		if Layout.validate(furnishings,uid,float(gift.x),float(gift.z),0).is_empty() and (gift.kind != "table" or _table_count() < _table_limit()):
-			item.placed = true
+		# Decorative gifts stay in storage until the player chooses their position.
+		if gift.kind == "table":
+			_place_gift_table(item)
 	return furnishings
+
+func _place_gift_table(item: Dictionary) -> bool:
+	if _table_count(int(item.uid)) >= _table_limit():
+		return false
+	var origin := Vector2(float(item.x),float(item.z))
+	var candidates: Array[Vector2] = [origin]
+	for zi in range(int(ceil(Layout.MIN_Z/Layout.GRID)),int(floor(Layout.MAX_Z/Layout.GRID))+1):
+		for xi in range(int(ceil(Layout.MIN_X/Layout.GRID)),int(floor(Layout.MAX_X/Layout.GRID))+1):
+			candidates.append(Vector2(xi*Layout.GRID,zi*Layout.GRID))
+	candidates.sort_custom(func(a: Vector2,b: Vector2): return a.distance_squared_to(origin) < b.distance_squared_to(origin))
+	for point in candidates:
+		for rotation in [0,1]:
+			if Layout.validate(furnishings,int(item.uid),point.x,point.y,rotation).is_empty():
+				item.x = point.x
+				item.z = point.y
+				item.rotation = rotation
+				item.placed = true
+				return true
+	return false
 
 func furniture_by_uid(uid: int) -> Dictionary:
 	for item in furniture_items():

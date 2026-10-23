@@ -190,7 +190,7 @@ func _draw_management() -> void:
 	_panel(Rect2(1050,164,356,606))
 	if game.restaurant_tab == "renovation":
 		i = 0
-		var descriptions: Dictionary = {"clean":"清除杂物，修复地板与墙面", "kitchen":"开业必需 · 炉灶与料理台", "tables":"开业必需 · 同时服务 2 位", "sign":"每场目标顾客 +2", "expansion":"4 个座位 · 目标顾客再 +2", "decor":"耐心 +8 秒 · 料理小费 +10%"}
+		var descriptions: Dictionary = {"clean":"清除杂物，修复地板与墙面", "kitchen":"开业必需 · 炉灶与料理台", "tables":"开业必需 · 同时服务 2 位", "sign":"每场目标顾客 +2", "expansion":"赠2套餐桌 · 上限4位 · 客流+2", "decor":"耐心+8秒 · 小费+10% · 赠品入收纳"}
 		for id in P.RENOVATIONS:
 			var y: float = 207+i*94
 			_text(Vector2(1072,y),P.RENOVATIONS[id].name,17)

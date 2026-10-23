@@ -11,6 +11,7 @@ func _init() -> void:
 	_test_service_lock()
 	_test_sanitization_and_migration()
 	_test_disk_roundtrip()
+	_test_blocked_gift_placement()
 	print("%s: Tide Diver layout (%d checks)." % ["PASS" if failures == 0 else "FAIL", checks])
 	quit(0 if failures == 0 else 1)
 func _check(condition: bool, description: String) -> void:
@@ -134,6 +135,42 @@ func _clear_fixture() -> void:
 		var path := ProjectSettings.globalize_path(TEST_PATH + suffix)
 		if FileAccess.file_exists(path):
 			DirAccess.remove_absolute(path)
+
+func _test_blocked_gift_placement() -> void:
+	var p = _new()
+	p.coins = 2000
+	for id in ["clean","kitchen","tables"]:
+		p.renovate(id)
+	# Fill all remaining usable floor with plants to exercise the no-space fallback.
+	for x in range(-9,10):
+		for z in range(-1,9):
+			var uid: int = p.next_furniture_uid
+			var item: Dictionary = {"uid":uid,"kind":"plant","variant":"basic","x":float(x),"z":float(z),"rotation":0,"color":0,"placed":false}
+			p.furnishings.append(item)
+			if Rules.validate(p.furnishings,uid,float(x),float(z),0).is_empty():
+				item.placed = true
+				p.next_furniture_uid += 1
+			else:
+				p.furnishings.pop_back()
+	var before: Array = p.furniture_items().duplicate(true)
+	_check(p.renovate("expansion") and p.furniture_items().size() == before.size()+2, "Full-room expansion still grants ownership of exactly two tables")
+	_check(not p.furniture_by_uid(3).placed and not p.furniture_by_uid(4).placed and p.seats() == 2, "When no legal slot exists gifts stay in storage instead of overlapping furniture")
+	var unchanged: bool = true
+	for item in before:
+		unchanged = unchanged and p.furniture_by_uid(item.uid) == item
+	_check(unchanged, "No-space gift fallback never displaces or deletes the player's existing furniture")
+	var saved: Dictionary = p._save_data().duplicate(true)
+	p._apply_save_data(saved)
+	_check(p.furniture_items() == saved.furnishings, "Full-room gifts and existing objects round-trip without duplicates or unexpected placements")
+	var migrated = _new()
+	migrated._apply_save_data({"version":2,"coins":2000,"renovation":{"clean":true,"kitchen":true,"tables":true,"sign":true,"expansion":true,"decor":true}})
+	_check(migrated.seats() == 4 and not migrated.furniture_by_uid(5).placed and not migrated.furniture_by_uid(6).placed, "Missing legacy furniture migrates to usable tables and stored decorations")
+	migrated.place_furniture(5,-7.5,1,0)
+	migrated.store_furniture(3)
+	var old_layout: Array = migrated.furniture_items().duplicate(true)
+	migrated._apply_save_data(migrated._save_data().duplicate(true))
+	_check(migrated.furniture_items() == old_layout and migrated.furniture_by_uid(5).placed and not migrated.furniture_by_uid(3).placed, "Existing explicit plant placement and table storage are preserved by loading")
+
 func _test_disk_roundtrip() -> void:
 	_clear_fixture()
 	var p = _new(true)

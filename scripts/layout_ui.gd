@@ -127,7 +127,8 @@ func rebuild() -> void:
 				var product: Dictionary = Rules.variant_data(category,variant)
 				var y: float = 212 + index*176
 				_preview(Rect2(26,y+19,120,128),category,variant)
-				_button("%d G · 选购" % int(product.cost),Rect2(153,y+112,150,38),func(): game.buy_layout_furniture(category,variant),false,game.layout_work.coins < int(product.cost))
+				var available: int = game.layout_work.coins + int(game.layout_pending_purchase.get("cost",0))
+				_button("%d G · 选购" % int(product.cost),Rect2(153,y+112,150,38),func(): game.buy_layout_furniture(category,variant),false,available < int(product.cost))
 				index += 1
 		else:
 			var owned = ItemList.new()
@@ -145,7 +146,10 @@ func rebuild() -> void:
 			owned.focus_mode = Control.FOCUS_NONE
 			var i: int = 0
 			for item in game.layout_work.furniture_items():
-				owned.add_item("%s · %s" % ["已摆" if item.placed else "收纳",Rules.item_name(item)])
+				var status: String = "待放置" if int(game.layout_pending_purchase.get("uid",-1)) == int(item.uid) else ("已摆" if item.placed else "收纳")
+				if game.Progress.GIFT_FURNITURE.has(int(item.uid)):
+					status += " · 赠品"
+				owned.add_item("%s · %s" % [status,Rules.item_name(item)])
 				owned.set_item_metadata(i,int(item.uid))
 				if int(item.uid) == game.layout_selected:
 					owned.select(i)
@@ -201,7 +205,7 @@ func _draw() -> void:
 	var selected: Dictionary = game.layout_work.furniture_by_uid(game.layout_selected)
 	var hint: String = game.layout_reason
 	if game.layout_placing and hint.is_empty():
-		hint = "绿色可放置 · 左键确认"
+		hint = "绿色可放置 · 左键确认 · 右键 / Esc 取消选购不扣款" if not game.layout_pending_purchase.is_empty() else "绿色可放置 · 左键确认 · 右键 / Esc 取消摆放"
 	_text(Vector2(20,827),hint,15,GOLD)
 	_text(Vector2(340,857),"点选家具开始布置" if selected.is_empty() else Rules.item_name(selected)+"  /  %d°" % (game.layout_rotation*90),18,MINT)
 	_text(Vector2(340,883),"中键拖移 · 滚轮缩放 · F 归中 · Tab 展开 / 收起",13,MUTED)

@@ -64,6 +64,7 @@ var layout_mode: bool = false
 var layout_work: RefCounted
 var layout_selected: int = -1
 var layout_placing: bool = false
+var layout_pending_purchase: Dictionary = {}
 var layout_rotation: int = 0
 var layout_cursor: Vector3 = Vector3.ZERO
 var layout_reason: String = ""
@@ -435,6 +436,7 @@ func confirm_new_game() -> void:
 	layout_work = null
 	layout_selected = -1
 	layout_placing = false
+	layout_pending_purchase.clear()
 	layout_rotation = 0
 	layout_cursor = Vector3.ZERO
 	layout_reason = ""
@@ -983,7 +985,16 @@ func renovate_shop(id: String) -> void:
 		return
 	if progress.renovate(id):
 		_rebuild_restaurant()
-		tell("%s 已完成，店面焕然一新！" % Progress.RENOVATIONS[id].name,4)
+		if id in ["tables","expansion"]:
+			var stored: int = 0
+			for uid in ([1,2] if id == "tables" else [3,4]):
+				if not progress.furniture_by_uid(uid).placed:
+					stored += 1
+			tell("赠送2套餐桌：%d套已摆放，%d套在收纳中；自由布置 → 我的家具可摆放。" % [2-stored,stored] if stored > 0 else "赠送的2套餐桌已摆到空位，现有家具位置保持不变。",8)
+		elif id == "decor":
+			tell("海洋软装已完成，赠送的2盆绿植与2张地毯已入收纳；到“我的家具”自主摆放。",8)
+		else:
+			tell("%s 已完成，店面焕然一新！" % Progress.RENOVATIONS[id].name,4)
 		_play_tone(800,0.2)
 	else:
 		tell(progress.renovation_reason(id),4)
@@ -1168,6 +1179,7 @@ func enter_layout() -> void:
 	layout_mode = true
 	layout_selected = -1
 	layout_placing = false
+	layout_pending_purchase.clear()
 	layout_reason = "点选家具，或从左侧选购；保存前不会扣除真实金币。"
 	layout_history.clear()
 	layout_zoom = 31
@@ -1180,6 +1192,7 @@ func enter_layout() -> void:
 func save_layout() -> void:
 	if not layout_mode or state != "restaurant":
 		return
+	_discard_pending_purchase()
 	progress._apply_save_data(layout_work._save_data().duplicate(true))
 	progress.save_game()
 	_end_layout()
@@ -1194,6 +1207,7 @@ func cancel_layout() -> void:
 func _end_layout() -> void:
 	layout_mode = false
 	layout_placing = false
+	layout_pending_purchase.clear()
 	layout_selected = -1
 	layout_history.clear()
 	layout_work = null
@@ -1205,15 +1219,21 @@ func _end_layout() -> void:
 	hud.rebuild()
 
 func _remember_layout() -> void:
-	layout_history.append(layout_work._save_data().duplicate(true))
+	var snapshot: Dictionary = layout_work._save_data().duplicate(true)
+	snapshot["pending_purchase"] = layout_pending_purchase.duplicate(true)
+	layout_history.append(snapshot)
 	if layout_history.size() > 20:
 		layout_history.pop_front()
 
 func undo_layout() -> void:
 	if not layout_mode or layout_history.is_empty():
 		return
-	layout_work._apply_save_data(layout_history.pop_back())
-	layout_placing = false
+	var snapshot: Dictionary = layout_history.pop_back()
+	layout_work._apply_save_data(snapshot)
+	layout_pending_purchase = snapshot.get("pending_purchase",{}).duplicate(true)
+	layout_placing = not layout_pending_purchase.is_empty()
+	if layout_placing:
+		layout_selected = int(layout_pending_purchase.uid)
 	if layout_work.furniture_by_uid(layout_selected).is_empty():
 		layout_selected = -1
 	if layout_selected >= 0:
@@ -1228,6 +1248,9 @@ func select_furniture(uid: int) -> void:
 	var item: Dictionary = layout_work.furniture_by_uid(uid)
 	if item.is_empty():
 		return
+	if not layout_pending_purchase.is_empty() and int(layout_pending_purchase.uid) != uid:
+		_remember_layout()
+		_discard_pending_purchase()
 	layout_selected = uid
 	layout_rotation = int(item.rotation)
 	layout_placing = not item.placed
@@ -1247,6 +1270,7 @@ func begin_move_furniture() -> void:
 func buy_layout_furniture(kind: String, variant: String = "basic") -> void:
 	if not layout_mode:
 		return
+	_discard_pending_purchase()
 	_remember_layout()
 	var uid: int = layout_work.buy_furniture(kind,variant)
 	if uid < 0:
@@ -1254,8 +1278,37 @@ func buy_layout_furniture(kind: String, variant: String = "basic") -> void:
 		layout_reason = "金币不足，或该家具暂时不能购买。"
 		hud.rebuild()
 		return
+	layout_pending_purchase = {"uid":uid,"cost":int(Layout.variant_data(kind,variant).cost)}
 	select_furniture(uid)
-	layout_reason = "新家具已加入草稿收纳箱，保存布局时才会扣款。"
+	layout_reason = "选购待放置 · 右键 / Esc 取消不扣款；放下并保存后才购买。"
+
+func _discard_pending_purchase() -> void:
+	if layout_pending_purchase.is_empty():
+		return
+	var uid: int = int(layout_pending_purchase.uid)
+	for index in range(layout_work.furnishings.size()):
+		if int(layout_work.furnishings[index].uid) == uid:
+			layout_work.furnishings.remove_at(index)
+			layout_work.coins += int(layout_pending_purchase.cost)
+			break
+	if layout_selected == uid:
+		layout_selected = -1
+	layout_pending_purchase.clear()
+	layout_placing = false
+	restaurant_node.clear_layout_preview()
+
+func cancel_layout_placement() -> void:
+	if not layout_mode:
+		return
+	var was_purchase: bool = not layout_pending_purchase.is_empty()
+	if was_purchase:
+		_remember_layout()
+		_discard_pending_purchase()
+	layout_placing = false
+	restaurant_node.clear_layout_preview()
+	layout_reason = "已取消选购，预留金币已退回，其他修改保留。" if was_purchase else "已取消这次摆放，原位置和其他修改保留。"
+	_rebuild_restaurant()
+	hud.rebuild()
 
 func rotate_layout() -> void:
 	if not layout_mode:
@@ -1280,6 +1333,9 @@ func rotate_layout() -> void:
 
 func store_selected_furniture() -> void:
 	if not layout_mode:
+		return
+	if not layout_pending_purchase.is_empty():
+		cancel_layout_placement()
 		return
 	_remember_layout()
 	if not layout_work.store_furniture(layout_selected):
@@ -1313,6 +1369,7 @@ func set_layout_style(surface: String, style: int) -> void:
 func reset_layout_draft() -> void:
 	if not layout_mode:
 		return
+	_discard_pending_purchase()
 	_remember_layout()
 	layout_work.reset_layout()
 	layout_placing = false
@@ -1331,6 +1388,7 @@ func place_layout_at(x: float, z: float) -> bool:
 	if not layout_work.place_furniture(layout_selected,x,z,layout_rotation):
 		layout_history.pop_back()
 		return false
+	layout_pending_purchase.clear()
 	layout_placing = false
 	layout_reason = "已摆放在草稿中，点击保存布局生效。"
 	_rebuild_restaurant()
@@ -1406,10 +1464,7 @@ func _layout_input(event: InputEvent) -> void:
 		match event.physical_keycode:
 			KEY_ESCAPE:
 				if layout_placing:
-					layout_placing = false
-					restaurant_node.clear_layout_preview()
-					layout_reason = "已取消这次摆放，草稿中的其他修改保留。"
-					hud.rebuild()
+					cancel_layout_placement()
 				else:
 					cancel_layout()
 			KEY_TAB: toggle_layout_panel()
@@ -1426,9 +1481,7 @@ func _layout_input(event: InputEvent) -> void:
 		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			layout_zoom = minf(52,layout_zoom+1.5)
 		elif event.button_index == MOUSE_BUTTON_RIGHT:
-			layout_placing = false
-			restaurant_node.clear_layout_preview()
-			layout_reason = "已取消摆放。"
+			cancel_layout_placement()
 		elif event.button_index == MOUSE_BUTTON_LEFT:
 			var point: Variant = _layout_point(event.position)
 			if point == null:
