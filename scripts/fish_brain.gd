@@ -18,6 +18,8 @@ static func alarm(game: Node, source: Dictionary) -> void:
 	for other in game.fish:
 		if not other.alive or other.node.position.distance_to(source.node.position) > 18.0:
 			continue
+		if other != source and not _clear(game,source.node.position,other.node.position):
+			continue
 		prepare(other)
 		var behavior: String = FishData.SPECIES[other.kind].behavior
 		if behavior in ["predator","ambush"]:
@@ -54,10 +56,13 @@ static func advance(game: Node, item: Dictionary, delta: float) -> void:
 		alert_range *= 0.48
 	elif Input.is_action_pressed("boost"):
 		alert_range *= 1.65
+	if item.alerted:
+		alert_range = maxf(alert_range,22.0)
 	var detects: bool = game.state == "dive" and distance < alert_range and _clear(game,node.position,game.player.position)
 	var behavior: String = data.behavior
 	if behavior in ["predator","ambush"]:
 		if item.state == "patrol" and detects and item.attack_cooldown <= 0:
+			item.alerted = false
 			item.state = "windup"
 			item.timer = 1.15
 			item.direction = (game.player.position-node.position).normalized()
@@ -141,6 +146,11 @@ static func advance(game: Node, item: Dictionary, delta: float) -> void:
 	var tail: Node3D = node.get_node_or_null("Tail")
 	if tail:
 		tail.rotation.y = sin(game.clock*(12.0 if item.state in ["flee","charge"] else 5.5)+float(item.phase))*0.32
+		if int(item.kind) == 7:
+			var joint: Node3D = tail
+			for index in range(1,6):
+				joint = joint.get_node("Segment%d" % index)
+				joint.rotation.y = sin(game.clock*6.0+float(item.phase)-index*0.65)*0.22
 
 static func _clear(game: Node, from: Vector3, to: Vector3) -> bool:
 	var query := PhysicsRayQueryParameters3D.create(from,to,1,[game.player.get_rid()])

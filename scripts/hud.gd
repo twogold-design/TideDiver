@@ -224,7 +224,11 @@ func _draw_hud() -> void:
 		draw_line(center+dir*9,center+dir*17,reticle,2,true)
 	draw_circle(center,2,reticle)
 	if game.shot_cooldown > 0:
-		draw_arc(center,23,-PI/2,-PI/2+TAU*(1-game.shot_cooldown/0.65),30,MINT,2,true)
+		draw_arc(center,23,-PI/2,-PI/2+TAU*(1-game.shot_cooldown/game.SPEAR_COOLDOWN),30,MINT,2,true)
+	if not target.is_empty():
+		var fraction_hp: float = float(target.hp)/float(game.FishData.SPECIES[target.kind].hp)
+		draw_style_box(_style(Color("21434b")),Rect2(667,479,106,5))
+		draw_style_box(_style(GOLD if target.armor else MINT),Rect2(667,479,106*fraction_hp,5))
 	var hint: String = game.context_hint()
 	if not hint.is_empty():
 		var w: float = font.get_string_size(hint,HORIZONTAL_ALIGNMENT_LEFT,-1,18).x+42
@@ -232,13 +236,18 @@ func _draw_hud() -> void:
 		_center(Vector2(720,532),hint,18,GOLD)
 	if fraction < 0.25:
 		_center(Vector2(720,174),"氧气不足 · 按住 E 上浮至 3 米内，F 返航",21,Color("ffb190"))
+	if game.hunt_warning_timer > 0:
+		_panel(Rect2(370,193,700,42),Color(0.24,0.08,0.10,0.92))
+		_center(Vector2(720,220),game.hunt_warning,18,Color("ffb190"))
+	if game.poison_timer > 0:
+		_center(Vector2(720,265),"中毒 %.1f 秒 · 每秒额外消耗 1.5 氧气" % game.poison_timer,17,Color("d5c0f2"))
 	_panel(Rect2(30,685,236,104),Color(0.025,0.12,0.16,0.78))
 	_text(Vector2(48,712),"探索目标",13,MINT)
 	_text(Vector2(48,743),"寻找沉船与月光珍珠",17,LIGHT)
 	_text(Vector2(48,771),"任意海面均可呼叫接驳船",13,MUTED)
 	_draw_depth_gauge()
-	_panel(Rect2(332,768,930,43),Color(0.025,0.12,0.16,0.85))
-	_text(Vector2(354,794),"WASD 游泳    Q 下潜 / E 上浮    Shift 冲刺    左键 / 空格 鱼叉    F 互动    Esc 暂停",15,MUTED)
+	_panel(Rect2(290,768,1035,43),Color(0.025,0.12,0.16,0.85))
+	_text(Vector2(308,794),"WASD 游泳   Q / E 潜浮   Shift 冲刺   Ctrl 慢游   左键 / 空格 鱼叉 · 20m   F 互动   Esc 暂停",15,MUTED)
 	_text(Vector2(42,882),"M  音效开关",12,MUTED)
 	_text(Vector2(1200,882),"TIDAL BAY / 01",13,MUTED,true)
 	if game.hurt_cooldown > 1.8:
@@ -250,8 +259,8 @@ func _draw_depth_gauge() -> void:
 	for i in range(6):
 		var y: float = 264+i*68
 		draw_line(Vector2(x-5,y),Vector2(x+5,y),MUTED,1)
-		_text(Vector2(x+14,y+5),str(i*10),12,MUTED,true)
-	var marker: float = 264 + clampf(-game.player.position.y/50,0,1)*340
+		_text(Vector2(x+14,y+5),str(int(float(i)*-game.Ocean.Y_MIN/5.0)),12,MUTED,true)
+	var marker: float = 264 + clampf(-game.player.position.y/-game.Ocean.Y_MIN,0,1)*340
 	draw_colored_polygon(PackedVector2Array([Vector2(x-13,marker),Vector2(x-23,marker-6),Vector2(x-23,marker+6)]),GOLD)
 	_text(Vector2(x-56,240),"DEPTH",12,MINT,true)
 

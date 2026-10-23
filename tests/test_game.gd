@@ -123,7 +123,8 @@ func _test_rescue() -> void:
 	game.cargo.clear()
 	for i in range(10):
 		game.cargo.append({"id": "orange", "value": 18, "weight": 1, "kind": "fish"})
-	game.player.position = Vector3(40, -26, 40)
+	# Keep the depth fixture in open water above the new continental shelf.
+	game.player.position = Vector3(200, -26, 200)
 	game.oxygen = 0.01
 	game._update_dive(1.0)
 	_check(game.state == "dock" and game.last_result.rescued, "Empty oxygen triggers rescue to dock")

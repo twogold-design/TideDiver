@@ -43,6 +43,7 @@ func _run() -> void:
 	_test_range_and_capture()
 	_test_fish_reactions()
 	_test_predators_and_poison()
+	await _test_obstruction()
 	_test_hunting_pause()
 	_test_warehouse_pagination()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -305,6 +306,44 @@ func _test_predators_and_poison() -> void:
 	game.poison_timer = 0.1
 	game._update_dive(0.2)
 	_check(game.poison_timer == 0, "Poison timer expires instead of draining forever")
+func _test_obstruction() -> void:
+	_disable_fish()
+	game.player.position = Vector3(200,-8,200)
+	game.oxygen = 100
+	game.poison_timer = 0
+	game.hurt_cooldown = 0
+	var wall := StaticBody3D.new()
+	var collider := CollisionShape3D.new()
+	var shape := BoxShape3D.new()
+	shape.size = Vector3(10,10,0.3)
+	collider.shape = shape
+	wall.add_child(collider)
+	wall.position = Vector3(200,-8,199.25)
+	game.add_child(wall)
+	await physics_frame
+	var shark := _fixture(8,Vector3(200,-8,192))
+	_aim_at(shark)
+	game.shoot()
+	_check(game.target_fish().is_empty() and shark.hp == 8, "Solid geometry blocks actual harpoon acquisition and damage")
+	game._update_fish(shark,0.1)
+	_check(shark.state == "patrol" and game.oxygen == 100, "A predator cannot see or initiate an attack through a solid wall")
+	shark.state = "charge"
+	shark.timer = 2.0
+	shark.direction = Vector3.BACK
+	game._update_fish(shark,1.0)
+	_check(shark.state == "recover" and shark.node.position.z < 199.1 and game.oxygen == 100, "Predator swept movement stops a long charge at solid geometry")
+	shark.alive = false
+	var lionfish := _fixture(5,Vector3(200,-8,198.5))
+	game._update_fish(lionfish,0.01)
+	_check(game.oxygen == 100 and game.poison_timer == 0, "Nearby venomous fish cannot poison the diver through a solid wall")
+	wall.free()
+	await physics_frame
+	_disable_fish()
+	shark = _fixture(8,Vector3(200,-8,180))
+	game._hit_fish(shark)
+	game._update_fish(shark,0.1)
+	_check(shark.state == "windup" and shark.hp == 7, "A surviving predator reacts to a harpoon hit beyond its normal detection range")
+
 func _test_hunting_pause() -> void:
 	_disable_fish()
 	game.player.position = Vector3(200,-8,200)

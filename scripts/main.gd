@@ -9,14 +9,11 @@ const Restaurant = preload("res://scripts/restaurant_art.gd")
 const Layout = preload("res://scripts/layout_rules.gd")
 const FishData = preload("res://scripts/fish_catalog.gd")
 const FishBrain = preload("res://scripts/fish_brain.gd")
-const FISH_NAMES = ["橘鳍鱼","青背鱼","灯笼鱼","银梭沙丁鱼","星斑河豚","赤鬃狮子鱼","蓝鳍金枪鱼","岩纹海鳗","灰礁鲨"]
 const OUTER_FISH_PER_ZONE = 24
 const TRANSIT_SCHOOLS = 8
 const TRANSIT_FISH_PER_SCHOOL = 9
 const SPEAR_RANGE = 20.0
 const SPEAR_COOLDOWN = 0.95
-const FISH_VALUES = [18,32,55,24,48,70,110,100,180]
-const FISH_WEIGHTS = [1,2,3,1,2,2,4,3,6]
 var progress = Progress.new()
 var state: String = "dock"
 var player: CharacterBody3D
@@ -715,7 +712,7 @@ func target_fish() -> Dictionary:
 		var along: float = offset.dot(direction)
 		if player.position.distance_to(item.node.position) > SPEAR_RANGE:
 			continue
-		var radius: float = float(FishData.SPECIES[item.kind].radius)
+		var radius: float = float(FishData.SPECIES[item.kind].radius)*item.node.scale.x
 		if along > 0 and along < best_dist and (offset-direction*along).length() < radius:
 			var sight_ray = PhysicsRayQueryParameters3D.create(origin, item.node.position, 1, [player.get_rid()])
 			if not get_world_3d().direct_space_state.intersect_ray(sight_ray).is_empty():
