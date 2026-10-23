@@ -3,6 +3,7 @@ class_name Progression
 ## Inventory, equipment and restaurant bookkeeping. Saves stay inside the project.
 
 const Layout = preload("res://scripts/layout_rules.gd")
+const FishCatalog = preload("res://scripts/fish_catalog.gd")
 const SAVE_PATH := "res://saves/progress.json"
 const MAX_UPGRADE_LEVEL := 3
 const MAX_COINS := 999999999
@@ -12,11 +13,17 @@ const MAX_ITEMS := 1000000
 const MAX_DEPTH := 100000.0
 const UPGRADE_BASE_COSTS := {"tank": 80, "bag": 70, "spear": 110}
 const GOODS := {
-	"orange": {"name": "橘鳍鱼", "value": 18},
-	"blue": {"name": "青背鱼", "value": 32},
-	"lantern": {"name": "灯笼鱼", "value": 55},
+	"orange": FishCatalog.SPECIES[0],
+	"blue": FishCatalog.SPECIES[1],
+	"lantern": FishCatalog.SPECIES[2],
 	"pearl": {"name": "月光珍珠", "value": 28},
 	"chest": {"name": "沉船宝藏", "value": 90},
+	"sardine": FishCatalog.SPECIES[3],
+	"puffer": FishCatalog.SPECIES[4],
+	"lionfish": FishCatalog.SPECIES[5],
+	"tuna": FishCatalog.SPECIES[6],
+	"moray": FishCatalog.SPECIES[7],
+	"reef_shark": FishCatalog.SPECIES[8],
 }
 const RECIPES := {
 	"orange": {"name": "香煎橘鳍鱼", "price": 42, "cook_time": 3.0},
@@ -41,7 +48,7 @@ var bag_level: int = 0
 var spear_level: int = 0
 var total_fish: int = 0
 var best_depth: float = 0.0
-var inventory: Dictionary = {"orange": 0, "blue": 0, "lantern": 0, "pearl": 0, "chest": 0}
+var inventory: Dictionary = {"orange": 0, "blue": 0, "lantern": 0, "pearl": 0, "chest": 0, "sardine": 0, "puffer": 0, "lionfish": 0, "tuna": 0, "moray": 0, "reef_shark": 0}
 var renovation: Dictionary = {"clean": false, "kitchen": false, "tables": false, "sign": false, "expansion": false, "decor": false}
 var restaurant_runs: int = 0
 var total_served: int = 0
@@ -98,10 +105,10 @@ func complete_dive(cargo: Array, rescued: bool, depth: float) -> Dictionary:
 			continue
 		item_count += 1
 		sale_value = mini(MAX_COINS, sale_value + int(GOODS[id].value))
-		if RECIPES.has(id):
+		if FishCatalog.has_id(id):
 			fish_count += 1
-		if not rescued and inventory[id] < MAX_ITEMS:
-			inventory[id] += 1
+		if not rescued and int(inventory.get(id, 0)) < MAX_ITEMS:
+			inventory[id] = int(inventory.get(id, 0)) + 1
 			stored[id] = int(stored.get(id, 0)) + 1
 	cargo.clear()
 	var earned: int = int(float(sale_value * 35) / 100.0) if rescued else 0
@@ -128,11 +135,11 @@ func _cargo_id(entry: Variant) -> String:
 func inventory_total() -> int:
 	var amount: int = 0
 	for id in GOODS:
-		amount += int(inventory[id])
+		amount += int(inventory.get(id, 0))
 	return amount
 
 func sell(id: String, amount: int) -> int:
-	if service_active or not GOODS.has(id) or amount <= 0 or amount > int(inventory[id]):
+	if service_active or not GOODS.has(id) or amount <= 0 or amount > int(inventory.get(id, 0)):
 		return 0
 	var earned: int = amount * int(GOODS[id].value)
 	if coins + earned > MAX_COINS:
@@ -265,7 +272,7 @@ func record_lost(id: String = "") -> void:
 	save_game()
 
 ## Pending ledger is authoritative; caller count is accepted for compatibility.
-func end_service(_pending_count: int = 0) -> Dictionary:
+func end_service(_pending_count: int = 0, reviews: Dictionary = {}) -> Dictionary:
 	if not service_active:
 		return last_service_result.duplicate(true)
 	var lost: int = service_pending.size()
@@ -278,6 +285,8 @@ func end_service(_pending_count: int = 0) -> Dictionary:
 		inventory[id] = mini(MAX_ITEMS, int(inventory[id]) + int(service_stock[id]))
 		service_stock[id] = 0
 	last_service_result = {"earned": int(service_stats.earned), "served": int(service_stats.served), "lost": int(service_stats.lost), "returned": returned}
+	if not reviews.is_empty():
+		last_service_result["reviews"] = _read_counts(reviews,{"satisfied":0,"okay":0,"lost":0},guest_limit())
 	service_active = false
 	restaurant_runs = mini(MAX_DAYS, restaurant_runs + 1)
 	save_game()
@@ -285,7 +294,7 @@ func end_service(_pending_count: int = 0) -> Dictionary:
 
 func _save_data() -> Dictionary:
 	furniture_items()
-	return {"version": 3, "coins": coins, "day": day, "tank_level": tank_level, "bag_level": bag_level, "spear_level": spear_level,
+	return {"version": 4, "coins": coins, "day": day, "tank_level": tank_level, "bag_level": bag_level, "spear_level": spear_level,
 		"total_fish": total_fish, "best_depth": best_depth, "inventory": inventory, "renovation": renovation,
 		"restaurant_runs": restaurant_runs, "total_served": total_served, "total_lost": total_lost,
 		"restaurant_income": restaurant_income, "last_service_day": last_service_day, "service_active": service_active,
@@ -321,6 +330,35 @@ func save_game() -> void:
 			push_warning("Tide Diver: could not update save backup.")
 	if DirAccess.rename_absolute(temporary, destination) != OK:
 		push_warning("Tide Diver: could not replace save atomically.")
+
+## Reset only after the player's confirmation. Both save generations belong to the new run.
+func reset_game() -> bool:
+	var fresh = get_script().new()
+	var data: Dictionary = fresh._save_data().duplicate(true)
+	if persistence_enabled:
+		if not _allowed_save_path():
+			return false
+		var destination: String = ProjectSettings.globalize_path(save_path)
+		if DirAccess.make_dir_recursive_absolute(destination.get_base_dir()) != OK:
+			return false
+		var temporary: String = destination + ".tmp"
+		var file := FileAccess.open(temporary,FileAccess.WRITE)
+		if file == null:
+			return false
+		file.store_string(JSON.stringify(data,"\t"))
+		file.flush()
+		var write_error: Error = file.get_error()
+		file.close()
+		if write_error != OK:
+			return false
+		# Replace the fallback first: an old backup must never resurrect the previous run.
+		if DirAccess.copy_absolute(temporary,destination + ".bak") != OK:
+			return false
+		if DirAccess.rename_absolute(temporary,destination) != OK:
+			return false
+	_apply_save_data(data)
+	recovery_notice = ""
+	return true
 
 func _read_save(path: String) -> Variant:
 	if not FileAccess.file_exists(path):
@@ -393,6 +431,8 @@ func _apply_save_data(data: Variant) -> void:
 	last_service_result = {}
 	if data.get("last_service_result") is Dictionary and not data.last_service_result.is_empty():
 		last_service_result = _read_counts(data.last_service_result, {"earned": 0, "served": 0, "lost": 0, "returned": 0}, MAX_COINS)
+		if data.last_service_result.get("reviews") is Dictionary:
+			last_service_result["reviews"] = _read_counts(data.last_service_result.reviews,{"satisfied":0,"okay":0,"lost":0},guest_limit())
 	if not service_active:
 		service_stock = _read_counts({}, RECIPES, MAX_ITEMS)
 		service_pending.clear()
@@ -434,6 +474,9 @@ const GIFT_FURNITURE := {
 }
 
 func furniture_items() -> Array:
+	for existing in furnishings:
+		if existing.get("variant", "" ) not in Layout.variant_ids(str(existing.kind)):
+			existing.variant = "basic"
 	# Existing entries, including deliberately stored gifts, are never overwritten.
 	for uid in GIFT_FURNITURE:
 		var gift: Dictionary = GIFT_FURNITURE[uid]
@@ -446,7 +489,7 @@ func furniture_items() -> Array:
 				break
 		if exists:
 			continue
-		var item: Dictionary = {"uid":uid,"kind":gift.kind,"x":gift.x,"z":gift.z,"rotation":0,"color":0,"placed":false}
+		var item: Dictionary = {"uid":uid,"kind":gift.kind,"variant":"basic","x":gift.x,"z":gift.z,"rotation":0,"color":0,"placed":false}
 		furnishings.append(item)
 		if Layout.validate(furnishings,uid,float(gift.x),float(gift.z),0).is_empty() and (gift.kind != "table" or _table_count() < _table_limit()):
 			item.placed = true
@@ -475,16 +518,16 @@ func placed_tables() -> Array:
 			result.append(item)
 	return result
 
-func buy_furniture(kind: String) -> int:
-	if service_active or not renovation.clean or not Layout.CATALOG.has(kind) or furnishings.size() >= 1024:
+func buy_furniture(kind: String, variant: String = "basic") -> int:
+	if service_active or not renovation.clean or not Layout.CATALOG.has(kind) or variant not in Layout.variant_ids(kind) or furnishings.size() >= 1024:
 		return -1
-	var cost: int = int(Layout.CATALOG[kind].cost)
+	var cost: int = int(Layout.variant_data(kind,variant).cost)
 	if coins < cost or next_furniture_uid >= 999999999:
 		return -1
 	furniture_items()
 	var uid: int = next_furniture_uid
 	next_furniture_uid += 1
-	furnishings.append({"uid":uid,"kind":kind,"x":0.0,"z":0.0,"rotation":0,"color":0,"placed":false})
+	furnishings.append({"uid":uid,"kind":kind,"variant":variant,"x":0.0,"z":0.0,"rotation":0,"color":0,"placed":false})
 	coins -= cost
 	save_game()
 	return uid
@@ -582,7 +625,7 @@ func _load_layout(data: Dictionary) -> void:
 			var finite: bool = numeric and is_finite(float(entry.x)) and is_finite(float(entry.z)) and absf(float(entry.x)) < 1000.0 and absf(float(entry.z)) < 1000.0
 			var point: Vector2 = Layout.snap_position(float(entry.x),float(entry.z)) if finite else Vector2.ZERO
 			var rotation: int = _safe_int(entry.get("rotation"),0,3,0)
-			var item: Dictionary = {"uid":uid,"kind":entry.kind,"x":point.x,"z":point.y,"rotation":rotation,"color":_safe_int(entry.get("color"),0,2,0),"placed":false}
+			var item: Dictionary = {"uid":uid,"kind":entry.kind,"variant":entry.get("variant", "basic") if entry.get("variant", "basic") in Layout.variant_ids(entry.kind) else "basic","x":point.x,"z":point.y,"rotation":rotation,"color":_safe_int(entry.get("color"),0,2,0),"placed":false}
 			furnishings.append(item)
 			var wants_placed: bool = entry.get("placed") is bool and entry.placed == true
 			if finite and renovation.clean and wants_placed and Layout.validate(furnishings,uid,point.x,point.y,rotation).is_empty() and (item.kind != "table" or _table_count() < _table_limit()):
@@ -590,5 +633,3 @@ func _load_layout(data: Dictionary) -> void:
 			if uid >= 100:
 				next_furniture_uid = maxi(next_furniture_uid,uid + 1)
 	furniture_items()
-
-

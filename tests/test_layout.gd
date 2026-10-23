@@ -78,7 +78,7 @@ func _test_purchase_and_styles() -> void:
 func _test_geometry() -> void:
 	var p = _new(true)
 	_check(not p.placement_reason(1,0,0,0).is_empty(), "Solid table cannot obstruct central entrance aisle")
-	_check(not p.place_furniture(1,-6.0,0,0), "Footprint exceeding room edge is rejected")
+	_check(not p.place_furniture(1,-10.0,0,0), "Footprint exceeding room edge is rejected")
 	_check(not p.place_furniture(1,3.5,-0.5,0), "Solid furniture cannot overlap another solid")
 	_check(p.place_furniture(1,-3.5,-0.5,1) and p.furniture_by_uid(1).rotation == 1, "Quarter-turn rotation swaps rectangular footprint")
 	_check(Rules.footprint("table",1) == Vector2(3.8,2.5), "Rotated footprint uses catalog dimensions")
@@ -89,7 +89,7 @@ func _test_geometry() -> void:
 	_check(not p.place_furniture(999,-5.5,0,0) and not p.store_furniture(999), "Unknown furniture IDs fail safely")
 	p.store_furniture(1)
 	_check(p.place_furniture(1,-3.5,-0.5,0), "First table clears lower room boundary")
-	_check(p.place_furniture(3,-3.5,3.5,0), "Last table exactly touches the rear room boundary")
+	_check(p.place_furniture(3,-3.5,3.5,0), "Original rear table remains valid after room expansion")
 func _test_service_lock() -> void:
 	var p = _new(true)
 	p.inventory.orange = 1
@@ -147,7 +147,7 @@ func _test_disk_roundtrip() -> void:
 	var uid: int = p.buy_furniture("lamp")
 	p.place_furniture(uid,-5.5,4.5,0)
 	var saved: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(TEST_PATH))
-	_check(saved.version == 3 and FileAccess.file_exists(TEST_PATH + ".bak"), "V3 layout data uses existing atomic-save and backup mechanism")
+	_check(saved.version == 4 and FileAccess.file_exists(TEST_PATH + ".bak"), "V4 layout data uses existing atomic-save and backup mechanism")
 	var restored = P.new()
 	restored.save_path = TEST_PATH
 	restored.load_game()
@@ -155,3 +155,4 @@ func _test_disk_roundtrip() -> void:
 	_check(restored.floor_style == 1 and restored.wall_style == 2 and restored.furniture_by_uid(uid).placed and restored.coins == 60, "Disk restart preserves purchased furniture, placement, styles and purchase cost")
 	_check(restored.next_furniture_uid > uid and restored.furniture_items().size() == 9, "Disk restart retains unique purchase identity without duplicating gifts")
 	_clear_fixture()
+

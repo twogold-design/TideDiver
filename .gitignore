@@ -14,3 +14,9 @@ artifacts/save-*-layout.json
 
 # Keep the documentation preview in the repository.
 !artifacts/restaurant_layout_custom.png
+
+!artifacts/furniture_collection.png
+!artifacts/furniture_detail.png
+!artifacts/living_service.png
+!artifacts/feedback_bill.png
+!artifacts/outer_ocean.png

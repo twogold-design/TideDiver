@@ -64,10 +64,16 @@ func _button(label: String, rect: Rect2, callback: Callable, primary: bool = fal
 
 func rebuild() -> void:
 	for button in buttons:
+		remove_child(button)
 		button.queue_free()
 	buttons.clear()
 	if is_instance_valid(restaurant_ui):
 		restaurant_ui.rebuild()
+	if game.new_game_confirmation:
+		_button("保留进度 / 取消",Rect2(451,511,256,53),game.cancel_new_game,true)
+		_button("确认重新开始",Rect2(733,511,256,53),game.confirm_new_game)
+		queue_redraw()
+		return
 	if game.state == "dock":
 		_button("出发潜水    →",Rect2(64,486,370,64),game.start_dive,true)
 		var kinds = ["tank","bag","spear"]
@@ -78,10 +84,12 @@ func rebuild() -> void:
 			_button(label,Rect2(1045,530+i*77,180,43),func(): game.upgrade(kind),false,cost < 0 or game.progress.coins < cost)
 		_button("我的餐厅  ·  仓库 / 装修 / 营业",Rect2(64,561,370,49),game.open_restaurant)
 		_button("退出游戏",Rect2(64,782,150,43),func(): get_tree().quit())
+		_button("重新开始游戏",Rect2(230,782,204,43),game.request_new_game)
 	elif game.state == "paused":
+		_button("重新开始游戏",Rect2(545,558,350,48),game.request_new_game)
 		_button("继续探索",Rect2(545,410,350,58),game.toggle_pause,true)
 		_button("呼叫救援 · 保留 35% 收益",Rect2(545,484,350,58),_rescue)
-		_button("退出游戏",Rect2(545,558,350,48),func(): get_tree().quit())
+		_button("退出游戏",Rect2(545,620,350,48),func(): get_tree().quit())
 	queue_redraw()
 
 func _rescue() -> void:
@@ -109,13 +117,21 @@ func _draw() -> void:
 		_draw_hud()
 	if game.state == "paused":
 		draw_rect(Rect2(0,0,1440,900),Color(0.01,0.05,0.08,0.75))
-		_panel(Rect2(495,260,450,395),Color("0d303d"))
+		_panel(Rect2(495,260,450,450),Color("0d303d"))
 		_center(Vector2(720,317),"静候下一次呼吸",29)
 		_center(Vector2(720,351),"PAUSED / 潜水已暂停",14,MUTED)
 	if game.notice_timer > 0 and game.state != "paused":
 		var w: float = font.get_string_size(game.notice,HORIZONTAL_ALIGNMENT_LEFT,-1,17).x + 50
 		_panel(Rect2(720-w/2,824,w,43),Color(0.025,0.12,0.16,0.94))
 		_center(Vector2(720,852),game.notice,17,MINT)
+
+	if game.new_game_confirmation:
+		draw_rect(Rect2(0,0,1440,900),Color(0.01,0.04,0.07,0.88))
+		_panel(Rect2(410,283,620,324),Color("0d303d"))
+		_center(Vector2(720,337),"重新开始一段旅程？",29)
+		_center(Vector2(720,387),"金币、装备、仓库、店面和家具将全部重置。",19,LIGHT)
+		_center(Vector2(720,423),"从第 1 天重新开始，并覆盖当前自动存档。",18,GOLD)
+		_center(Vector2(720,467),game.new_game_error if not game.new_game_error.is_empty() else "取消或按 Esc 可保留当前进度。",16,GOLD if not game.new_game_error.is_empty() else MUTED)
 
 func _draw_dock() -> void:
 	# An editorial split layout keeps the underwater vista visible.
@@ -166,7 +182,7 @@ func _draw_dock() -> void:
 		for j in range(3):
 			draw_rect(Rect2(923+j*24,y+37,18,3),MINT if j < levels[i] else Color("34535b"))
 	_text(Vector2(906,811),"3D OCEAN EXPLORATION  /  PROTOTYPE 01",13,MUTED,true)
-	_text(Vector2(233,810),"WASD 移动 · 鼠标转向 · Q / E 下潜上浮",14,MUTED)
+	_text(Vector2(65,886),"WASD 移动 · 鼠标转向 · Q / E 下潜上浮",13,MUTED)
 	# A discreet vista locator.
 	draw_arc(Vector2(1032,247),38,0,TAU,60,Color(MINT,0.45),1.0,true)
 	draw_circle(Vector2(1032,247),4,MINT)
@@ -196,6 +212,10 @@ func _draw_hud() -> void:
 	var heading: float = fposmod(-rad_to_deg(game.yaw),360)
 	_text(Vector2(644,48),"N   ·   %03d°   ·   S" % int(heading),17,MINT,true)
 	draw_line(Vector2(720,61),Vector2(720,72),GOLD,2)
+	_center(Vector2(720,102),game.ocean_zone_name(),19,LIGHT)
+	if game.ocean_edge_distance() < 18:
+		_center(Vector2(720,137),"前方洋流增强 · 请转向海域内部",18,GOLD)
+	_draw_ocean_map()
 	# Center reticle turns gold when a fish is in range.
 	var target: Dictionary = game.target_fish()
 	var reticle: Color = GOLD if not target.is_empty() else Color(0.88,1,0.94,0.7)
@@ -215,7 +235,7 @@ func _draw_hud() -> void:
 	_panel(Rect2(30,685,236,104),Color(0.025,0.12,0.16,0.78))
 	_text(Vector2(48,712),"探索目标",13,MINT)
 	_text(Vector2(48,743),"寻找沉船与月光珍珠",17,LIGHT)
-	_text(Vector2(48,771),"深水鱼更珍贵，也更危险",13,MUTED)
+	_text(Vector2(48,771),"任意海面均可呼叫接驳船",13,MUTED)
 	_draw_depth_gauge()
 	_panel(Rect2(332,768,930,43),Color(0.025,0.12,0.16,0.85))
 	_text(Vector2(354,794),"WASD 游泳    Q 下潜 / E 上浮    Shift 冲刺    左键 / 空格 鱼叉    F 互动    Esc 暂停",15,MUTED)
@@ -238,3 +258,28 @@ func _draw_depth_gauge() -> void:
 
 
 
+
+
+
+func _draw_ocean_map() -> void:
+	var rect := Rect2(30,170,220,230)
+	_panel(rect,Color(0.025,0.12,0.16,0.84))
+	_text(rect.position+Vector2(14,25),"海域导航  ·  N ↑",14,MINT)
+	var map_rect := Rect2(rect.position+Vector2(18,42),Vector2(184,160))
+	draw_rect(map_rect,Color(0.08,0.27,0.31,0.8))
+	for zone in game.Ocean.ZONES:
+		var pos: Vector2 = _map_point(zone.center,map_rect)
+		draw_circle(pos,5,Color("719ca0"))
+	for item in game.pickups:
+		if item.kind == "oxygen" and item.active:
+			var pos: Vector2 = _map_point(item.home,map_rect)
+			draw_line(pos-Vector2(3,0),pos+Vector2(3,0),MINT,2)
+			draw_line(pos-Vector2(0,3),pos+Vector2(0,3),MINT,2)
+	var diver: Vector2 = _map_point(game.player.position,map_rect)
+	var direction := Vector2(-sin(game.yaw),-cos(game.yaw))
+	draw_circle(diver,4,GOLD)
+	draw_line(diver,diver+direction*11,GOLD,2)
+	_text(rect.position+Vector2(14,220),"金色：你   +：补氧   ●：礁区",12,MUTED)
+
+func _map_point(point: Vector3, rect: Rect2) -> Vector2:
+	return rect.position + Vector2(inverse_lerp(game.Ocean.X_MIN,game.Ocean.X_MAX,point.x)*rect.size.x,inverse_lerp(game.Ocean.Z_MIN,game.Ocean.Z_MAX,point.z)*rect.size.y)

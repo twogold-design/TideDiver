@@ -1,6 +1,8 @@
 class_name OceanArt
 extends RefCounted
 
+const Ocean = preload("res://scripts/ocean_config.gd")
+
 const CORAL: Color = Color("ef9277")
 const MINT: Color = Color("69c6a4")
 
@@ -141,9 +143,9 @@ void fragment() {
 	var surface_material: ShaderMaterial = ShaderMaterial.new()
 	surface_material.shader = surface_shader
 	var surface_mesh: PlaneMesh = PlaneMesh.new()
-	surface_mesh.size = Vector2(200, 200)
-	surface_mesh.subdivide_width = 36
-	surface_mesh.subdivide_depth = 36
+	surface_mesh.size = Ocean.SURFACE_SIZE
+	surface_mesh.subdivide_width = 48
+	surface_mesh.subdivide_depth = 52
 	var surface: MeshInstance3D = _mesh(parent, surface_mesh, Vector3(0, 0.6, 0), surface_material)
 	surface.name = "LivingWaterSurface"
 	surface.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -173,85 +175,101 @@ void fragment() {
 		var ray: MeshInstance3D = _mesh(parent, cone, ray_positions[i], ray_material)
 		ray.rotation.z = -0.12
 		ray.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+static func _build_seabed(parent: Node3D) -> void:
+	var terrain := Node3D.new()
+	terrain.name = "NaturalSeabed"
+	parent.add_child(terrain)
+	var material: StandardMaterial3D = _mat(Color.WHITE)
+	material.vertex_color_use_as_albedo = true
+	material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	# 49 chunks keep distant geometry out of the renderer. Each collision surface
+	# uses exactly the same four-metre vertices as Ocean.seabed_height().
+	var side: int = 50
+	for cz: int in range(7):
+		for cx: int in range(7):
+			var vertices := PackedVector3Array()
+			var normals := PackedVector3Array()
+			var colors := PackedColorArray()
+			var indices := PackedInt32Array()
+			var origin := Vector3(-Ocean.TERRAIN_EXTENT+float(cx)*200.0,0,-Ocean.TERRAIN_EXTENT+float(cz)*200.0)
+			for iz: int in range(side+1):
+				for ix: int in range(side+1):
+					var x: float = origin.x+float(ix)*Ocean.TERRAIN_STEP
+					var z: float = origin.z+float(iz)*Ocean.TERRAIN_STEP
+					var h: float = Ocean.terrain_vertex_height(x,z)
+					vertices.append(Vector3(float(ix)*Ocean.TERRAIN_STEP,h,float(iz)*Ocean.TERRAIN_STEP))
+					var dx: float = Ocean.terrain_vertex_height(x+1.0,z)-Ocean.terrain_vertex_height(x-1.0,z)
+					var dz: float = Ocean.terrain_vertex_height(x,z+1.0)-Ocean.terrain_vertex_height(x,z-1.0)
+					normals.append(Vector3(-dx,2.0,-dz).normalized())
+					var sand_mix: float = clampf(0.68+sin(x*0.06+z*0.04)*0.13+h*0.003,0.0,1.0)
+					colors.append(Color("325b67").lerp(Color("a1af91"),sand_mix))
+			for iz: int in range(side):
+				for ix: int in range(side):
+					var a: int = iz*(side+1)+ix
+					var b: int = a+1
+					var c: int = a+side+1
+					var d: int = c+1
+					indices.append_array(PackedInt32Array([a,b,c,b,d,c]))
+			var arrays: Array = []
+			arrays.resize(Mesh.ARRAY_MAX)
+			arrays[Mesh.ARRAY_VERTEX] = vertices
+			arrays[Mesh.ARRAY_NORMAL] = normals
+			arrays[Mesh.ARRAY_COLOR] = colors
+			arrays[Mesh.ARRAY_INDEX] = indices
+			var mesh := ArrayMesh.new()
+			mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
+			var visual: MeshInstance3D = _mesh(terrain,mesh,origin,material)
+			visual.name = "Shelf_%d_%d" % [cx,cz]
+			visual.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			visual.visibility_range_end = 330.0
+			visual.visibility_range_end_margin = 25.0
+			var body := StaticBody3D.new()
+			body.name = "TerrainCollision"
+			var collision := CollisionShape3D.new()
+			var shape: ConcavePolygonShape3D = mesh.create_trimesh_shape()
+			shape.backface_collision = true
+			collision.shape = shape
+			visual.add_child(body)
+			body.add_child(collision)
+
+static func _ground_point(x: float, z: float, lift: float = 0.0) -> Vector3:
+	return Vector3(x,Ocean.seabed_height(x,z)+lift,z)
+
 static func build_world(parent: Node3D) -> void:
 	_water_and_rays(parent)
-	var sand: StandardMaterial3D = _mat(Color("749b91"))
-	var dark_stone: StandardMaterial3D = _mat(Color("204b57"))
-	_box(parent, Vector3(0, -58, 0), Vector3(150, 6, 150), sand)
-	_solid_box(parent, Vector3(0, -58, 0), Vector3(150, 6, 150))
-	# Broad terrain mounds, reefs at several depths, and an open central route.
-	for i: int in range(18):
-		var angle: float = float(i) * 2.399
-		var radius: float = 28 + float(i % 4) * 8
-		var p: Vector3 = Vector3(cos(angle) * radius, -55, sin(angle) * radius)
-		_sphere(parent, p, Vector3(8 + i % 3 * 2, 3 + i % 4 * 2, 7 + i % 3), dark_stone, 8)
-		_solid_rock(parent, p, Vector3(8 + i % 3 * 2, 3 + i % 4 * 2, 7 + i % 3))
-	var reefs: Array[Vector3] = [Vector3(8, -11, -2), Vector3(-6, -20, -14), Vector3(-13, -12, 3), Vector3(16, -18, -5), Vector3(-18, -25, -16), Vector3(12, -31, 17), Vector3(-14, -39, 17), Vector3(23, -43, -19), Vector3(5, -54, -22), Vector3(-20, -54, -8), Vector3(20, -54, 24), Vector3(-26, -18, 29), Vector3(29, -10, 22), Vector3(4, -46, 33)]
-	for i: int in range(reefs.size()):
-		_reef(parent, reefs[i], 5.3 + float(i % 3) * 1.1, i)
-	# Towering exterior stacks suggest a canyon without closing the play space.
-	for i: int in range(12):
-		var a: float = float(i) * TAU / 12.0
-		var p: Vector3 = Vector3(cos(a) * 61, -41, sin(a) * 61)
-		var rock: MeshInstance3D = _sphere(parent, p, Vector3(10, 13 + i % 4 * 6, 11), dark_stone, 7)
-		rock.rotation.y = a
-		_solid_rock(parent, p, Vector3(10, 13 + i % 4 * 6, 11))
-	# Ancient gate: paired columns, weathered capstones, glowing inlay.
-	var ruin: Node3D = Node3D.new()
-	ruin.position = Vector3(0, -54, -24)
-	parent.add_child(ruin)
-	var ruin_mat: StandardMaterial3D = _mat(Color("638d85"))
-	var edge_mat: StandardMaterial3D = _mat(Color("a4b6a0"))
-	for x: float in [-7.0, 7.0]:
-		_cylinder(ruin, Vector3(x, 0.5, 0), 2.0, 1.0, edge_mat)
-		_cylinder(ruin, Vector3(x, 6, 0), 1.3, 10, ruin_mat, 1.05)
-		_solid_box(ruin, Vector3(x, 6, 0), Vector3(2.2, 11, 2.2))
-		_cylinder(ruin, Vector3(x, 11, 0), 1.7, 1.0, edge_mat)
-		for y: float in [3.0, 6.0, 9.0]:
-			_cylinder(ruin, Vector3(x, y, 0), 1.33, 0.24, edge_mat, 1.33)
-	_box(ruin, Vector3(0, 12.0, 0), Vector3(17, 1.7, 3.2), ruin_mat)
-	_solid_box(ruin, Vector3(0, 12.0, 0), Vector3(17, 1.7, 3.2))
-	_box(ruin, Vector3(0, 13.0, 0), Vector3(18, 0.35, 3.7), edge_mat)
-	for i: int in range(7):
-		var glyph: MeshInstance3D = _box(ruin, Vector3(float(i - 3) * 1.8, 12, 1.63), Vector3(0.35, 0.62, 0.1), _mat(Color("83e1c5"), 0.65))
-		glyph.rotation.z = PI / 4
-	_coral(ruin, Vector3(-5, 13.2, 0), 3.0, CORAL)
-	# Leaning columns and a short stepping path.
-	for i: int in range(6):
-		var slab: MeshInstance3D = _box(parent, Vector3(float(i % 2) * 4 - 2, -54.7, -18 + float(i) * 4), Vector3(5, 0.6, 2.8), ruin_mat)
-		slab.rotation.y = sin(float(i) * 7) * 0.15
-	var column: MeshInstance3D = _cylinder(parent, Vector3(-12, -52, -16), 1.1, 7, ruin_mat)
-	column.rotation.z = 1.15
-	# A small wreck on the eastern floor, readable from above and at eye level.
-	var wreck: Node3D = Node3D.new()
-	wreck.position = Vector3(25, -53.0, 2)
-	wreck.rotation = Vector3(0.10, -0.5, 0.20)
+	_build_seabed(parent)
+	# Keep the authored tutorial reef obstruction, anchored into the real shelf.
+	var first := Vector3(8,-11,-2)
+	var ground: float = Ocean.seabed_height(first.x,first.z)
+	var anchor_height: float = (-14.0-ground)*0.5
+	var anchor := Vector3(8,ground+anchor_height,-2)
+	_sphere(parent,anchor,Vector3(4.8,anchor_height+1.0,3.8),_mat(Color("355e63")),9)
+	_solid_rock(parent,anchor,Vector3(4.8,anchor_height+1.0,3.8))
+	_reef(parent,first,5.3,0)
+	# Shallow coral beds sit on low outcrops, never float above the sand.
+	for i: int in range(15):
+		var a: float = float(i)*2.399
+		var distance: float = 22.0+float(i%4)*13.0
+		var p: Vector3 = _ground_point(cos(a)*distance,sin(a)*distance)
+		var size := Vector3(2.2+float(i%3),1.3,2.0+float(i%2))
+		_sphere(parent,p+Vector3.UP*0.55,size,_mat(Color("426b68")),8)
+		_solid_rock(parent,p+Vector3.UP*0.55,size)
+		if i%2 == 0:
+			_coral(parent,p+Vector3.UP*1.7,2.4,CORAL)
+		else:
+			_weed(parent,p+Vector3.UP*1.5,3.2,MINT)
+	# Familiar small ruins remain discoverable near the departure bay.
+	_outer_gate(parent,_ground_point(0,-31),0.58)
+	var wreck := Node3D.new()
+	wreck.position = _ground_point(36,10)
+	wreck.scale = Vector3.ONE*0.5
 	parent.add_child(wreck)
-	var wood: StandardMaterial3D = _mat(Color("725e52"))
-	_box(wreck, Vector3(0, 0, 0), Vector3(5, 0.6, 13), wood)
-	_solid_box(wreck, Vector3(0, 0, 0), Vector3(5, 0.6, 13))
-	for side: float in [-1.0, 1.0]:
-		for i: int in range(5):
-			var rib: MeshInstance3D = _box(wreck, Vector3(side * 2.4, 1.2, float(i - 2) * 2.4), Vector3(0.5, 3, 0.5), wood)
-			rib.rotation.z = side * 0.25
-		_box(wreck, Vector3(side * 2.7, 1.2, 0), Vector3(0.3, 0.5, 12.5), wood)
-	var mast: MeshInstance3D = _cylinder(wreck, Vector3(0, 3, -2), 0.22, 9, wood)
-	mast.rotation.z = 0.4
-	_coral(wreck, Vector3(-1, 0.5, 2), 2.5, CORAL)
-	# A pearl garden and bioluminescent deep-sea landmarks.
-	for i: int in range(20):
-		var a: float = float(i) * 2.399
-		var p: Vector3 = Vector3(cos(a) * (12 + i % 4 * 7), -54.6, sin(a) * (12 + i % 4 * 7))
-		_weed(parent, p, 1.6 + float(i % 3) * 0.8, MINT)
-		if i % 4 == 0:
-			var mushroom: StandardMaterial3D = _mat(Color("63bac4"), 0.35)
-			_cylinder(parent, p + Vector3(0, 1, 0), 0.12, 2, mushroom)
-			_sphere(parent, p + Vector3(0, 2, 0), Vector3(1.1, 0.35, 1.1), mushroom, 10)
-	# Fine suspended particles; no transparency sorting issues.
-	var particle_mat: StandardMaterial3D = _mat(Color("83c6b8"), 0.25)
-	for i: int in range(90):
-		var p: Vector3 = Vector3(sin(float(i) * 71.3) * 48, -3 - fposmod(float(i) * 7.73, 49), cos(float(i) * 39.9) * 48)
-		_sphere(parent, p, Vector3.ONE * (0.035 + float(i % 3) * 0.018), particle_mat, 4)
+	_outer_wreck(wreck)
+	var particle_mat: StandardMaterial3D = _mat(Color("83c6b8"),0.25)
+	for i: int in range(55):
+		var p := Vector3(sin(float(i)*71.3)*55,-3-fposmod(float(i)*7.73,21),cos(float(i)*39.9)*55)
+		_sphere(parent,p,Vector3.ONE*0.035,particle_mat,4)
+	_build_outer_ocean(parent)
 
 static func create_diver() -> Node3D:
 	var root: Node3D = Node3D.new()
@@ -368,4 +386,146 @@ static func create_boat() -> Node3D:
 		rung.rotation.x = PI / 2
 	return root
 
+
+
+
+static func _outer_gate(parent: Node3D, origin: Vector3, scale_factor: float = 1.0) -> void:
+	var root := Node3D.new()
+	root.position = origin
+	root.scale = Vector3.ONE*scale_factor
+	parent.add_child(root)
+	var stone: StandardMaterial3D = _mat(Color("729497"))
+	var light: StandardMaterial3D = _mat(Color("88d3c5"),0.45)
+	for side: float in [-1.0,1.0]:
+		_box(root,Vector3(side*7.0,7.0,0),Vector3(3,14,3.5),stone)
+		_solid_box(root,Vector3(side*7.0,7.0,0),Vector3(3,14,3.5))
+		for y: float in [2.0,7.0,12.0]:
+			_box(root,Vector3(side*7.0,y,0),Vector3(3.5,0.6,4),stone)
+	_box(root,Vector3(0,14.5,0),Vector3(18,2.3,4),stone)
+	_solid_box(root,Vector3(0,14.5,0),Vector3(18,2.3,4))
+	for i: int in range(5):
+		var glyph := _box(root,Vector3(float(i-2)*2.3,14.5,2.03),Vector3(0.6,0.8,0.12),light)
+		glyph.rotation.z = PI*0.25
+
+static func _outer_wreck(parent: Node3D) -> void:
+	var hull := Node3D.new()
+	hull.position = _region_ground(parent,0,-3,0.8)
+	hull.rotation_degrees = Vector3(0,-23,4)
+	parent.add_child(hull)
+	var wood: StandardMaterial3D = _mat(Color("735747"))
+	var bronze: StandardMaterial3D = _mat(Color("bba578"))
+	_box(hull,Vector3.ZERO,Vector3(10,0.8,24),wood)
+	_solid_box(hull,Vector3.ZERO,Vector3(10,0.8,24))
+	for side: float in [-1.0,1.0]:
+		for i: int in range(8):
+			var rib := _box(hull,Vector3(side*4.7,2.3,float(i-4)*2.8),Vector3(0.45,5.0,0.55),wood)
+			rib.rotation.z = side*0.18
+		_box(hull,Vector3(side*4.5,3.8,0),Vector3(0.45,0.65,24),wood)
+		_solid_box(hull,Vector3(side*4.6,2.0,0),Vector3(0.8,4.0,23))
+	var mast := _cylinder(hull,Vector3(0,9,-2),0.3,18,bronze)
+	mast.rotation.z = -0.10
+	var yard := _cylinder(hull,Vector3(-0.8,14,-2),0.16,12,wood)
+	yard.rotation.z = PI*0.5
+	_box(hull,Vector3(0,3,7),Vector3(6,5,5),wood)
+	_solid_box(hull,Vector3(0,3,7),Vector3(6,5,5))
+	for x: float in [-1.6,1.6]:
+		_box(hull,Vector3(x,4,4.45),Vector3(1.2,1.3,0.12),_mat(Color("416f79"),0.2))
+
+static func _region_ground(region: Node3D, x: float, z: float, lift: float = 0.0) -> Vector3:
+	return Vector3(x,Ocean.seabed_height(region.position.x+x,region.position.z+z)-region.position.y+lift,z)
+
+static func _outer_garden(parent: Node3D) -> void:
+	var stem: StandardMaterial3D = _mat(Color("365b73"))
+	var light: StandardMaterial3D = _mat(Color("63cbd5"),0.75)
+	for i: int in range(22):
+		var angle: float = float(i)*2.399
+		var radius: float = 7.0+float(i%5)*4.5
+		var p: Vector3 = _region_ground(parent,cos(angle)*radius,sin(angle)*radius-7)
+		var height: float = 2.5+float(i%5)*1.4
+		_branch(parent,p,p+Vector3(sin(angle)*1.8,height,cos(angle)*1.4),0.14,stem)
+		_sphere(parent,p+Vector3(sin(angle)*1.8,height,cos(angle)*1.4),Vector3(0.6,1.15,0.6),light,7)
+		_weed(parent,p,3.4,Color("4a8398"))
+
+static func _outer_spires(parent: Node3D) -> void:
+	var stone: StandardMaterial3D = _mat(Color("455e67"))
+	# Eroded slabs follow two banks of an open gully; the passage remains clear.
+	for i: int in range(8):
+		var x: float = -15.0 if i%2 == 0 else 14.0
+		var z: float = -22.0+float(i/2)*10.0
+		var height: float = 5.0+float(i%3)*3.0
+		var p: Vector3 = _region_ground(parent,x,z,height*0.45)
+		var size := Vector3(3.4,height*0.65,6.0)
+		_sphere(parent,p,size,stone,7)
+		_solid_rock(parent,p,size)
+		_weed(parent,p+Vector3.UP*height*0.62,1.7,MINT)
+
+static func _outer_atoll(parent: Node3D) -> void:
+	var shell: StandardMaterial3D = _mat(Color("c49caa"))
+	var pearl: StandardMaterial3D = _mat(Color("e0ecd3"),0.35)
+	for i: int in range(12):
+		var angle: float = float(i)*TAU/12.0
+		var pos: Vector3 = _region_ground(parent,cos(angle)*23.0,sin(angle)*19.0-8,0.3)
+		_sphere(parent,pos,Vector3(2.8,0.45,2.0),shell,8)
+		_sphere(parent,pos+Vector3.UP*0.7,Vector3.ONE*0.65,pearl,8)
+		var lid: MeshInstance3D = _sphere(parent,pos+Vector3(0,1.4,0.8),Vector3(2.7,0.3,1.9),shell,8)
+		lid.rotation.x = -0.65
+		_weed(parent,pos+Vector3(3,0,0),2.1,MINT)
+
+static func _set_outer_visibility(root: Node) -> void:
+	for child in root.get_children():
+		if child is MeshInstance3D:
+			child.visibility_range_end = 145.0
+			child.visibility_range_end_margin = 15.0
+			child.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_set_outer_visibility(child)
+
+static func _build_outer_ocean(parent: Node3D) -> void:
+	var outer := Node3D.new()
+	outer.name = "OuterOcean"
+	parent.add_child(outer)
+	for index: int in range(Ocean.ZONES.size()):
+		var zone: Dictionary = Ocean.ZONES[index]
+		var region := Node3D.new()
+		region.name = str(zone.id)
+		region.position = Vector3(zone.center.x,0,zone.center.z)
+		region.set_meta("zone_name",zone.name)
+		outer.add_child(region)
+		match str(zone.id):
+			"twin_gates":
+				_outer_gate(region,_region_ground(region,0,-6))
+				_outer_gate(region,_region_ground(region,0,-30),0.8)
+				for i: int in range(6):
+					var p: Vector3 = _region_ground(region,-22+float(i)*8,-17,0.8)
+					_box(region,p,Vector3(3,1.6,2.5),_mat(Color("6d898b")))
+					_solid_box(region,p,Vector3(3,1.6,2.5))
+			"lantern_garden":
+				_outer_garden(region)
+			"merchant_wreck":
+				_outer_wreck(region)
+				for i: int in range(7):
+					var p: Vector3 = _region_ground(region,-19+float(i)*6,-20,0.3)
+					var plank: MeshInstance3D = _box(region,p,Vector3(1.0,0.3,4.5),_mat(Color("80624c")))
+					plank.rotation.y = float(i)*0.7
+			"amber_reef":
+				for i: int in range(18):
+					var a: float = float(i)*2.399
+					var p: Vector3 = _region_ground(region,cos(a)*(7+float(i%4)*5),sin(a)*(7+float(i%4)*5)-8,0.3)
+					_coral(region,p,2.5+float(i%3),CORAL if i%2 == 0 else Color("ecc273"))
+			"southern_spires":
+				_outer_spires(region)
+			"pearl_atoll":
+				_outer_atoll(region)
+		# Low peripheral stones blend the landmark into its natural shelf.
+		for i: int in range(4):
+			var p: Vector3 = _region_ground(region,-27+float(i)*18,-25,0.65)
+			var size := Vector3(2.6,1.5,3.4)
+			_sphere(region,p,size,_mat(Color("466968")),8)
+			_solid_rock(region,p,size)
+	# Sparse bottom-dwelling vegetation gives the long routes scale.
+	for i: int in range(70):
+		var a: float = float(i)*2.399
+		var radius: float = 75.0+float(i%13)*39.0
+		var p: Vector3 = _ground_point(cos(a)*radius,sin(a)*radius,0.15)
+		_weed(outer,p,1.7+float(i%3)*0.8,MINT.darkened(0.12))
+	_set_outer_visibility(outer)
 

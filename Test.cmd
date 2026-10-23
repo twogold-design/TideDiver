@@ -21,5 +21,17 @@ if errorlevel 1 exit /b 1
 if errorlevel 1 exit /b 1
 "D:\tools\Godot-4.7.2\Godot_v4.7.2-stable_win64_console.exe" --audio-driver Dummy --path "%~dp0." --log-file "%~dp0artifacts\layout-flow-tests.log" --script res://tests/test_layout_flow.gd
 if errorlevel 1 exit /b 1
+"D:\tools\Godot-4.7.2\Godot_v4.7.2-stable_win64_console.exe" --headless --path "%~dp0." --log-file "%~dp0artifacts\furniture-catalog-tests.log" --script res://tests/test_furniture_catalog.gd
+if errorlevel 1 exit /b 1
+"D:\tools\Godot-4.7.2\Godot_v4.7.2-stable_win64_console.exe" --audio-driver Dummy --path "%~dp0." --log-file "%~dp0artifacts\new-game-tests.log" --script res://tests/test_new_game.gd
+if errorlevel 1 exit /b 1
+"D:\tools\Godot-4.7.2\Godot_v4.7.2-stable_win64_console.exe" --audio-driver Dummy --path "%~dp0." --log-file "%~dp0artifacts\living-world-tests.log" --script res://tests/test_living_world.gd
+if errorlevel 1 exit /b 1
+"D:\tools\Godot-4.7.2\Godot_v4.7.2-stable_win64_console.exe" --audio-driver Dummy --path "%~dp0." --log-file "%~dp0artifacts\hunting-tests.log" --script res://tests/test_hunting.gd
+if errorlevel 1 exit /b 1
 endlocal
+
+
+
+
 
