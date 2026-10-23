@@ -49,6 +49,9 @@ func _run() -> void:
 	_test_mouse_layout()
 	_test_tables_and_guests()
 	_test_default_reset()
+	_test_variants_and_expanded_floor()
+	_test_viewport_and_camera()
+	await _test_shop_buttons()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	game.free()
 	await process_frame
@@ -114,6 +117,10 @@ func _test_commit_and_undo() -> void:
 	var committed := _snapshot()
 	game.enter_layout()
 	game.select_furniture(purchased_uid)
+	game.rotate_layout()
+	game.undo_layout()
+	_key(KEY_G)
+	_check(game.layout_rotation == int(game.layout_work.furniture_by_uid(purchased_uid).rotation) and game.layout_rotation == int(progress.furniture_by_uid(purchased_uid).rotation), "Rotate then undo and G uses restored item rotation in move preview")
 	_key(KEY_DELETE)
 	_check(not game.layout_work.furniture_by_uid(purchased_uid).placed and progress.furniture_by_uid(purchased_uid).placed, "Delete stores only draft furniture")
 	_key(KEY_Z,true)
@@ -183,7 +190,7 @@ func _test_mouse_layout() -> void:
 	game.buy_layout_furniture("rug")
 	var rug_uid: int = game.layout_selected
 	var point := _project_floor(-3.5,2.5)
-	_check(game.LAYOUT_AREA.has_point(point), "Projected test floor position lies within actual editable viewport")
+	_check(game.layout_view_rect().has_point(point), "Projected test floor position lies within actual editable viewport")
 	var returned: Variant = game._layout_point(point)
 	_check(returned is Vector3 and returned.is_equal_approx(Vector3(-3.5,0.08,2.5)), "Camera projection and floor ray restore the intended snapped coordinates")
 	var draft_before_panel := JSON.stringify(game.layout_work._save_data())
@@ -201,3 +208,136 @@ func _test_mouse_layout() -> void:
 	_check(progress.furniture_by_uid(1).z == 2.5, "Mouse movement still affects only draft geometry")
 	game.cancel_layout()
 	_check(_snapshot() == before and progress.furniture_by_uid(rug_uid).is_empty(), "Cancelling mouse placement discards rug purchase and restores committed geometry")
+func _test_variants_and_expanded_floor() -> void:
+	var before := _snapshot()
+	var saves_before: int = progress.saves
+	game.enter_layout()
+	var ids: Array[int] = []
+	for variant in ["basic","comfort","premium"]:
+		game.buy_layout_furniture("lamp",variant)
+		ids.append(game.layout_selected)
+		_check(game.layout_work.furniture_by_uid(game.layout_selected).variant == variant, "Main purchase keeps chosen lamp variant: " + variant)
+	_check(progress.coins - game.layout_work.coins == 370 and _snapshot() == before, "Three variant prices total 370 only inside isolated draft")
+	game.cancel_layout()
+	_check(_snapshot() == before and progress.saves == saves_before, "Cancelling multi-variant purchases restores all money and ownership")
+	game.enter_layout()
+	ids.clear()
+	for variant in ["basic","comfort","premium"]:
+		game.buy_layout_furniture("lamp",variant)
+		ids.append(game.layout_selected)
+	game._physics_process(0.0)
+	var premium_point := _project_floor(9.0,7.5)
+	_check(game.layout_view_rect().has_point(premium_point), "Expanded floor target projects inside enlarged editable viewport")
+	_mouse_click(premium_point)
+	_check(game.layout_work.furniture_by_uid(ids[2]).placed and game.layout_work.furniture_by_uid(ids[2]).x == 9.0 and game.layout_work.furniture_by_uid(ids[2]).z == 7.5, "Mouse places premium furniture in newly added outer floor area")
+	game.save_layout()
+	_check(progress.coins == int(JSON.parse_string(before).coins) - 370 and progress.saves == saves_before + 1, "Saving variants charges distinct prices exactly once")
+	var reloaded := MemoryProgression.new()
+	reloaded.persistence_enabled = false
+	reloaded._apply_save_data(progress._save_data().duplicate(true))
+	for index in range(3):
+		_check(reloaded.furniture_by_uid(ids[index]).variant == ["basic","comfort","premium"][index], "Committed variant survives save-data reload at tier " + str(index))
+	_check(reloaded.furniture_by_uid(ids[2]).x == 9.0 and reloaded.furniture_by_uid(ids[2]).placed, "Expanded-area transform survives save-data reload")
+	var committed := _snapshot()
+	game.enter_layout()
+	game.select_furniture(ids[2])
+	game.store_selected_furniture()
+	game.cancel_layout()
+	_check(_snapshot() == committed, "Cancelling later changes preserves previously saved premium furniture")
+func _mouse_button(button: MouseButton, point: Vector2, pressed: bool = true) -> void:
+	var event := InputEventMouseButton.new()
+	event.button_index = button
+	event.position = point
+	event.pressed = pressed
+	game._layout_input(event)
+func _mouse_motion(relative: Vector2) -> void:
+	var event := InputEventMouseMotion.new()
+	event.relative = relative
+	game._layout_input(event)
+func _test_viewport_and_camera() -> void:
+	var before := _snapshot()
+	game.enter_layout()
+	game._physics_process(0.0)
+	_check(game.layout_panel_visible and game.layout_view_rect() == Rect2(332,96,1100,708), "Expanded left panel uses the agreed large single-panel viewport")
+	_check(not game.layout_view_rect().has_point(Vector2(100,300)) and game.layout_view_rect().has_point(Vector2(1300,400)), "Left controls are excluded while former right-panel space is now editable")
+	var draft_before := JSON.stringify(game.layout_work._save_data())
+	_mouse_button(MOUSE_BUTTON_WHEEL_UP,Vector2(100,300))
+	_check(game.layout_zoom == 31, "Wheel over expanded control panel does not change scene zoom")
+	_mouse_button(MOUSE_BUTTON_MIDDLE,Vector2(100,300))
+	_mouse_motion(Vector2(100,50))
+	_check(not game.layout_panning and game.layout_pan == Vector3.ZERO, "Middle drag cannot start on control panel")
+	_key(KEY_TAB)
+	_check(not game.layout_panel_visible and game.layout_view_rect() == Rect2(8,96,1424,708), "Tab collapses controls to agreed full-width viewport")
+	_check(game.layout_view_rect().has_point(Vector2(100,300)) and not game.layout_view_rect().has_point(Vector2(700,50)) and not game.layout_view_rect().has_point(Vector2(700,850)), "Collapsed viewport gains side space but excludes header and footer")
+	game._physics_process(0.0)
+	var original_camera: Vector3 = game.camera.position
+	_mouse_button(MOUSE_BUTTON_MIDDLE,Vector2(100,300))
+	_mouse_motion(Vector2(120,-80))
+	game._physics_process(0.0)
+	_check(game.layout_panning and not game.layout_pan.is_zero_approx() and not game.camera.position.is_equal_approx(original_camera), "Middle drag in newly exposed space pans actual camera")
+	_mouse_button(MOUSE_BUTTON_MIDDLE,Vector2(700,850),false)
+	var stopped_pan: Vector3 = game.layout_pan
+	_mouse_motion(Vector2(90,90))
+	_check(not game.layout_panning and game.layout_pan == stopped_pan, "Middle release outside viewport stops later motion from panning")
+	_mouse_button(MOUSE_BUTTON_WHEEL_UP,Vector2(800,400))
+	_check(game.layout_zoom == 29.5, "Viewport wheel zooms in with the new range")
+	_mouse_button(MOUSE_BUTTON_WHEEL_DOWN,Vector2(800,400))
+	_check(game.layout_zoom == 31, "Viewport wheel zooms back out")
+	_mouse_button(MOUSE_BUTTON_MIDDLE,Vector2(800,400))
+	_mouse_motion(Vector2(100000,100000))
+	_check(absf(game.layout_pan.x) <= 16 and absf(game.layout_pan.z) <= 14, "Large pan motion stays inside camera navigation bounds")
+	_key(KEY_F)
+	_check(game.layout_pan == Vector3.ZERO and game.layout_zoom == 31 and not game.layout_panning, "F restores center zoom and cancels active panning")
+	_key(KEY_TAB)
+	_check(game.layout_panel_visible and JSON.stringify(game.layout_work._save_data()) == draft_before, "Camera and panel controls never mutate draft furniture or money")
+	game.cancel_layout()
+	_check(_snapshot() == before, "Exiting camera navigation leaves real progress unchanged")
+func _test_shop_buttons() -> void:
+	var starting_money: int = progress.coins
+	progress.coins = 10000
+	var before := _snapshot()
+	var saves_before: int = progress.saves
+	var ui: Node = game.hud.restaurant_ui.layout_ui
+	for kind in game.Layout.CATALOG:
+		for variant in game.Layout.variant_ids(kind):
+			game.enter_layout()
+			ui.set_page("shop")
+			ui.set_category(kind)
+			var product: Dictionary = game.Layout.variant_data(kind,variant)
+			var purchase_button: Button = null
+			for control in ui.controls:
+				if control is Button and control.text == "%d G · 选购" % int(product.cost):
+					purchase_button = control
+					break
+			_check(purchase_button != null and not purchase_button.disabled, "Actual shop card exposes enabled matching-price button for " + kind + "/" + variant)
+			if purchase_button == null:
+				game.cancel_layout()
+				continue
+			var count_before: int = game.layout_work.furniture_items().size()
+			purchase_button.pressed.emit()
+			var uid: int = game.layout_selected
+			var item: Dictionary = game.layout_work.furniture_by_uid(uid)
+			_check(not item.is_empty() and item.kind == kind and item.variant == variant and game.layout_work.furniture_items().size() == count_before + 1, "Real shop button callback purchases exact category and variant: " + kind + "/" + variant)
+			_check(game.layout_work.coins == 10000 - int(product.cost) and progress.coins == 10000, "Real shop button deducts correct price only from draft for " + kind + "/" + variant)
+			ui.set_page("owned")
+			var owned: ItemList = null
+			for control in ui.controls:
+				if control is ItemList and control.name == "OwnedFurnitureList":
+					owned = control
+					break
+			var item_index: int = -1
+			if owned != null:
+				for index in range(owned.item_count):
+					if int(owned.get_item_metadata(index)) == uid:
+						item_index = index
+						break
+			_check(owned != null and item_index >= 0 and owned.get_item_text(item_index).contains(str(product.name)), "Owned list displays exact purchased variant name for " + kind + "/" + variant)
+			if owned != null and item_index >= 0:
+				game.layout_selected = -1
+				owned.item_selected.emit(item_index)
+				_check(game.layout_selected == uid and game.layout_placing, "Owned list item-selected callback restores exact stored UID for " + kind + "/" + variant)
+			game.cancel_layout()
+			_check(_snapshot() == before and progress.saves == saves_before, "Cancelling actual shop selection preserves original progress for " + kind + "/" + variant)
+			await process_frame
+	progress.coins = starting_money
+

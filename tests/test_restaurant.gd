@@ -115,7 +115,7 @@ func _test_disk_recovery() -> void:
 	_check(migrated.coins == 367 and migrated.day == 8 and migrated.tank_level == 2 and migrated.total_fish == 19 and migrated.best_depth == 47.5, "V1 migration preserves diving progress")
 	_check(migrated.inventory_total() == 0 and not migrated.can_open() and migrated.restaurant_runs == 0, "V1 migration initializes restaurant fields")
 	migrated.save_game()
-	_check(JSON.parse_string(FileAccess.get_file_as_string(TEST_PATH)).version == 3 and FileAccess.file_exists(TEST_PATH + ".bak"), "V3 saved with backup via temporary replacement")
+	_check(JSON.parse_string(FileAccess.get_file_as_string(TEST_PATH)).version == 4 and FileAccess.file_exists(TEST_PATH + ".bak"), "V4 saved with backup via temporary replacement")
 	var p = _openable()
 	p.persistence_enabled = true
 	p.save_path = TEST_PATH
@@ -160,5 +160,6 @@ func _test_mixed_rescue() -> void:
 	var result: Dictionary = p.complete_dive([{"id":"orange"},{"id":"pearl"},{"id":"chest"}], true, 24.0)
 	_check(result.earned == 47 and p.coins == 47 and result.count == 3, "Mixed orange/pearl/chest rescue pays floor(136 * 35 / 100) = 47")
 	_check(p.inventory == before_inventory and p.renovation == before_renovation and result.stored.is_empty(), "Mixed rescue preserves all shore inventory and completed renovations")
+
 
 

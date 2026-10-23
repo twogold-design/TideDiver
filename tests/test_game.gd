@@ -44,11 +44,11 @@ func _run() -> void:
 	game.set_physics_process(false)
 	game.smoke_mode = true
 	_check(game.state == "dock", "Game starts at dock")
-	_check(game.hud.buttons.size() == 6, "Dock has launch, three upgrades, restaurant, and exit")
+	_check(game.hud.buttons.size() == 7, "Dock has launch, three upgrades, restaurant, new game, and exit")
 	_test_water_entry()
 	game.state = "dock"
 	game.start_dive(false)
-	_check(game.state == "dive" and game.fish.size() == 33 and game.pickups.size() == 11, "Starting a dive creates complete population")
+	_check(game.state == "dive" and game.fish.size() == game.fish_population_count() and game.pickups.size() == 11 + game.Ocean.pickup_points().size(), "Starting a dive creates complete population")
 	await physics_frame
 	await process_frame
 	_test_3d_controls_and_geometry()
@@ -116,7 +116,7 @@ func _test_capacity_and_catching() -> void:
 
 func _test_pause() -> void:
 	_key(KEY_ESCAPE)
-	_check(game.state == "paused" and game.hud.buttons.size() == 3, "Escape opens pause menu")
+	_check(game.state == "paused" and game.hud.buttons.size() == 4, "Escape opens pause menu with new-game entry")
 	var feedback_before: float = game.catch_timer
 	var oxygen_before: float = game.oxygen
 	var clock_before: float = game.clock
@@ -137,7 +137,7 @@ func _test_rescue() -> void:
 	game.cargo.clear()
 	for i in range(10):
 		game.cargo.append({"id": "orange", "value": 18, "weight": 1, "kind": "fish"})
-	game.player.position = Vector3(40, -26, 40)
+	game.player.position = Vector3(200, -26, 200)
 	game.oxygen = 0.01
 	game._update_dive(1.0)
 	_check(game.state == "dock" and game.last_result.rescued, "Empty oxygen triggers rescue to dock")
@@ -172,13 +172,13 @@ func _test_restart() -> void:
 	_check(game.player.position == Vector3(0, -6, 14) and game.player.visible, "New dive restores player spawn")
 	_check(game.catch_timer == 0 and game.hit_timer == 0, "New dive clears previous catch feedback")
 	_check(game.shot_cooldown == 0.0 and game.hurt_cooldown == 0.0, "New dive resets combat cooldowns")
-	var all_fish_alive: bool = game.fish.size() == 33
+	var all_fish_alive: bool = game.fish.size() == game.fish_population_count()
 	for item in game.fish:
-		all_fish_alive = all_fish_alive and item.alive and item.node.visible and item.hp == item.kind + 1
-	var all_pickups_active: bool = game.pickups.size() == 11
+		all_fish_alive = all_fish_alive and item.alive and item.node.visible and item.hp == game.FishData.SPECIES[item.kind].hp
+	var all_pickups_active: bool = game.pickups.size() == 11 + game.Ocean.pickup_points().size()
 	for item in game.pickups:
 		all_pickups_active = all_pickups_active and item.active and item.node.visible
-	_check(all_fish_alive and all_pickups_active and game.hazards.size() == 7, "New dive regenerates fish, pickups, oxygen, and hazards")
+	_check(all_fish_alive and all_pickups_active and game.hazards.size() == 7 + game.Ocean.ZONES.size(), "New dive regenerates fish, pickups, oxygen, and hazards")
 	_check(memory.coins == 73 and memory.day == 3 and memory.tank_level == 1, "New dive retains persistent progress")
 	_key(KEY_ESCAPE)
 	game.hud._rescue()
@@ -212,27 +212,27 @@ func _test_3d_controls_and_geometry() -> void:
 	game._physics_process(1.0 / 60.0)
 	Input.action_release("descend")
 	_check(game.player.position.y < raised_y, "Descend action moves diver downward in 3D")
-	game.player.position = Vector3(0.0, -1.50001, 14.0)
+	game.player.position = Vector3(0.0, game.Ocean.Y_MAX - 0.00001, 14.0)
 	Input.action_press("ascend")
 	game._physics_process(1.0 / 60.0)
 	Input.action_release("ascend")
-	_check(game.player.position.y <= -1.5, "Upward swimming respects surface boundary")
-	game.player.position = Vector3(0.0, -51.99999, 0.0)
+	_check(game.player.position.y <= game.Ocean.Y_MAX, "Upward swimming respects surface boundary")
+	game.player.position = Vector3(0.0, game.Ocean.Y_MIN + 0.00001, 0.0)
 	Input.action_press("descend")
 	game._physics_process(1.0 / 60.0)
 	Input.action_release("descend")
-	_check(game.player.position.y >= -52.0, "Downward swimming respects maximum-depth boundary")
-	game.player.position = Vector3(54.99999, -4.0, 0.0)
+	_check(game.player.position.y >= game.Ocean.Y_MIN, "Downward swimming respects maximum-depth boundary")
+	game.player.position = Vector3(game.Ocean.X_MAX - 0.00001, -4.0, 0.0)
 	Input.action_press("swim_right")
 	game._physics_process(1.0 / 60.0)
 	Input.action_release("swim_right")
-	_check(game.player.position.x <= 55.0, "Horizontal swimming respects ocean boundary")
+	_check(game.player.position.x <= game.Ocean.X_MAX, "Horizontal swimming respects ocean boundary")
 	var collision := KinematicCollision3D.new()
-	var floor_blocked: bool = game.player.test_move(Transform3D(Basis.IDENTITY, Vector3(0.0, -6.0, 0.0)), Vector3(0.0, -60.0, 0.0), collision)
+	var floor_blocked: bool = game.player.test_move(Transform3D(Basis.IDENTITY, Vector3(0.0, -6.0, 0.0)), Vector3(0.0, -180.0, 0.0), collision)
 	_check(floor_blocked, "Swept diver collider cannot pass through the solid seabed")
 	if floor_blocked:
-		_check(collision.get_normal().y > 0.9 and collision.get_travel().length() < 60.0, "Seabed collision stops downward movement before full travel")
-		_check(collision.get_collider().global_position.is_equal_approx(Vector3(0.0, -58.0, 0.0)), "Collision hits the real world seabed, not a test fixture")
+		_check(collision.get_normal().y > 0.9 and collision.get_travel().length() < 180.0, "Seabed collision stops downward movement before full travel")
+		_check(absf(collision.get_position().y-game.Ocean.seabed_height(collision.get_position().x,collision.get_position().z)) < 0.1, "Collision hits the real world seabed, not a test fixture")
 	var paused_position: Vector3 = game.player.position
 	var paused_oxygen: float = game.oxygen
 	game.toggle_pause()
@@ -256,6 +256,7 @@ func _test_rock_occlusion() -> void:
 	target.node.visible = true
 	game.player.position = Vector3(0.0, -8.0, 14.0)
 	var rock_y: float = -11.0 - 5.3 * 0.32
+	game.player.position = Vector3(8.0, rock_y, 7.0)
 	game.camera.position = Vector3(8.0, rock_y, 8.0)
 	target.node.position = Vector3(8.0, rock_y, -12.0)
 	game.camera.look_at(target.node.position)
@@ -268,12 +269,10 @@ func _test_rock_occlusion() -> void:
 	game.shoot()
 	_check(target.alive and target.hp == 1 and game.cargo.size() == cargo_before, "Harpoon cannot damage or capture fish through reef")
 	game.camera.position.x = 22.0
+	game.player.position.x = 22.0
 	target.node.position.x = 22.0
 	game.camera.look_at(target.node.position)
 	_check(not game.target_fish().is_empty(), "Same fish becomes targetable along an unobstructed sight ray")
-
-
-
 
 
 func _test_water_entry() -> void:
