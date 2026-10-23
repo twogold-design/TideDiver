@@ -20,6 +20,13 @@ var hazards: Array = []
 var effects: Array = []
 var cargo: Array = []
 var oxygen: float = 100.0
+var catch_timer: float = 0.0
+var catch_kind: int = 0
+var hit_timer: float = 0.0
+var entry_active: bool = false
+var entry_time: float = 0.0
+var entry_splashed: bool = false
+const ENTRY_DURATION: float = 3.2
 var depth_record: float = 0.0
 var yaw: float = 0.0
 var pitch: float = -0.12
@@ -82,7 +89,7 @@ func _ready() -> void:
 	capture_mode = "--capture" in OS.get_cmdline_user_args() or "--capture-dock" in OS.get_cmdline_user_args() or "--capture-deep" in OS.get_cmdline_user_args()
 	smoke_mode = "--smoke" in OS.get_cmdline_user_args()
 	if capture_mode and not "--capture-dock" in OS.get_cmdline_user_args():
-		start_dive()
+		start_dive(false)
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		player.position = Vector3(0, -17, 12)
 		pitch = -0.20
@@ -138,7 +145,7 @@ func _ready() -> void:
 				capture_name = "restaurant_service"
 	if "--capture-return" in args:
 		capture_mode = true
-		start_dive()
+		start_dive(false)
 		cargo = [{"id":"orange"},{"id":"blue"},{"id":"lantern"},{"id":"pearl"},{"id":"chest"}]
 		finish_dive()
 		capture_name = "return_inventory"
@@ -273,7 +280,7 @@ func _jellyfish() -> Node3D:
 		root.add_child(tentacle)
 	return root
 
-func start_dive() -> void:
+func start_dive(animate_entry: bool = true) -> void:
 	if state != "dock":
 		return
 	restaurant_node.visible = false
@@ -284,7 +291,14 @@ func start_dive() -> void:
 	cargo.clear()
 	oxygen = progress.oxygen_max()
 	depth_record = 0
-	player.position = Vector3(0,-6,14)
+	catch_timer = 0.0
+	hit_timer = 0.0
+	entry_active = animate_entry
+	entry_time = 0.0
+	entry_splashed = false
+	player.velocity = Vector3.ZERO
+	player.rotation = Vector3.ZERO
+	player.position = Vector3(0,2.4,17.5) if animate_entry else Vector3(0,-6,14)
 	player.visible = true
 	yaw = 0
 	pitch = -0.12
@@ -294,11 +308,16 @@ func start_dive() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	tell("WASD 游泳 · Q 下潜 / E 上浮 · 鼠标瞄准 · 左键发射鱼叉", 9)
 	hud.rebuild()
+	if entry_active:
+		tell("跃入潮汐湾 · 让海水包围你", 3.2)
+		_update_entry(0.0)
 	_play_tone(480, 0.18)
 
 func finish_dive(rescued: bool = false) -> void:
 	if state != "dive":
 		return
+	entry_active = false
+	camera.fov = 66
 	last_result = progress.complete_dive(cargo, rescued, depth_record)
 	environment.fog_light_color = Color("136675")
 	environment.background_color = Color("126879")
@@ -352,7 +371,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				interact()
 			if event.physical_keycode == KEY_SPACE:
 				shoot()
-	if state != "dive":
+	if state != "dive" or entry_active:
 		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		yaw -= event.relative.x * 0.0026
@@ -366,7 +385,10 @@ func _physics_process(delta: float) -> void:
 		notice_timer = maxf(0, notice_timer-delta)
 		_animate_ocean(delta)
 	if state == "dive":
-		_update_dive(delta)
+		if entry_active:
+			_update_entry(delta)
+		else:
+			_update_dive(delta)
 	elif state in ["restaurant","service","service_paused"]:
 		if layout_mode:
 			camera.projection = Camera3D.PROJECTION_ORTHOGONAL
@@ -387,7 +409,10 @@ func _physics_process(delta: float) -> void:
 		camera.position = p
 		camera.look_at(Vector3(0,-23,-10))
 		player.visible = false
-	_update_effects(delta)
+	if state not in ["paused","service_paused"]:
+		catch_timer = maxf(0, catch_timer - delta)
+		hit_timer = maxf(0, hit_timer - delta)
+		_update_effects(delta)
 	if is_instance_valid(hud):
 		hud.queue_redraw()
 	if capture_mode:
@@ -395,6 +420,140 @@ func _physics_process(delta: float) -> void:
 		if capture_clock > 3.0:
 			capture_mode = false
 			call_deferred("_capture")
+
+func _update_entry(delta: float) -> void:
+	entry_time = minf(entry_time + delta, ENTRY_DURATION)
+	var t: float = entry_time
+	yaw = PI
+	pitch = -0.12
+	if t < 0.45:
+		player.position = Vector3(0, 2.4 - sin(t / 0.45 * PI) * 0.25, 17.5)
+		player.rotation = Vector3(PI / 2, PI, 0)
+	elif t < 1.55:
+		var u: float = (t - 0.45) / 1.1
+		player.position = Vector3(0, 2.4 + 2.0 * u - 4.8 * u * u, 17.5 + 5.0 * u)
+		player.rotation = Vector3(lerpf(PI / 2, -0.65, smoothstep(0.0, 1.0, u)), PI, 0)
+	else:
+		var u: float = smoothstep(0.0, 1.0, (t - 1.55) / 1.65)
+		player.position = Vector3(0, lerpf(-0.4, -6.0, u), lerpf(22.5, 25.0, u))
+		player.rotation = Vector3(lerpf(-0.65, 0, u), PI, 0)
+	if not entry_splashed and player.position.y <= 0.65:
+		entry_splashed = true
+		_spawn_entry_water()
+		_play_splash()
+	var follow: float = smoothstep(1.4, ENTRY_DURATION, t)
+	var forward := Vector3(0, sin(pitch), cos(pitch))
+	var swim_camera: Vector3 = player.position - forward * 7.5 + Vector3.UP * 1.7
+	camera.position = (player.position + Vector3(7, 3.2, 7)).lerp(swim_camera, follow)
+	camera.look_at((player.position + Vector3.UP * 0.3).lerp(player.position + forward * 3 + Vector3.UP * 0.6, follow))
+	camera.fov = 66 + sin(follow * PI) * 6
+	var submerged: float = 1.0 - smoothstep(-1.2, 0.7, camera.position.y)
+	environment.background_color = Color("89c6cd").lerp(Color("14596b"), submerged)
+	environment.fog_light_color = environment.background_color
+	environment.fog_density = lerpf(0.004, 0.024, submerged)
+	if t >= ENTRY_DURATION:
+		entry_active = false
+		camera.fov = 66
+		environment.fog_density = 0.024
+		tell("WASD 游泳 · Q 下潜 / E 上浮 · 左键发射鱼叉", 7)
+
+func _play_splash() -> void:
+	if muted:
+		return
+	# Layer the initial impact, broad spray and irregular resonant bubbles.
+	var wav := AudioStreamWAV.new()
+	wav.format = AudioStreamWAV.FORMAT_16_BITS
+	wav.mix_rate = 22050
+	var data := PackedByteArray()
+	var count: int = 26460
+	data.resize(count * 2)
+	var noise := RandomNumberGenerator.new()
+	noise.seed = 31415
+	var low: float = 0.0
+	var mid: float = 0.0
+	for i in range(count):
+		var t: float = float(i) / 22050.0
+		var white: float = noise.randf_range(-1, 1)
+		low = lerpf(low, white, 0.045)
+		mid = lerpf(mid, white, 0.42)
+		var attack: float = minf(t / 0.008, 1.0)
+		var impact: float = low * 3.8 * exp(-t * 24)
+		var spray: float = (mid - low) * 1.3 * exp(-t * 5.5)
+		var wash: float = low * 1.7 * (1.0 - exp(-t * 22)) * exp(-t * 3.8)
+		var bubbles: float = 0.0
+		for j in range(9):
+			var age: float = t - (0.12 + j * 0.083 + sin(j * 17.0) * 0.025)
+			if age > 0:
+				var frequency: float = 340 + fposmod(j * 173.0, 630)
+				bubbles += sin(TAU * (frequency * age - 230 * age * age)) * exp(-age * 38) * minf(age * 900, 1.0) * 0.17
+		var value: float = (impact + spray + wash) * attack + bubbles
+		data.encode_s16(i * 2, int(clampf(value, -0.95, 0.95) * 29000))
+	wav.data = data
+	sound_player.stream = wav
+	sound_player.play()
+
+func _capture_feedback(kind: int, location: Vector3) -> void:
+	catch_timer = 2.4
+	catch_kind = kind
+	hit_timer = 0.3
+	# A visible copy travels from the catch into the diver's bag.
+	var caught: Node3D = Art.create_fish(kind)
+	caught.position = location
+	ocean_root.add_child(caught)
+	effects.append({"node":caught,"life":0.6,"duration":0.6,"origin":location,"collect":true})
+	for i in range(14):
+		var bubble := MeshInstance3D.new()
+		var sphere := SphereMesh.new()
+		sphere.radius = 0.045 + float(i % 3) * 0.025
+		sphere.height = sphere.radius * 2
+		bubble.mesh = sphere
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = Color("f5c779") if i % 3 == 0 else Color("a9ead2")
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		bubble.material_override = mat
+		bubble.position = location
+		ocean_root.add_child(bubble)
+		var angle: float = i * 2.399
+		effects.append({"node":bubble,"life":0.65,"velocity":Vector3(sin(angle)*1.8,0.8+float(i%4)*0.4,cos(angle)*1.8),"gravity":0.0})
+	if muted:
+		return
+	var wav := AudioStreamWAV.new()
+	wav.format = AudioStreamWAV.FORMAT_16_BITS
+	wav.mix_rate = 22050
+	var data := PackedByteArray()
+	data.resize(11025 * 2)
+	for i in range(11025):
+		var t: float = float(i) / 22050.0
+		var value: float = 0.0
+		for j in range(3):
+			var age: float = t - j * 0.075
+			if age >= 0:
+				var frequency: float = [660.0, 880.0, 1100.0][j]
+				value += sin(TAU * frequency * age) * exp(-age * 16) * minf(age * 300, 1.0) * 0.35
+		data.encode_s16(i * 2, int(value * 23000))
+	wav.data = data
+	sound_player.stream = wav
+	sound_player.play()
+
+func _spawn_entry_water() -> void:
+	for i in range(42):
+		var droplet := MeshInstance3D.new()
+		var sphere := SphereMesh.new()
+		sphere.radius = 0.06 + float(i % 4) * 0.025
+		sphere.height = sphere.radius * 2
+		droplet.mesh = sphere
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = Color("b9f1ed")
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		droplet.material_override = mat
+		var angle: float = float(i) * 2.399
+		var bubble: bool = i >= 24
+		droplet.position = Vector3(sin(angle) * 0.4, -0.8 if bubble else 0.65, player.position.z + cos(angle) * 0.4)
+		ocean_root.add_child(droplet)
+		var velocity := Vector3(sin(angle) * 2.6, 3.2 + float(i % 5) * 0.5, cos(angle) * 2.6)
+		if bubble:
+			velocity = Vector3(sin(angle) * 0.6, 1.1, cos(angle) * 0.6)
+		effects.append({"node":droplet, "life":2.5 if bubble else 1.0, "velocity":velocity, "gravity":0.0 if bubble else 9.8})
 
 func _update_dive(delta: float) -> void:
 	shot_cooldown = maxf(0,shot_cooldown-delta)
@@ -433,7 +592,7 @@ func _update_dive(delta: float) -> void:
 		if player.position.distance_to(hazard.node.position) < 2.0 and hurt_cooldown <= 0:
 			oxygen = maxf(0,oxygen-12)
 			hurt_cooldown = 2.5
-			tell("小心水母！氧气流失 12。", 3)
+			tell("小心水母！气瓶量减少 12。", 3)
 			_play_tone(120,0.18)
 	if oxygen <= 0:
 		finish_dive(true)
@@ -491,15 +650,17 @@ func target_fish() -> Dictionary:
 	return best
 
 func shoot() -> void:
-	if state != "dive" or shot_cooldown > 0:
+	if state != "dive" or entry_active or shot_cooldown > 0:
 		return
 	shot_cooldown = 0.65
+	_play_tone(270,0.08)
 	var center = get_viewport().get_visible_rect().size*0.5
 	var direction = camera.project_ray_normal(center)
 	var end = camera.position+direction*30
 	var target: Dictionary = target_fish()
 	if not target.is_empty():
 		end = target.node.position
+		hit_timer = 0.18
 		target.hp -= progress.spear_damage()
 		if target.hp <= 0:
 			var k: int = target.kind
@@ -507,15 +668,14 @@ func shoot() -> void:
 				cargo.append({"id":["orange","blue","lantern"][k],"name":FISH_NAMES[k],"value":FISH_VALUES[k],"weight":FISH_WEIGHTS[k],"kind":"fish"})
 				target.alive = false
 				target.node.visible = false
-				tell("捕获 %s  ·  +%d G" % [FISH_NAMES[k],FISH_VALUES[k]], 3)
-				_play_tone(820,0.10)
+				tell("捕获 %s · 已装入背包 · 价值 %d G" % [FISH_NAMES[k],FISH_VALUES[k]], 3)
+				_capture_feedback(k, end)
 			else:
 				target.hp = 1
 				tell("背包已满，回到水面按 F 返航入库。", 4)
 		else:
 			tell("命中！再来一发。", 2)
 	_line_effect(player.position+Vector3.UP*0.4,end)
-	_play_tone(270,0.08)
 
 func _line_effect(start: Vector3, end: Vector3) -> void:
 	var mesh = MeshInstance3D.new()
@@ -536,6 +696,14 @@ func _line_effect(start: Vector3, end: Vector3) -> void:
 
 func _update_effects(delta: float) -> void:
 	for i in range(effects.size()-1,-1,-1):
+		if effects[i].has("collect"):
+			var u: float = clampf(1.0 - (effects[i].life - delta) / effects[i].duration, 0, 1)
+			effects[i].node.position = effects[i].origin.lerp(player.position, u * u)
+			effects[i].node.scale = Vector3.ONE * maxf(0.02, 1.0 - u * 0.95)
+			effects[i].node.rotation.y += delta * 8
+		if effects[i].has("velocity"):
+			effects[i].velocity.y -= effects[i].gravity * delta
+			effects[i].node.position += effects[i].velocity * delta
 		effects[i].life -= delta
 		if effects[i].life <= 0:
 			effects[i].node.queue_free()
@@ -553,6 +721,8 @@ func nearest_pickup() -> Dictionary:
 	return best
 
 func interact() -> void:
+	if entry_active:
+		return
 	if state != "dive":
 		return
 	if player.position.y >= -3.5:
@@ -565,7 +735,7 @@ func interact() -> void:
 	var kind: String = item.kind
 	if kind == "oxygen":
 		oxygen = minf(progress.oxygen_max(),oxygen+35)
-		tell("应急气瓶 · 氧气 +35", 3)
+		tell("应急气瓶 · 气瓶量 +35", 3)
 	else:
 		var w: int = 3 if kind == "chest" else 1
 		if weight()+w > progress.capacity():
@@ -580,11 +750,13 @@ func interact() -> void:
 	_play_tone(960,0.15)
 
 func context_hint() -> String:
+	if entry_active:
+		return "正在入水 · 感受海水的浮力"
 	if player.position.y >= -3.5:
 		return "F  呼叫接驳船 · 返航入库"
 	var item: Dictionary = nearest_pickup()
 	if not item.is_empty():
-		var names: Dictionary = {"pearl":"采集月光珍珠","chest":"打开沉船宝藏","oxygen":"补充应急氧气"}
+		var names: Dictionary = {"pearl":"采集月光珍珠","chest":"打开沉船宝藏","oxygen":"补充气瓶量"}
 		return "F  " + names[item.kind]
 	var target: Dictionary = target_fish()
 	if not target.is_empty():
@@ -625,7 +797,7 @@ func _capture() -> void:
 	get_tree().quit()
 
 func _run_smoke() -> void:
-	start_dive()
+	start_dive(false)
 	assert(state == "dive")
 	assert(fish.size() == 33)
 	assert(pickups.size() == 11)

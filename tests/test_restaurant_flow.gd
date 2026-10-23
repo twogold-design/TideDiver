@@ -61,7 +61,7 @@ func _test_fund_and_restore() -> void:
 	game.start_service()
 	_check(game.state == "restaurant", "Unrestored restaurant cannot start service")
 	game.return_to_dock()
-	game.start_dive()
+	game.start_dive(false)
 	game.cargo = [{"id":"chest","weight":3},{"id":"chest","weight":3},{"id":"pearl","weight":1}]
 	for i in range(5):
 		game.cargo.append({"id":"orange","weight":1,"kind":"fish"})
@@ -133,7 +133,7 @@ func _test_first_service() -> void:
 	_check(game.state == "restaurant" and progress.restaurant_runs == 1, "Real UI cannot reopen service on the same day")
 func _test_next_day_and_early_close() -> void:
 	game.return_to_dock()
-	game.start_dive()
+	game.start_dive(false)
 	game.cargo = [{"id":"orange","weight":1},{"id":"orange","weight":1},{"id":"orange","weight":1}]
 	game.finish_dive(false)
 	game.open_restaurant()

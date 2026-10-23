@@ -157,8 +157,8 @@ func _draw_dock() -> void:
 	_text(Vector2(923,459),"下一次，潜得更远",24,LIGHT)
 	_text(Vector2(923,490),"EQUIPMENT / 出航整备",13,MINT,true)
 	var levels = [game.progress.tank_level,game.progress.bag_level,game.progress.spear_level]
-	var names = ["氧气瓶","采集背包","强化鱼叉"]
-	var values = ["%d 氧气" % int(game.progress.oxygen_max()),"%d kg 容量" % game.progress.capacity(),"%d 点伤害" % game.progress.spear_damage()]
+	var names = ["潜水气瓶","采集背包","强化鱼叉"]
+	var values = ["%d 气瓶量" % int(game.progress.oxygen_max()),"%d kg 容量" % game.progress.capacity(),"%d 点伤害" % game.progress.spear_damage()]
 	for i in range(3):
 		var y: float = 544+i*77
 		_text(Vector2(923,y),names[i],18,LIGHT)
@@ -175,16 +175,26 @@ func _draw_dock() -> void:
 	_text(Vector2(1144,277),"REEF 01",12,MINT,true)
 
 func _draw_hud() -> void:
+	if game.entry_active:
+		var immersion: float = 1.0 - smoothstep(-1.5, 0.6, game.camera.position.y)
+		draw_rect(Rect2(0,0,1440,900), Color(0.02,0.28,0.34,immersion * 0.12))
+		_center(Vector2(720,710), "跃入潮汐湾" if not game.entry_splashed else "沉入蔚蓝", 28, LIGHT)
+		if game.entry_splashed:
+			for i in range(16):
+				var age: float = maxf(0, game.entry_time - 1.4)
+				var pos := Vector2(180 + fposmod(float(i) * 173,1080), 900 - fposmod(age * (170 + i * 9) + i * 83, 1000))
+				draw_arc(pos, 4 + i % 5 * 2, 0, TAU, 20, Color(0.7,0.94,0.95,0.22 * maxf(0, 1.0 - age / 2.0)), 1.5, true)
+		return
 	_panel(Rect2(30,28,345,116))
 	_text(Vector2(52,59),"TIDE DIVER",19,LIGHT,true)
 	_text(Vector2(230,57),"潮间潜客",15,MUTED)
-	_text(Vector2(52,88),"O₂",22,MINT,true)
+	_text(Vector2(52,88),"AIR",22,MINT,true)
 	var fraction: float = game.oxygen/game.progress.oxygen_max()
 	var oxygen_color: Color = MINT if fraction > 0.25 else Color("ff886b")
 	draw_style_box(_style(Color("21434b")),Rect2(95,77,210,11))
 	draw_style_box(_style(oxygen_color),Rect2(95,77,210*maxf(fraction,0.01),11))
 	_text(Vector2(316,88),str(int(game.oxygen)),17,oxygen_color,true)
-	_text(Vector2(52,123),"氧气储量",13,MUTED)
+	_text(Vector2(52,123),"气瓶量",13,MUTED)
 	_text(Vector2(214,123),"DAY %02d  ·  潮汐湾" % game.progress.day,13,MUTED)
 	_panel(Rect2(1135,28,275,116))
 	_text(Vector2(1157,60),"深度",14,MUTED)
@@ -205,13 +215,25 @@ func _draw_hud() -> void:
 	draw_circle(center,2,reticle)
 	if game.shot_cooldown > 0:
 		draw_arc(center,23,-PI/2,-PI/2+TAU*(1-game.shot_cooldown/0.65),30,MINT,2,true)
+	if game.hit_timer > 0:
+		var flash: Color = GOLD if game.catch_timer > 0 else MINT
+		var spread: float = 21 + (1.0 - game.hit_timer / 0.3) * 14
+		for diagonal in [Vector2(-1,-1), Vector2(1,-1), Vector2(-1,1), Vector2(1,1)]:
+			draw_line(center + diagonal * spread, center + diagonal * (spread + 9), Color(flash, minf(1, game.hit_timer * 6)), 3, true)
+	if game.catch_timer > 0:
+		var age: float = 2.4 - game.catch_timer
+		var slide: float = (1.0 - smoothstep(0.0, 0.18, age)) * 20
+		var alpha: float = minf(1.0, game.catch_timer / 0.35)
+		_panel(Rect2(510, 568 + slide, 420, 104), Color(0.025,0.12,0.16,0.92 * alpha), Color(GOLD,0.55 * alpha))
+		_center(Vector2(720, 604 + slide), "捕获成功 · %s" % game.FISH_NAMES[game.catch_kind], 24, Color(GOLD,alpha))
+		_center(Vector2(720, 644 + slide), "已装入背包  ·  %d kg  ·  价值 %d G" % [game.FISH_WEIGHTS[game.catch_kind], game.FISH_VALUES[game.catch_kind]], 16, Color(LIGHT,alpha))
 	var hint: String = game.context_hint()
 	if not hint.is_empty():
 		var w: float = font.get_string_size(hint,HORIZONTAL_ALIGNMENT_LEFT,-1,18).x+42
 		_panel(Rect2(720-w/2,504,w,42))
 		_center(Vector2(720,532),hint,18,GOLD)
 	if fraction < 0.25:
-		_center(Vector2(720,174),"氧气不足 · 按住 E 上浮至 3 米内，F 返航",21,Color("ffb190"))
+		_center(Vector2(720,174),"气瓶量不足 · 按住 E 上浮至 3 米内，F 返航",21,Color("ffb190"))
 	_panel(Rect2(30,685,236,104),Color(0.025,0.12,0.16,0.78))
 	_text(Vector2(48,712),"探索目标",13,MINT)
 	_text(Vector2(48,743),"寻找沉船与月光珍珠",17,LIGHT)
