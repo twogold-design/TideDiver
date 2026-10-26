@@ -9,6 +9,8 @@ const Restaurant = preload("res://scripts/restaurant_art.gd")
 const Layout = preload("res://scripts/layout_rules.gd")
 const FishData = preload("res://scripts/fish_catalog.gd")
 const FishBrain = preload("res://scripts/fish_brain.gd")
+const Harpoon = preload("res://scripts/harpoon.gd")
+const Cuisine = preload("res://scripts/cuisine.gd")
 const OUTER_FISH_PER_ZONE = 24
 const TRANSIT_SCHOOLS = 8
 const TRANSIT_FISH_PER_SCHOOL = 9
@@ -24,6 +26,7 @@ var fish: Array = []
 var pickups: Array = []
 var hazards: Array = []
 var effects: Array = []
+var projectiles: Array = []
 var cargo: Array = []
 var oxygen: float = 100.0
 var depth_record: float = 0.0
@@ -49,6 +52,10 @@ var restaurant_node: Node3D
 var ocean_root: Node3D
 var restaurant_tab: String = "renovation"
 var menu_plan: Dictionary = {"orange":0,"blue":0,"lantern":0}
+var menu_seasoning: Dictionary = {"orange":1,"blue":0,"lantern":2}
+var preparation: Dictionary = {}
+var service_preparation: Dictionary = {}
+var culinary_results: Dictionary = {"excellent":0,"matched":0,"cold":0,"bonus":0}
 var orders: Array = []
 var service_arrived: int = 0
 var service_spawn_time: float = 0.0
@@ -427,6 +434,11 @@ func confirm_new_game() -> void:
 	restaurant_node.clear_reactions()
 	summary_visible = false
 	menu_plan = {"orange":0,"blue":0,"lantern":0}
+	menu_seasoning = {"orange":1,"blue":0,"lantern":2}
+	preparation.clear()
+	service_preparation.clear()
+	culinary_results = {"excellent":0,"matched":0,"cold":0,"bonus":0}
+	_clear_projectiles()
 	restaurant_tab = "renovation"
 	service_arrived = 0
 	service_spawn_time = 0
@@ -479,7 +491,9 @@ func confirm_new_game() -> void:
 func start_dive() -> void:
 	if new_game_confirmation or state != "dock":
 		return
+	_clear_projectiles()
 	restaurant_node.visible = false
+	preparation.clear()
 	ocean_root.visible = true
 	environment.fog_enabled = true
 	camera.fov = 66
@@ -505,6 +519,7 @@ func start_dive() -> void:
 func finish_dive(rescued: bool = false) -> void:
 	if state != "dive":
 		return
+	_clear_projectiles()
 	last_result = progress.complete_dive(cargo, rescued, depth_record)
 	environment.fog_light_color = Color("136675")
 	environment.background_color = Color("126879")
@@ -587,6 +602,7 @@ func _physics_process(delta: float) -> void:
 		_animate_ocean(delta)
 	if state == "dive":
 		_update_dive(delta)
+		_update_projectiles(delta)
 	elif state in ["restaurant","service","service_paused"]:
 		if layout_mode:
 			camera.projection = Camera3D.PROJECTION_ORTHOGONAL
@@ -601,12 +617,15 @@ func _physics_process(delta: float) -> void:
 			restaurant_node.animate(delta)
 		if state == "service":
 			_update_service(delta)
+		elif state == "restaurant" and not layout_mode:
+			_update_preparation(delta)
 	elif state == "dock":
 		var p = Vector3(16 + sin(clock*0.045)*3, -13, 29)
 		camera.position = p
 		camera.look_at(Vector3(0,-23,-10))
 		player.visible = false
-	_update_effects(delta)
+	if state not in ["paused","service_paused"]:
+		_update_effects(delta)
 	if is_instance_valid(hud):
 		hud.queue_redraw()
 	if capture_mode:
@@ -661,6 +680,7 @@ func _update_dive(delta: float) -> void:
 func _animate_ocean(_delta: float) -> void:
 	for item in fish:
 		if item.alive:
+			item.previous_position = item.node.position
 			_update_fish(item,_delta)
 	for item in pickups:
 		if item.active:
@@ -731,30 +751,42 @@ func shoot() -> void:
 		return
 	shot_cooldown = SPEAR_COOLDOWN
 	var center := get_viewport().get_visible_rect().size*0.5
+	var origin := camera.project_ray_origin(center)
 	var direction := camera.project_ray_normal(center)
-	var end := player.position+direction*SPEAR_RANGE
+	var distance: float = (player.position-origin).dot(direction)+SPEAR_RANGE
 	var target: Dictionary = target_fish()
 	if not target.is_empty():
-		end = target.node.position
-		_hit_fish(target)
-	else:
-		for item in fish:
-			if item.alive and player.position.distance_to(item.node.position) < 12:
-				FishBrain.alarm(self,item)
-				break
-		var query := PhysicsRayQueryParameters3D.create(player.position,end,1,[player.get_rid()])
-		var hit: Dictionary = get_world_3d().direct_space_state.intersect_ray(query)
-		if not hit.is_empty():
-			end = hit.position
-	_line_effect(player.position+Vector3.UP*0.4,end)
+		distance = (target.node.position-origin).dot(direction)
+	var aim: Vector3 = origin+direction*distance
+	var start: Vector3 = player.position+Vector3(0.58,-0.15,-1.5).rotated(Vector3.UP,yaw)
+	var obstruction := get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(player.position,start,1,[player.get_rid()]))
+	if not obstruction.is_empty():
+		Harpoon.impact(self,obstruction.position,false)
+		_play_tone(270,0.08)
+		return
+	projectiles.append(Harpoon.launch(self,start,(aim-start).normalized()))
 	_play_tone(270,0.08)
 
-func _hit_fish(target: Dictionary) -> void:
+func _update_projectiles(delta: float) -> void:
+	if state != "dive" or delta <= 0:
+		return
+	for index in range(projectiles.size()-1,-1,-1):
+		if Harpoon.step(self,projectiles[index],delta):
+			Harpoon.dispose(projectiles[index])
+			projectiles.remove_at(index)
+	for item in fish:
+		item.previous_position = item.node.position
+
+func _clear_projectiles() -> void:
+	for shot in projectiles:
+		Harpoon.dispose(shot)
+	projectiles.clear()
+func _hit_fish(target: Dictionary, launched_damage: int = -1) -> void:
 	if state != "dive" or not target.alive:
 		return
 	FishBrain.prepare(target)
 	var data: Dictionary = FishData.SPECIES[target.kind]
-	var damage: int = progress.spear_damage()
+	var damage: int = progress.spear_damage() if launched_damage < 0 else launched_damage
 	var armored: bool = bool(target.armor)
 	if armored:
 		damage = mini(1,damage)
@@ -773,23 +805,6 @@ func _hit_fish(target: Dictionary) -> void:
 			tell("背包空间不足，猎物仍在逃跑。上浮返航清空背包。",4)
 	elif not armored:
 		tell("命中 %s！剩余耐久 %d / %d" % [data.name,target.hp,data.hp],2)
-
-func _line_effect(start: Vector3, end: Vector3) -> void:
-	var mesh = MeshInstance3D.new()
-	var cylinder = CylinderMesh.new()
-	cylinder.top_radius = 0.026
-	cylinder.bottom_radius = 0.026
-	cylinder.height = start.distance_to(end)
-	cylinder.radial_segments = 5
-	mesh.mesh = cylinder
-	var mat = StandardMaterial3D.new()
-	mat.albedo_color = Color("d9ffdb")
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mesh.material_override = mat
-	mesh.position = (start+end)*0.5
-	mesh.quaternion = Quaternion(Vector3.UP,(end-start).normalized())
-	add_child(mesh)
-	effects.append({"node":mesh,"life":0.16})
 
 func _update_effects(delta: float) -> void:
 	for i in range(effects.size()-1,-1,-1):
@@ -914,9 +929,12 @@ func _run_smoke() -> void:
 	player.position = Vector3(0,-8,14)
 	camera.position = Vector3(0,-6,21)
 	target.node.position = Vector3(0,-7,2)
+	target.previous_position = target.node.position
 	camera.look_at(target.node.position)
 	assert(not target_fish().is_empty())
 	shoot()
+	for frame in range(50):
+		_update_projectiles(0.02)
 	assert(cargo.size() == 2)
 	toggle_pause()
 	assert(state == "paused")
@@ -962,6 +980,8 @@ func return_to_dock() -> void:
 func _clamp_menu() -> void:
 	for id in Progress.RECIPES:
 		menu_plan[id] = clampi(int(menu_plan.get(id,0)),0,int(progress.inventory.get(id,0)))
+		if preparation.has(id) and int(preparation[id].count) != int(menu_plan[id]):
+			preparation.erase(id)
 
 func sell_goods(id: String, amount: int) -> void:
 	if layout_mode or state != "restaurant":
@@ -1004,7 +1024,45 @@ func change_menu(id: String, change: int) -> void:
 	if layout_mode or state != "restaurant":
 		return
 	menu_plan[id] = clampi(int(menu_plan.get(id,0))+change,0,int(progress.inventory.get(id,0)))
+	preparation.erase(id)
 	hud.rebuild()
+
+func change_seasoning(id: String) -> void:
+	if state != "restaurant" or layout_mode or not Progress.RECIPES.has(id):
+		return
+	menu_seasoning[id] = (int(menu_seasoning.get(id,0))+1)%3
+	preparation.erase(id)
+	hud.rebuild()
+
+func prepare_dish(id: String) -> void:
+	if state != "restaurant" or layout_mode or not progress.renovation.kitchen or int(menu_plan.get(id,0)) <= 0:
+		return
+	if preparation.has(id):
+		return
+	preparation[id] = {"left":Cuisine.PREP_TIME,"count":int(menu_plan[id]),"seasoning":int(menu_seasoning.get(id,0))}
+	tell("正在清理、切配与腌制，完成后本批菜品获得备料品质。",4)
+	hud.rebuild()
+
+func _update_preparation(delta: float) -> void:
+	if state != "restaurant" or layout_mode:
+		return
+	var active := false
+	for id in preparation:
+		if float(preparation[id].left) > 0:
+			preparation[id].left = maxf(0,float(preparation[id].left)-delta)
+			if preparation[id].left <= 0:
+				tell("%s 的备料已完成，开业后可争取更好的火候与评价。" % Progress.RECIPES[id].name,4)
+				hud.rebuild()
+		active = active or float(preparation[id].left) > 0
+	restaurant_node.set_preparing(active)
+
+func preparation_label(id: String) -> String:
+	if not preparation.has(id):
+		return "精细备料 · 4秒"
+	var left: float = preparation[id].left
+	if left <= 0:
+		return "已备好 · 品质+1"
+	return "%s %.1fs" % ["清理" if left > 2.7 else ("切配" if left > 1.3 else "腌制"),left]
 
 func menu_total() -> int:
 	var count: int = 0
@@ -1023,6 +1081,9 @@ func service_block_reason() -> String:
 		return "今日已营业，先潜水补货迎接下一天"
 	if menu_total() <= 0:
 		return "在备菜页为菜单添加至少一份鱼料理"
+	for batch in preparation.values():
+		if float(batch.left) > 0:
+			return "厨房正在备料，完成后即可营业"
 	return ""
 
 func start_service() -> void:
@@ -1036,6 +1097,9 @@ func start_service() -> void:
 		tell("无法开业，请检查装修、库存和今日营业状态。",5)
 		return
 	state = "service"
+	service_preparation = preparation.duplicate(true)
+	preparation.clear()
+	culinary_results = {"excellent":0,"matched":0,"cold":0,"bonus":0}
 	orders.clear()
 	service_arrived = 0
 	service_spawn_time = 0.2
@@ -1045,7 +1109,7 @@ func start_service() -> void:
 	service_reviews = {"satisfied":0,"okay":0,"lost":0}
 	restaurant_node.clear_reactions()
 	restaurant_node.set_customers(orders)
-	tell("潮间食堂开门迎客！点击制作，完成后记得上菜。",6)
+	tell("开门迎客！留意口味偏好，绿色火候区点击翻面，摆盘后趁热上菜。",7)
 	hud.rebuild()
 
 func service_remaining() -> int:
@@ -1067,7 +1131,7 @@ func _spawn_customer() -> void:
 	while seat in occupied:
 		seat += 1
 	order_serial += 1
-	orders.append({"id":order_serial,"seat":seat,"dish":dish,"state":"waiting","patience":progress.patience(),"max_patience":progress.patience(),"cook_left":0.0})
+	orders.append({"id":order_serial,"seat":seat,"dish":dish,"state":"waiting","patience":progress.patience(),"max_patience":progress.patience(),"cook_left":0.0,"cook_total":float(Progress.RECIPES[dish].cook_time),"preference":(order_serial-1)%3,"seasoning":int(menu_seasoning.get(dish,0)),"prepped":service_preparation.has(dish) and float(service_preparation[dish].left) <= 0,"heat_result":"","plated":false,"ready_age":0.0})
 	service_arrived += 1
 	restaurant_node.set_customers(orders)
 	hud.rebuild()
@@ -1086,9 +1150,16 @@ func _update_service(delta: float) -> void:
 			tell("一位顾客等得太久离开了，已用食材计为损耗。",4)
 			continue
 		if order.state == "cooking":
+			var before: float = order.cook_left
 			order.cook_left = maxf(0,order.cook_left-delta)
 			if order.cook_left <= 0:
 				order.state = "ready"
+				order.ready_age = maxf(0,delta-before)
+				changed = true
+		elif order.state == "ready":
+			var was_hot: bool = float(order.get("ready_age",0)) <= Cuisine.HOT_WINDOW
+			order.ready_age = float(order.get("ready_age",0))+delta
+			if was_hot and order.ready_age > Cuisine.HOT_WINDOW:
 				changed = true
 	service_spawn_time -= delta
 	if service_spawn_time <= 0:
@@ -1117,15 +1188,41 @@ func serve_order(id: int) -> void:
 		return
 	for order in orders.duplicate():
 		if order.id == id and order.state == "ready":
-			var earned: int = progress.record_served(order.dish)
+			var bonus: int = Cuisine.bonus_percent(order)
+			var earned: int = progress.record_served(order.dish,bonus)
 			if earned > 0:
+				culinary_results.excellent += int(Cuisine.quality(order) >= 3)
+				culinary_results.matched += int(Cuisine.matches(order))
+				culinary_results.cold += int(float(order.get("ready_age",0)) > Cuisine.HOT_WINDOW)
+				culinary_results.bonus += int(float(Progress.RECIPES[order.dish].price)*bonus/100.0)
 				_record_customer_feedback(order)
 				orders.erase(order)
-				tell("热腾腾的料理送达 · +%d G" % earned,3)
+				tell("料理送达 · %s · +%d G" % [Cuisine.quality_label(order),earned],3)
 				_play_tone(900,0.12)
 			break
 	restaurant_node.set_customers(orders)
 	hud.rebuild()
+
+func tend_order(id: int) -> void:
+	if state != "service":
+		return
+	for order in orders:
+		if order.id != id:
+			continue
+		if order.state == "cooking" and str(order.get("heat_result","")) == "":
+			var fraction: float = Cuisine.heat_fraction(order)
+			order.heat_result = "perfect" if fraction >= 0.4 and fraction <= 0.75 else "missed"
+			tell("翻面恰到好处，火候品质+2！" if order.heat_result == "perfect" else "这次翻面偏早或偏晚，下一份留意绿色区域。",3)
+		elif order.state == "ready" and not order.get("plated",false):
+			order.plated = true
+			tell("点缀柠檬与香草，摆盘完成。趁热送到客人桌上吧！",3)
+		break
+	restaurant_node.set_customers(orders)
+	hud.rebuild()
+
+func order_price(order: Dictionary) -> int:
+	var base: int = int(Progress.RECIPES[order.dish].price)
+	return base + (int(base/10.0) if progress.renovation.decor else 0) + int(base*Cuisine.bonus_percent(order)/100.0)
 
 func customer_mood(order: Dictionary) -> Dictionary:
 	return Feedback.live(order)
@@ -1143,7 +1240,7 @@ func finish_service() -> void:
 		return
 	for order in orders:
 		_record_customer_feedback(order,true)
-	service_summary = progress.end_service(orders.size(),service_reviews)
+	service_summary = progress.end_service(orders.size(),service_reviews,culinary_results)
 	summary_visible = true
 	orders.clear()
 	restaurant_node.set_customers(orders)

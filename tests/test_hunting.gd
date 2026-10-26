@@ -157,6 +157,7 @@ func _fixture(kind: int, position: Vector3) -> Dictionary:
 			item.alive = true
 			item.node.visible = true
 			item.node.position = position
+			item.previous_position = position
 			item.home = position
 			item.hp = int(FishData.SPECIES[kind].hp)
 			item.state = "patrol"
@@ -203,8 +204,11 @@ func _test_range_and_capture() -> void:
 	target.node.position.z = game.player.position.z-20.1
 	_aim_at(target)
 	_check(game.target_fish().is_empty(), "Harpoon cannot acquire a fish beyond the diver's 20 metre range")
+	target.node.position.z = game.player.position.z-22.1
+	target.previous_position = target.node.position
 	var hp_before: int = target.hp
 	game.shoot()
+	_fly_hook()
 	_check(target.hp == hp_before and game.cargo.is_empty(), "Out-of-range shot cannot hurt or capture the target")
 	_disable_fish()
 	progress.spear_level = 3
@@ -217,12 +221,14 @@ func _test_range_and_capture() -> void:
 				break
 			_aim_at(target)
 			game.shoot()
+			_fly_hook()
 		_check(not target.alive and not target.node.visible and game.cargo.size() == 1, "Real harpoon can capture species exactly once: " + species.id)
 		if game.cargo.size() == 1:
 			_check(game.cargo[0].id == species.id and game.cargo[0].weight == species.weight and game.cargo[0].value == species.value, "Actual catch retains canonical identity, weight and value: " + species.id)
 		var count: int = game.cargo.size()
 		game.shot_cooldown = 0
 		game.shoot()
+		_fly_hook()
 		_check(game.cargo.size() == count, "Captured target cannot be harvested twice: " + species.id)
 	game.cargo.clear()
 	progress.spear_level = 0
@@ -267,6 +273,10 @@ func _test_fish_reactions() -> void:
 	_check(not puffer.alive and game.cargo.size() == 1 and game.cargo[0].id == "puffer", "Upgraded spear exploits the deflated puffer's vulnerable window")
 	game.cargo.clear()
 	progress.spear_level = 0
+
+func _fly_hook() -> void:
+	for frame in range(50):
+		game._update_projectiles(0.02)
 func _test_predators_and_poison() -> void:
 	for kind: int in [7,8]:
 		_disable_fish()

@@ -9,6 +9,9 @@ const EXPECTED := {
 	"rug":[["普通编织地毯",30],["羊毛地毯",90],["波斯纹样地毯",180]],
 	"lamp":[["布罩落地灯",40],["黄铜弧光灯",110],["彩玻璃落地灯",220]],
 	"shelf":[["松木开放架",55],["橡木玻璃柜",140],["胡桃木陈列柜",280]],
+	"bench":[["漂木长椅",60],["软垫长椅",125],["藤编休闲椅",240]],
+	"parasol":[["条纹遮阳伞",85],["流苏遮阳伞",165],["灯串庭院伞",290]],
+	"coastal":[["贝壳陈列箱",35],["航海浮标桶",90],["珊瑚水族箱",210]],
 }
 var failures: int = 0
 var checks: int = 0
@@ -114,7 +117,7 @@ func _test_disk_roundtrip() -> void:
 	var lamp_uid: int = 111
 	_check(p.furniture_by_uid(lamp_uid).kind == "lamp" and p.place_furniture(lamp_uid,9.0,8.5,1), "Roundtrip fixture includes furniture in expanded room")
 	var saved: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(TEST_PATH))
-	_check(saved.version == 4 and saved.furnishings.size() == 15, "V4 writes all fifteen purchased variants")
+	_check(saved.version == 4 and saved.furnishings.size() == 24, "V4 writes all twenty-four purchased variants")
 	var loaded = P.new()
 	loaded.save_path = TEST_PATH
 	loaded.load_game()

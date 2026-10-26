@@ -77,7 +77,7 @@ func _preview(rect: Rect2, kind: String, variant: String) -> void:
 	scene.add_child(light)
 	var view = Camera3D.new()
 	view.projection = Camera3D.PROJECTION_ORTHOGONAL
-	view.size = 4.4 if kind in ["table","rug"] else 2.8
+	view.size = 4.4 if kind in ["table","rug","parasol"] else (3.4 if kind == "bench" else 2.8)
 	view.position = Vector3(4,5,6) if kind == "rug" else Vector3(4,3,6)
 	scene.add_child(view)
 	view.look_at_from_position(view.position,Vector3(0,0.15 if kind == "rug" else 0.85,0))
@@ -120,12 +120,12 @@ func rebuild() -> void:
 		if page == "shop":
 			var index: int = 0
 			for kind in Rules.CATALOG:
-				_button(Rules.CATALOG[kind].name,Rect2(20+index*60,163,56,35),func(): set_category(kind),category==kind)
+				_button(Rules.CATALOG[kind].name,Rect2(20+(index%4)*75,158+int(index/4)*38,71,34),func(): set_category(kind),category==kind)
 				index += 1
 			index = 0
 			for variant in Rules.variant_ids(category):
 				var product: Dictionary = Rules.variant_data(category,variant)
-				var y: float = 212 + index*176
+				var y: float = 240 + index*170
 				_preview(Rect2(26,y+19,120,128),category,variant)
 				var available: int = game.layout_work.coins + int(game.layout_pending_purchase.get("cost",0))
 				_button("%d G · 选购" % int(product.cost),Rect2(153,y+112,150,38),func(): game.buy_layout_furniture(category,variant),false,available < int(product.cost))
@@ -187,9 +187,12 @@ func _draw() -> void:
 				"table":[["原木圆面","轻巧木椅"],["橡木桌面","布艺软座"],["石纹桌面","精致桌脚"]],
 				"plant":[["素陶花盆","清新绿叶"],["亮釉陶盆","大叶龟背竹"],["金属花器","层次盆景"]],
 				"lamp":[["布艺灯罩","柔和暖光"],["黄铜灯杆","弧形轮廓"],["彩色玻璃","复古光影"]],
-				"shelf":[["开放松木","日常收藏"],["橡木框架","玻璃柜门"],["深色胡桃木","精致陈列"]]}
+				"shelf":[["开放松木","日常收藏"],["橡木框架","玻璃柜门"],["深色胡桃木","精致陈列"]],
+				"bench":[["风化木条","双人长凳"],["条纹坐垫","柔软抱枕"],["弧形藤编","亚麻坐垫"]],
+				"parasol":[["海岸条纹","木质伞杆"],["奶油帆布","垂边流苏"],["深蓝伞面","暖色灯串"]],
+				"coastal":[["贝壳收藏","海边木箱"],["彩色浮标","绳索木桶"],["透光玻璃","珊瑚造景"]]}
 			for variant in Rules.variant_ids(category):
-				var y: float = 212+i*176
+				var y: float = 240+i*170
 				_panel(Rect2(20,y,296,164),Color("17363e"))
 				_text(Vector2(153,y+29),Rules.variant_data(category,variant).name,16)
 				_text(Vector2(153,y+53),tiers[i],12,GOLD)

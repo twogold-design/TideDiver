@@ -29,6 +29,8 @@ if errorlevel 1 exit /b 1
 if errorlevel 1 exit /b 1
 "D:\tools\Godot-4.7.2\Godot_v4.7.2-stable_win64_console.exe" --audio-driver Dummy --path "%~dp0." --log-file "%~dp0artifacts\hunting-tests.log" --script res://tests/test_hunting.gd
 if errorlevel 1 exit /b 1
+"D:\tools\Godot-4.7.2\Godot_v4.7.2-stable_win64_console.exe" --audio-driver Dummy --path "%~dp0." --log-file "%~dp0artifacts\coastal-update-tests.log" --script res://tests/test_coastal_update.gd
+if errorlevel 1 exit /b 1
 endlocal
 
 

@@ -90,13 +90,19 @@ func _test_capacity_and_catching() -> void:
 	game._update_dive(0.0)
 	var center: Vector2 = root.get_visible_rect().size * 0.5
 	target.node.position = game.camera.project_ray_origin(center) + game.camera.project_ray_normal(center) * 12.0
+	target.previous_position = target.node.position
 	_check(not game.target_fish().is_empty(), "Fish can be acquired at reticle")
 	_key(KEY_SPACE)
+	for frame in range(50):
+		game._update_projectiles(0.02)
 	_check(game.cargo.size() == 1 and game.weight() == memory.capacity(), "Full bag rejects caught fish without overflow")
 	_check(target.alive and target.hp == 1 and target.node.visible, "Fish remains available after full-bag rejection")
 	game.cargo.clear()
 	game.shot_cooldown = 0.0
 	_key(KEY_SPACE)
+	_check(target.alive and game.cargo.is_empty(), "Shooting creates flight without instant target damage")
+	for frame in range(50):
+		game._update_projectiles(0.02)
 	_check(game.cargo.size() == 1 and game.weight() == 1 and game.cargo_value() == 18, "Fish capture adds correct weight and value")
 	_check(not target.alive and not target.node.visible, "Caught fish disappears exactly once")
 	_key(KEY_SPACE)

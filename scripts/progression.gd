@@ -243,13 +243,14 @@ func allocate_dish() -> String:
 			return id
 	return ""
 
-func record_served(id: String) -> int:
+func record_served(id: String, quality_bonus: int = 0) -> int:
 	if not service_active or not RECIPES.has(id) or not service_pending.has(id):
 		return 0
 	service_pending.erase(id)
 	var earned: int = int(RECIPES[id].price)
 	if renovation.decor:
 		earned += int(float(earned) / 10.0)
+	earned += int(float(RECIPES[id].price)*clampi(quality_bonus,0,25)/100.0)
 	coins = mini(MAX_COINS, coins + earned)
 	service_stats.earned += earned
 	service_stats.served += 1
@@ -272,7 +273,7 @@ func record_lost(id: String = "") -> void:
 	save_game()
 
 ## Pending ledger is authoritative; caller count is accepted for compatibility.
-func end_service(_pending_count: int = 0, reviews: Dictionary = {}) -> Dictionary:
+func end_service(_pending_count: int = 0, reviews: Dictionary = {}, culinary: Dictionary = {}) -> Dictionary:
 	if not service_active:
 		return last_service_result.duplicate(true)
 	var lost: int = service_pending.size()
@@ -287,6 +288,8 @@ func end_service(_pending_count: int = 0, reviews: Dictionary = {}) -> Dictionar
 	last_service_result = {"earned": int(service_stats.earned), "served": int(service_stats.served), "lost": int(service_stats.lost), "returned": returned}
 	if not reviews.is_empty():
 		last_service_result["reviews"] = _read_counts(reviews,{"satisfied":0,"okay":0,"lost":0},guest_limit())
+	if not culinary.is_empty():
+		last_service_result["culinary"] = _read_counts(culinary,{"excellent":0,"matched":0,"cold":0,"bonus":0},MAX_COINS)
 	service_active = false
 	restaurant_runs = mini(MAX_DAYS, restaurant_runs + 1)
 	save_game()
@@ -433,6 +436,8 @@ func _apply_save_data(data: Variant) -> void:
 		last_service_result = _read_counts(data.last_service_result, {"earned": 0, "served": 0, "lost": 0, "returned": 0}, MAX_COINS)
 		if data.last_service_result.get("reviews") is Dictionary:
 			last_service_result["reviews"] = _read_counts(data.last_service_result.reviews,{"satisfied":0,"okay":0,"lost":0},guest_limit())
+		if data.last_service_result.get("culinary") is Dictionary:
+			last_service_result["culinary"] = _read_counts(data.last_service_result.culinary,{"excellent":0,"matched":0,"cold":0,"bonus":0},MAX_COINS)
 	if not service_active:
 		service_stock = _read_counts({}, RECIPES, MAX_ITEMS)
 		service_pending.clear()
