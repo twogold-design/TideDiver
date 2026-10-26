@@ -136,7 +136,7 @@ func _test_scene_confirmation() -> void:
 	game.request_new_game()
 	_check(not game.new_game_confirmation, "Restaurant management cannot open restart confirmation")
 	game.return_to_dock()
-	game.start_dive()
+	game.start_dive(false, false)
 	game.request_new_game()
 	_check(not game.new_game_confirmation and game.state == "dive", "Active diving cannot open restart confirmation")
 	game.toggle_pause()
@@ -159,6 +159,9 @@ func _test_scene_confirmation() -> void:
 	game.oxygen = 1.0
 	game.shot_cooldown = 4.0
 	game.hurt_cooldown = 5.0
+	game.entry_active = true
+	game.catch_timer = 2.4
+	game.hit_timer = 0.4
 	game.menu_plan = {"orange":5,"blue":4,"lantern":3}
 	game.service_summary = {"earned":123,"served":2,"lost":1,"returned":0}
 	game.summary_visible = true
@@ -169,12 +172,13 @@ func _test_scene_confirmation() -> void:
 	_check(game.state == "dock" and not game.new_game_confirmation, "Confirmed paused restart returns to clean dock")
 	_fresh_checks(game.progress, "Real scene reset")
 	_check(game.cargo.is_empty() and game.last_result.is_empty() and game.depth_record == 0.0 and game.oxygen == 100.0, "Scene clears dive cargo, bill, depth and oxygen")
+	_check(not game.entry_active and game.catch_timer == 0.0 and game.hit_timer == 0.0, "Scene clears active water entry and catch feedback when restarting")
 	_check(game.menu_total() == 0 and game.orders.is_empty() and game.service_summary.is_empty() and not game.summary_visible, "Scene clears menu, active orders and restaurant bill")
 	_check(not game.layout_mode and game.layout_history.is_empty() and game.layout_selected == -1 and game.shot_cooldown == 0.0 and game.hurt_cooldown == 0.0, "Scene clears layout drafts and combat cooldowns")
 	game.open_restaurant()
 	_check(game.state == "restaurant" and not game.progress.can_open() and game.progress.furniture_items().is_empty(), "Restarted restaurant returns to the abandoned shop")
 	game.return_to_dock()
-	game.start_dive()
+	game.start_dive(false, false)
 	_check(game.state == "dive" and game.oxygen == 100.0 and game.fish.size() == game.fish_population_count() and game.pickups.size() == 11 + game.Ocean.pickup_points().size(), "Restarted player can immediately begin a fresh playable dive")
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	game.free()

@@ -177,9 +177,9 @@ func _aim_at(item: Dictionary) -> void:
 	game.camera.look_at(item.node.position,Vector3.UP)
 	game.shot_cooldown = 0.0
 func _test_population_and_seabed() -> void:
-	game.start_dive()
+	game.start_dive(false, false)
 	_check(Ocean.X_MAX-Ocean.X_MIN >= 1000 and Ocean.Z_MAX-Ocean.Z_MIN >= 1000 and Ocean.Y_MIN <= -120, "Playable ocean spans a kilometre in both directions and reaches 120 metres")
-	_check(game.fish.size() == 249, "Expanded ocean actually creates all 249 fish")
+	_check(game.fish.size() == 167, "Sparse ocean and entry schools create exactly 167 ordinary catchable fish")
 	var kinds: Dictionary = {}
 	var valid: bool = true
 	var deepest: float = 0.0
@@ -216,6 +216,8 @@ func _test_range_and_capture() -> void:
 	progress.spear_level = 3
 	for kind in range(FishData.SPECIES.size()):
 		game.cargo.clear()
+		game.catch_timer = 0.0
+		game.catch_kind = -1
 		target = _fixture(kind,game.player.position+Vector3(0,0,-12))
 		var species: Dictionary = FishData.SPECIES[kind]
 		for shot in range(12):
@@ -225,6 +227,7 @@ func _test_range_and_capture() -> void:
 			game.shoot()
 			_fly_hook()
 		_check(not target.alive and not target.node.visible and game.cargo.size() == 1, "Real harpoon can capture species exactly once: " + species.id)
+		_check(game.catch_timer > 0 and game.catch_kind == kind, "Every captured species triggers its own named catch feedback: " + species.id)
 		if game.cargo.size() == 1:
 			_check(game.cargo[0].id == species.id and game.cargo[0].weight == species.weight and game.cargo[0].value == species.value, "Actual catch retains canonical identity, weight and value: " + species.id)
 		var count: int = game.cargo.size()
@@ -336,6 +339,7 @@ func _test_obstruction() -> void:
 	var shark := _fixture(8,Vector3(200,-8,192))
 	_aim_at(shark)
 	game.shoot()
+	_fly_hook()
 	_check(game.target_fish().is_empty() and shark.hp == 8, "Solid geometry blocks actual harpoon acquisition and damage")
 	game._update_fish(shark,0.1)
 	_check(shark.state == "patrol" and game.oxygen == 100, "A predator cannot see or initiate an attack through a solid wall")
@@ -369,6 +373,6 @@ func _test_hunting_pause() -> void:
 	_check(snapshot == [shark.state,shark.timer,shark.node.transform,shark.attack_cooldown,game.poison_timer,game.oxygen,game.hurt_cooldown,game.hunt_warning_timer,game.clock], "Pause freezes predator windup, pose, poison, damage cooldown, warning and world clock together")
 	game.toggle_pause()
 	game.finish_dive(false)
-	game.start_dive()
+	game.start_dive(false, false)
 	_check(game.poison_timer == 0 and game.hurt_cooldown == 0 and game.hunt_warning_timer == 0, "Starting a new dive clears poison and hostile warning state")
 	game.finish_dive(false)

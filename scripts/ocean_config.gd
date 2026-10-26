@@ -15,14 +15,44 @@ const FLOOR_SIZE := Vector3(1400.0,6.0,1400.0)
 const SURFACE_SIZE := Vector2(1400.0,1400.0)
 const TERRAIN_EXTENT := 700.0
 const TERRAIN_STEP := 4.0
+const CANYON_CENTER := Vector3(-210,0,-230)
+const CANYON_CURRENT_SPEED := 0.9
+const CANYON_HALF_LENGTH := 85.0
 const ZONES := [
-	{"id":"twin_gates","name":"双门遗迹","center":Vector3(-210,-52,-230),"radius":42.0,"fish_kind":2},
+	{"id":"twin_gates","name":"双门遗迹 · 潮流大峡谷","center":Vector3(-210,-52,-230),"radius":42.0,"fish_kind":2},
 	{"id":"lantern_garden","name":"幽蓝灯园","center":Vector3(35,-82,-360),"radius":44.0,"fish_kind":2},
 	{"id":"merchant_wreck","name":"远航沉船","center":Vector3(310,-52,-130),"radius":46.0,"fish_kind":1},
 	{"id":"amber_reef","name":"琥珀珊瑚礁","center":Vector3(-180,-29,135),"radius":40.0,"fish_kind":0},
 	{"id":"southern_spires","name":"南潮石林","center":Vector3(-45,-52,300),"radius":44.0,"fish_kind":1},
 	{"id":"pearl_atoll","name":"月贝环礁","center":Vector3(245,-32,240),"radius":42.0,"fish_kind":1},
 ]
+
+# Boat origins keep the stern jump on the open-water approach to each landmark.
+const DIVE_SITES := [
+	{"name":"潮汐湾近岸", "origin":Vector3(0,0,0)},
+	{"name":"双门遗迹 · 潮流大峡谷", "origin":Vector3(-210,0,-290)},
+	{"name":"幽蓝灯园", "origin":Vector3(35,0,-420)},
+	{"name":"远航沉船", "origin":Vector3(310,0,-190)},
+	{"name":"琥珀珊瑚礁", "origin":Vector3(-180,0,75)},
+	{"name":"南潮石林", "origin":Vector3(-45,0,240)},
+	{"name":"月贝环礁", "origin":Vector3(245,0,180)},
+]
+
+static func canyon_center_x(z: float) -> float:
+	return CANYON_CENTER.x + 5.0*sin((z-CANYON_CENTER.z)*0.045)
+
+static func current_velocity(point: Vector3) -> Vector3:
+	var along: float = absf(point.z-CANYON_CENTER.z)
+	var across: float = absf(point.x-canyon_center_x(point.z))
+	var longitudinal: float = 1.0-smoothstep(60.0,CANYON_HALF_LENGTH,along)
+	var lateral: float = 1.0-smoothstep(12.0,30.0,across)
+	var depth: float = smoothstep(25.0,45.0,-point.y)
+	if longitudinal <= 0 or lateral <= 0 or depth <= 0:
+		return Vector3.ZERO
+	if point.y < seabed_height(point.x,point.z)+0.7:
+		return Vector3.ZERO
+	var bend: float = 5.0*0.045*cos((point.z-CANYON_CENTER.z)*0.045)
+	return Vector3(bend,0,1).normalized()*CANYON_CURRENT_SPEED*longitudinal*lateral*depth
 
 static func terrain_vertex_height(x: float, z: float) -> float:
 	var r: float = Vector2(x,z).length()
@@ -37,6 +67,10 @@ static func terrain_vertex_height(x: float, z: float) -> float:
 	height += 22.0*exp(-pow((atoll_radius-28.0)/31.0,2.0))
 	# Low stone ridges around the southern gorge, never a perimeter cage.
 	height += 11.0*sin(x*0.075)*exp(-Vector2(x+45.0,z-300.0).length_squared()/4900.0)
+	# A deep, navigable gorge is local to the twin-gate dive site.
+	var canyon_along: float = 1.0-smoothstep(55.0,CANYON_HALF_LENGTH,absf(z-CANYON_CENTER.z))
+	var canyon_across: float = 1.0-smoothstep(9.0,28.0,absf(x-canyon_center_x(z)))
+	height -= 34.0*canyon_along*canyon_across
 	return clampf(height,-118.0,-17.0)
 
 ## Exact interpolation of the two triangles used in each terrain mesh cell.
@@ -88,7 +122,7 @@ static func fish_home(zone_index: int, fish_index: int) -> Vector3:
 	var center: Vector3 = ZONES[clampi(zone_index,0,ZONES.size()-1)].center
 	var column: int = posmod(fish_index,5)
 	var row: int = clampi(int(float(fish_index)/5.0),0,4)
-	var point: Vector3 = center+Vector3(float(column-2)*5.0,float(row-1)*3.0,25.0+float(row)*5.0)
+	var point: Vector3 = center+Vector3(float(column-2)*9.0,float(row-1)*4.0,25.0+float(row)*9.0)
 	point.y = maxf(point.y,seabed_height(point.x,point.z)+10.0)
 	return point
 

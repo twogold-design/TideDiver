@@ -3,6 +3,8 @@ extends RefCounted
 
 const Ocean = preload("res://scripts/ocean_config.gd")
 const FishArt = preload("res://scripts/fish_art.gd")
+const CoralGarden = preload("res://scripts/coral_garden.gd")
+const CanyonArt = preload("res://scripts/canyon_art.gd")
 
 const CORAL: Color = Color("ef9277")
 const MINT: Color = Color("69c6a4")
@@ -434,6 +436,7 @@ static func _build_outer_ocean(parent: Node3D) -> void:
 		outer.add_child(region)
 		match str(zone.id):
 			"twin_gates":
+				CanyonArt.build(region)
 				_outer_gate(region,_region_ground(region,0,-6))
 				_outer_gate(region,_region_ground(region,0,-30),0.8)
 				for i: int in range(6):
@@ -449,10 +452,7 @@ static func _build_outer_ocean(parent: Node3D) -> void:
 					var plank: MeshInstance3D = _box(region,p,Vector3(1.0,0.3,4.5),_mat(Color("80624c")))
 					plank.rotation.y = float(i)*0.7
 			"amber_reef":
-				for i: int in range(18):
-					var a: float = float(i)*2.399
-					var p: Vector3 = _region_ground(region,cos(a)*(7+float(i%4)*5),sin(a)*(7+float(i%4)*5)-8,0.3)
-					_coral(region,p,2.5+float(i%3),CORAL if i%2 == 0 else Color("ecc273"))
+				CoralGarden.build(region)
 			"southern_spires":
 				_outer_spires(region)
 			"pearl_atoll":

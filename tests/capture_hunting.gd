@@ -88,7 +88,7 @@ func _gameplay() -> void:
 	game.smoke_mode = true
 	game.set_process(false)
 	game.set_physics_process(false)
-	game.start_dive()
+	game.start_dive(false, false)
 	await physics_frame
 	for item in game.fish:
 		item.alive = false

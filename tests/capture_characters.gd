@@ -127,7 +127,7 @@ func _game() -> void:
 	game.set_process(false)
 	game.set_physics_process(false)
 	game.set_process_unhandled_input(false)
-	game.start_dive()
+	game.start_dive(false, false)
 	await physics_frame
 	game._update_dive(0.0)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE

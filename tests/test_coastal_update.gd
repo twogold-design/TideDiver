@@ -88,7 +88,7 @@ func fly() -> void:
 		game._update_projectiles(1.0/60.0)
 
 func test_projectiles() -> void:
-	game.start_dive()
+	game.start_dive(false, false)
 	reset_shots()
 	var fish := target(Vector3(0,0,-12))
 	aim(fish)
@@ -278,7 +278,7 @@ func test_cooking() -> void:
 	game.change_menu("blue",1)
 	game.prepare_dish("blue")
 	game.return_to_dock()
-	game.start_dive()
+	game.start_dive(false, false)
 	check(game.preparation.is_empty(),"New diving day clears old preparation")
 	game.finish_dive(false)
 	game.open_restaurant()

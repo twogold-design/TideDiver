@@ -23,6 +23,7 @@ artifacts/save-*-layout.json
 !artifacts/fish_catalog.png
 !artifacts/hunting_hud.png
 !artifacts/warehouse_new_fish.png
+!artifacts/sync_20261026_catch.png
 !artifacts/layout_gift_storage.png
 !artifacts/coastal_scene.png
 !artifacts/coastal_layout.png
@@ -43,3 +44,10 @@ artifacts/save-*-layout.json
 !artifacts/harbor_shop_shelf.png
 !artifacts/harbor_shop_parasol.png
 !artifacts/harbor_layout_orbit.png
+
+!artifacts/merged_jack_storm.png
+!artifacts/merged_coral_garden.png
+!artifacts/canyon_current_gameplay.png
+!artifacts/canyon_upstream_gameplay.png
+!artifacts/gm_site_selector.png
+!artifacts/gm_underwater_selector.png
