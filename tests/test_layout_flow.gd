@@ -52,6 +52,7 @@ func _run() -> void:
 	_test_variants_and_expanded_floor()
 	_test_viewport_and_camera()
 	_test_drag_tracks_pointer()
+	_test_orbit_camera()
 	_test_edge_rotation()
 	await _test_shop_buttons()
 	_test_purchase_cancellation()
@@ -263,11 +264,12 @@ func _test_variants_and_expanded_floor() -> void:
 	game.store_selected_furniture()
 	game.cancel_layout()
 	_check(_snapshot() == committed, "Cancelling later changes preserves previously saved premium furniture")
-func _mouse_button(button: MouseButton, point: Vector2, pressed: bool = true) -> void:
+func _mouse_button(button: MouseButton, point: Vector2, pressed: bool = true, alt: bool = false) -> void:
 	var event := InputEventMouseButton.new()
 	event.button_index = button
 	event.position = point
 	event.pressed = pressed
+	event.alt_pressed = alt
 	game._layout_input(event)
 func _mouse_motion(relative: Vector2, position: Vector2 = Vector2(800,400)) -> void:
 	var event := InputEventMouseMotion.new()
@@ -306,6 +308,73 @@ func _test_drag_tracks_pointer() -> void:
 	_check(JSON.stringify(game.layout_work._save_data()) == draft_before,"Direction correction does not move furniture in the draft")
 	game.cancel_layout()
 	_check(_snapshot() == before and progress.saves == saves_before,"Navigation correction does not change or save player progress")
+func _test_orbit_camera() -> void:
+	var before := _snapshot()
+	var saves_before: int = progress.saves
+	game.enter_layout()
+	game._physics_process(0.0)
+	var draft := JSON.stringify(game.layout_work._save_data())
+	var original: Transform3D = game.camera.transform
+	_mouse_button(MOUSE_BUTTON_MIDDLE, Vector2(100,300), true, true)
+	_mouse_motion(Vector2(90,40))
+	_check(not game.layout_orbiting and game.camera.transform == original, "Alt-middle on shop controls cannot rotate the camera")
+	_mouse_button(MOUSE_BUTTON_MIDDLE, Vector2(800,400), true, true)
+	_mouse_motion(Vector2(190,-45))
+	_check(game.layout_orbiting and not game.layout_panning and not game.camera.transform.is_equal_approx(original) and game.layout_pan == Vector3.ZERO, "Alt-middle rotates the actual camera without panning or moving furniture")
+	var yaw: float = game.layout_camera_yaw
+	_mouse_motion(Vector2(60,0))
+	_check(not is_equal_approx(yaw,game.layout_camera_yaw), "Orbit continues through consecutive motion events")
+	_mouse_button(MOUSE_BUTTON_MIDDLE, Vector2(700,850), false)
+	var stopped: Transform3D = game.camera.transform
+	_mouse_motion(Vector2(90,20))
+	_check(not game.layout_orbiting and game.camera.transform == stopped, "Releasing orbit outside editable floor stops camera motion")
+	_mouse_button(MOUSE_BUTTON_MIDDLE, Vector2(800,400), true, true)
+	_mouse_motion(Vector2(10000,10000))
+	_check(is_equal_approx(game.layout_camera_pitch,deg_to_rad(85)) and absf(game.layout_camera_yaw) <= PI, "Orbit supports full azimuth while clamping overhead tilt below singularity")
+	_mouse_motion(Vector2(0,-20000))
+	_check(is_equal_approx(game.layout_camera_pitch,deg_to_rad(20)), "Low orbit angle stays above the floor")
+	_mouse_button(MOUSE_BUTTON_MIDDLE, Vector2(800,400), false)
+	for panel: bool in [true,false]:
+		for angle: float in [-2.2,0.8]:
+			game.layout_camera_yaw = angle
+			game.layout_camera_pitch = deg_to_rad(35 if panel else 75)
+			game.layout_panel_visible = panel
+			game.layout_pan = Vector3.ZERO
+			game.update_layout_camera()
+			var landmark: Vector3 = game.restaurant_node.position + Vector3(3,0.08,3)
+			var start: Vector2 = game.camera.unproject_position(landmark)
+			var point: Variant = game._layout_point(start)
+			_check(point != null and point.is_equal_approx(Vector3(3,0.08,3)), "Floor picking follows rotated camera with either sidebar state")
+			_mouse_button(MOUSE_BUTTON_MIDDLE,start)
+			_mouse_motion(Vector2(32,-21),start+Vector2(32,-21))
+			_check(game.camera.unproject_position(landmark).distance_to(start+Vector2(32,-21)) < 0.05, "Natural floor dragging still follows the pointer after orbit")
+			_mouse_button(MOUSE_BUTTON_MIDDLE,start,false)
+	var zoom: float = game.layout_zoom
+	_mouse_button(MOUSE_BUTTON_WHEEL_UP,Vector2(800,400))
+	_check(game.camera.size == zoom - 1.5, "Zoom updates the orbit camera immediately")
+	_check(JSON.stringify(game.layout_work._save_data()) == draft, "Orbit, tilt and zoom leave furniture and coins unchanged")
+	var furnishings_before_purchase: String = JSON.stringify(game.layout_work.furnishings)
+	var coins_before_purchase: int = game.layout_work.coins
+	game.buy_layout_furniture("lamp")
+	var pending: Dictionary = game.layout_pending_purchase.duplicate(true)
+	var coins: int = game.layout_work.coins
+	_mouse_button(MOUSE_BUTTON_MIDDLE,Vector2(800,400),true,true)
+	_mouse_motion(Vector2(90,20))
+	_mouse_button(MOUSE_BUTTON_MIDDLE,Vector2(800,400),false)
+	_check(game.layout_placing and game.layout_pending_purchase == pending and game.layout_work.coins == coins, "Orbit preserves the pending purchase and reservation")
+	_mouse_button(MOUSE_BUTTON_RIGHT,Vector2(800,400))
+	_check(game.layout_pending_purchase.is_empty() and game.layout_work.coins == coins_before_purchase and JSON.stringify(game.layout_work.furnishings) == furnishings_before_purchase, "Right click still cancels purchase with full refund after orbit")
+	_mouse_button(MOUSE_BUTTON_MIDDLE,Vector2(800,400),true,true)
+	game._notification(MainLoop.NOTIFICATION_APPLICATION_FOCUS_OUT)
+	_check(not game.layout_panning and not game.layout_orbiting, "Focus loss cancels active camera navigation")
+	_key(KEY_F)
+	_check(game.layout_pan == Vector3.ZERO and game.layout_zoom == 31 and is_equal_approx(game.layout_camera_yaw,game.LAYOUT_DEFAULT_YAW) and is_equal_approx(game.layout_camera_pitch,game.LAYOUT_DEFAULT_PITCH), "F resets zoom, orbit and pan together")
+	game.cancel_layout()
+	_check(_snapshot() == before and progress.saves == saves_before, "Orbit workflow never saves or alters real progression")
+	game.enter_layout()
+	_check(not game.layout_orbiting and is_equal_approx(game.layout_camera_yaw,game.LAYOUT_DEFAULT_YAW), "Re-entering layout starts with the default camera")
+	game.cancel_layout()
+
 func _test_viewport_and_camera() -> void:
 	var before := _snapshot()
 	game.enter_layout()

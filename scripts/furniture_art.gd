@@ -9,7 +9,7 @@ static var _surface_shader: Shader
 static var _rug_shader: Shader
 static var _font: SystemFont
 
-const CREAM: Color = Color("d8cdb4")
+const CREAM: Color = Color("8fa7af") # Muted mist blue, also used for tableware and canvas.
 const DARK: Color = Color("334b49")
 const BRASS: Color = Color("a68950")
 
@@ -41,6 +41,12 @@ void fragment() {
 		float vein = smoothstep(0.94, 0.995, abs(sin(flow)));
 		float cloud = sin(p.x * 1.8 + p.z * 2.7) * 0.025;
 		color = color * (0.97 + cloud) - vec3(0.13, 0.12, 0.10) * vein;
+	} else if (surface_kind == 4) {
+		float stripe = smoothstep(-0.08, 0.08, sin(p.x * 28.0));
+		float fade = 1.0 / (1.0 + fwidth(p.x) * 45.0);
+		color = mix(vec3(0.32, 0.43, 0.48), base_color.rgb, mix(0.5, stripe, fade));
+		float weave = sin(p.x * 145.0) * sin((p.z + p.y) * 145.0) / (1.0 + length(fwidth(p)) * 120.0);
+		color *= 0.97 + weave * 0.025;
 	}
 	ALBEDO = color;
 	ROUGHNESS = roughness_value;
@@ -200,7 +206,7 @@ static func build(item: Dictionary, seat: int = -1) -> Node3D:
 	var variant: String = str(item.get("variant", "basic"))
 	if variant not in ["basic", "comfort", "premium"]:
 		variant = "basic"
-	var palette: Array[Color] = [Color("b68c61"), Color("729d90"), Color("be7f6b")]
+	var palette: Array[Color] = [Color("b19570"), Color("69929a"), Color("bc8974")]
 	var tint: Color = palette[clampi(int(item.get("color", 0)), 0, 2)]
 	root.set_meta("kind", kind)
 	root.set_meta("variant", variant)
@@ -211,7 +217,11 @@ static func build(item: Dictionary, seat: int = -1) -> Node3D:
 		"rug": _rug(root, variant, tint)
 		"lamp": _lamp(root, variant, tint)
 		"shelf": _shelf(root, variant, tint)
-		"bench": _bench(root, variant, tint)
+		"bench":
+			_bench(root, variant, tint)
+			# Face the same +Z direction as the shop display and other fronted items.
+			for part: Node3D in root.get_children():
+				part.transform = Transform3D(Basis(Vector3.UP, PI), Vector3.ZERO) * part.transform
 		"parasol": _parasol(root, variant, tint)
 		"coastal": _coastal(root, variant, tint)
 	_merge_geometry(root)
@@ -219,359 +229,525 @@ static func build(item: Dictionary, seat: int = -1) -> Node3D:
 		_table_number(root, seat)
 	return root
 
-static func _bench(root: Node3D, variant: String, tint: Color) -> void:
-	var wood := _mat(tint,1)
-	var fabric := _mat(CREAM,2)
-	for x: float in [-0.85,0.85]:
-		_box(root,Vector3(x,0.3,0),Vector3(0.14,0.6,0.7),wood)
-	for z: float in [-0.28,0.0,0.28]:
-		_box(root,Vector3(0,0.62,z),Vector3(2.2,0.10,0.23),wood)
-	for y: float in [0.85,1.1]:
-		_box(root,Vector3(0,y,0.38),Vector3(2.2,0.17,0.10),wood)
-	if variant != "basic":
-		_box(root,Vector3(0,0.73,0),Vector3(2.05,0.16,0.70),fabric,0.06)
-		for x: float in [-0.72,0.72]:
-			var pillow := _box(root,Vector3(x,0.96,0.22),Vector3(0.44,0.40,0.15),_mat(tint,2),0.07)
-			pillow.rotation.z = x*0.12
-	if variant == "premium":
-		for i in range(16):
-			var x: float = -1.05+i*0.14
-			_bar(root,Vector3(x,0.68,0.35),Vector3(x,1.32-absf(x)*0.15,0.40),0.022,_mat(BRASS,1))
-
-static func _parasol(root: Node3D, variant: String, tint: Color) -> void:
-	var metal := _mat(BRASS,0,0.35,0.5)
-	_cylinder(root,Vector3(0,0.08,0),0.4,0.16,_mat(DARK,3))
-	_cylinder(root,Vector3(0,1.4,0),0.045,2.8,metal)
-	for i in range(12):
-		var a: float = i*TAU/12
-		var b: float = (i+1)*TAU/12
-		var edge_a := Vector3(cos(a)*1.33,2.28,sin(a)*1.33)
-		var edge_b := Vector3(cos(b)*1.33,2.28,sin(b)*1.33)
-		var surface := SurfaceTool.new()
-		surface.begin(Mesh.PRIMITIVE_TRIANGLES)
-		for vertex: Vector3 in [Vector3(0,2.85,0),edge_a,edge_b,edge_b,edge_a,Vector3(0,2.85,0)]:
-			surface.add_vertex(vertex)
-		surface.generate_normals()
-		var color: Color = CREAM if i%2 == 0 else (Color("365d73") if variant == "premium" else tint)
-		_mesh(root,surface.commit(),Vector3.ZERO,_mat(color,2))
-		_bar(root,Vector3(0,2.8,0),edge_a,0.015,metal)
-		if variant == "comfort":
-			for j in range(4):
-				var point := edge_a.lerp(edge_b,j/4.0)
-				_bar(root,point,point-Vector3.UP*0.16,0.014,_mat(CREAM,2))
-		elif variant == "premium":
-			_sphere(root,edge_a-Vector3.UP*0.08,Vector3.ONE*0.055,_glow(Color("ffe1a4")))
-
-static func _coastal(root: Node3D, variant: String, tint: Color) -> void:
-	var wood := _mat(tint,1)
-	if variant == "basic":
-		_box(root,Vector3(0,0.25,0),Vector3(1.0,0.5,0.8),wood)
-		for i in range(5):
-			_sphere(root,Vector3(-0.34+i*0.17,0.54,sin(i)*0.22),Vector3(0.13,0.06,0.16),_mat(CREAM))
-		_cylinder(root,Vector3(0.32,0.73,0.18),0.10,0.45,_glass(Color("6ba89c")))
-	elif variant == "comfort":
-		_cylinder(root,Vector3(0,0.48,0),0.44,0.92,wood,0.38)
-		for y: float in [0.18,0.70]:
-			_ring(root,Vector3(0,y,0),0.44,0.028,_mat(DARK,0,0.4,0.6))
-		for i in range(3):
-			_sphere(root,Vector3(-0.26+i*0.25,1.04,0),Vector3(0.16,0.30,0.16),_mat(Color("cf7751") if i%2 == 0 else CREAM))
-	else:
-		_box(root,Vector3(0,0.40,0),Vector3(1.05,0.8,0.85),wood)
-		_box(root,Vector3(0,1.18,0),Vector3(1.04,0.75,0.84),_glass(Color("77c8ce")))
-		_box(root,Vector3(0,0.86,0),Vector3(0.96,0.08,0.77),_mat(CREAM,3))
-		for i in range(5):
-			var x: float = -0.30+i*0.15
-			_bar(root,Vector3(x,0.9,0),Vector3(x+0.08,1.1+i%3*0.14,0.1),0.045,_mat(Color("c9826d")))
-		_box(root,Vector3(0,1.59,0),Vector3(1.1,0.08,0.90),_mat(DARK))
-
-static func _table_number(parent: Node3D, seat: int) -> void:
-	_box(parent, Vector3(0.40, 1.46, 0.52), Vector3(0.25, 0.25, 0.035), _mat(CREAM))
+# Harbor collection: fixed footprints and seat anchors keep existing layouts valid.
+static func _text(parent: Node3D, message: String, pos: Vector3, scale: float = 0.004, color: Color = CREAM) -> Label3D:
 	if _font == null:
 		_font = SystemFont.new()
 		_font.font_names = PackedStringArray(["Microsoft YaHei", "Segoe UI"])
-	var label: Label3D = Label3D.new()
+	var label := Label3D.new()
 	label.font = _font
-	label.text = str(seat + 1)
-	label.font_size = 30
-	label.pixel_size = 0.005
-	label.position = Vector3(0.40, 1.46, 0.55)
-	label.modulate = DARK
+	label.text = message
+	label.font_size = 32
+	label.pixel_size = scale
+	label.position = pos
+	label.modulate = color
 	label.outline_size = 0
+	label.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	parent.add_child(label)
+	return label
+
+static func _table_number(parent: Node3D, seat: int) -> void:
+	_box(parent, Vector3(0.40, 1.46, 0.52), Vector3(0.25, 0.25, 0.035), _mat(CREAM))
+	_text(parent, str(seat + 1), Vector3(0.40, 1.46, 0.55), 0.005, DARK)
+
+static func _rope(parent: Node3D, pos: Vector3, radius: float, loops: int = 3) -> void:
+	for i: int in range(loops):
+		_ring(parent, pos + Vector3.UP * i * 0.032, radius, 0.018, _mat(Color("aa9672"), 2))
+
+static func _rattan(parent: Node3D, center: Vector3, size: Vector2) -> void:
+	var cane := _mat(Color("aa8a5b"), 1)
+	# Open woven panel, with thicker framing; no opaque solid behind it.
+	for i: int in range(13):
+		var x: float = -size.x * 0.5 + size.x * i / 12.0
+		_bar(parent, center + Vector3(x, -size.y * 0.5, 0), center + Vector3(x, size.y * 0.5, 0), 0.011, cane)
+	for i: int in range(10):
+		var y: float = -size.y * 0.5 + size.y * i / 9.0
+		_bar(parent, center + Vector3(-size.x * 0.5, y, -0.006), center + Vector3(size.x * 0.5, y, -0.006), 0.012, cane)
+	for side: float in [-1, 1]:
+		_bar(parent, center + Vector3(side * size.x * 0.5, -size.y * 0.5, 0), center + Vector3(side * size.x * 0.5, size.y * 0.5, 0), 0.028, cane)
+		_bar(parent, center + Vector3(-size.x * 0.5, side * size.y * 0.5, 0), center + Vector3(size.x * 0.5, side * size.y * 0.5, 0), 0.028, cane)
+
+static func _plate(parent: Node3D, pos: Vector3, radius: float = 0.17) -> void:
+	_cylinder(parent, pos, radius, 0.022, _mat(CREAM, 0, 0.30))
+	_ring(parent, pos + Vector3.UP * 0.012, radius * 0.84, 0.012, _mat(Color("567b88")))
+
+static func _bottle(parent: Node3D, pos: Vector3, color: Color) -> void:
+	_cylinder(parent, pos + Vector3.UP * 0.10, 0.055, 0.20, _mat(color, 0, 0.25), 0.045)
+	_cylinder(parent, pos + Vector3.UP * 0.23, 0.023, 0.08, _mat(color, 0, 0.25))
+	_cylinder(parent, pos + Vector3.UP * 0.27, 0.025, 0.035, _mat(DARK))
+	_box(parent, pos + Vector3(0, 0.11, 0.052), Vector3(0.06, 0.07, 0.006), _mat(CREAM), 0.002)
 
 static func _table(root: Node3D, variant: String, tint: Color) -> void:
-	var wood: Material = _mat(tint, 1, 0.66)
-	var dark_wood: Material = _mat(tint.darkened(0.26), 1, 0.65)
-	var brass: Material = _mat(BRASS, 0, 0.34, 0.7)
-	var fabric: Material = _mat(tint.lightened(0.15), 2, 0.94)
-	if variant == "basic":
-		_cylinder(root, Vector3(0, 1.27, 0), 1.04, 0.13, wood)
-		_ring(root, Vector3(0, 1.25, 0), 1.015, 0.03, dark_wood)
-		for angle: float in [0.3, 2.394, 4.489]:
-			_bar(root, Vector3(cos(angle) * 0.48, 1.2, sin(angle) * 0.48), Vector3(cos(angle) * 0.69, 0.09, sin(angle) * 0.69), 0.075, dark_wood)
-	elif variant == "comfort":
-		_box(root, Vector3(0, 1.27, 0), Vector3(2.15, 0.16, 1.75), wood, 0.075)
-		_box(root, Vector3(0, 1.12, 0), Vector3(1.84, 0.17, 1.46), dark_wood)
-		for x: float in [-0.83, 0.83]:
-			for z: float in [-0.59, 0.59]:
-				_bar(root, Vector3(x, 1.13, z), Vector3(x * 1.06, 0.1, z * 1.06), 0.07, dark_wood)
-		_box(root, Vector3(0, 1.365, 0), Vector3(0.42, 0.018, 1.65), _mat(tint.lightened(0.30), 2, 0.97), 0.006)
+	var wood := _mat(tint, 1)
+	var pale := _mat(Color("7e99a3").lerp(tint, 0.05), 1, 0.94)
+	var frame: Material = pale if variant == "comfort" else _mat(tint.darkened(0.22), 1)
+	var blue := _mat(Color("50768b").lerp(tint, 0.18), 4)
+	if variant == "comfort":
+		_cylinder(root, Vector3(0, 1.27, 0), 1.03, 0.13, pale)
+		_ring(root, Vector3(0, 1.28, 0), 1.005, 0.025, wood)
+		# Fine plank joints and inset edging remain visible under the beach sun.
+		_ring(root, Vector3(0, 1.338, 0), 0.94, 0.009, _mat(Color("657e86"), 1))
+		for x: float in [-0.61, -0.30, 0, 0.30, 0.61]:
+			var length: float = sqrt(0.93 * 0.93 - x * x)
+			_bar(root, Vector3(x, 1.337, -length), Vector3(x, 1.337, length), 0.004, _mat(Color("667e87")))
+		_cylinder(root, Vector3(0, 0.69, 0), 0.10, 1.1, frame)
+		for i: int in range(4):
+			var a: float = i * PI / 2
+			_bar(root, Vector3(0, 0.4, 0), Vector3(cos(a) * 0.63, 0.08, sin(a) * 0.63), 0.065, frame)
 	else:
-		var top: Material = _mat(Color("a4aaa1"), 3, 0.43)
-		var slab: MeshInstance3D = _cylinder(root, Vector3(0, 1.29, 0), 1.06, 0.11, top)
-		slab.scale.z = 0.87
-		var rim: MeshInstance3D = _ring(root, Vector3(0, 1.25, 0), 1.04, 0.025, brass)
-		rim.scale.z = 0.87
-		_cylinder(root, Vector3(0, 0.66, 0), 0.37, 1.13, _mat(tint.darkened(0.35), 1, 0.48), 0.27)
-		for i: int in range(16):
-			var a: float = float(i) * TAU / 16.0
-			_bar(root, Vector3(cos(a) * 0.35, 0.14, sin(a) * 0.35), Vector3(cos(a) * 0.27, 1.19, sin(a) * 0.27), 0.012, brass)
-		_cylinder(root, Vector3(0, 0.10, 0), 0.55, 0.08, brass)
-	for side: float in [-1.0, 1.0]:
+		for i: int in range(6):
+			_box(root, Vector3(-0.875 + i * 0.35, 1.27, 0), Vector3(0.335, 0.13, 1.70), _mat(tint.lightened((i % 3) * 0.025), 1), 0.018)
+		for x: float in [-0.80, 0.80]:
+			_box(root, Vector3(x, 1.12, 0), Vector3(0.12, 0.17, 1.43), frame)
+			for z: float in [-0.62, 0.62]:
+				_bar(root, Vector3(x, 1.17, z), Vector3(x * 1.06, 0.08, z * 1.05), 0.06, frame)
+				_cylinder(root, Vector3(x, 1.34, z), 0.016, 0.008, _mat(DARK))
+		if variant == "premium":
+			_box(root, Vector3(0, 1.342, 0), Vector3(0.43, 0.015, 1.62), blue, 0.005)
+	for side: float in [-1, 1]:
 		var z: float = side * 1.40
+		_box(root, Vector3(0, 0.70, z), Vector3(0.85, 0.10, 0.70), frame)
 		if variant == "basic":
-			_box(root, Vector3(0, 0.71, z), Vector3(0.86, 0.11, 0.76), wood, 0.04)
-			for x: float in [-0.32, 0.0, 0.32]:
-				_bar(root, Vector3(x, 0.77, z + side * 0.31), Vector3(x, 1.48, z + side * 0.34), 0.035, dark_wood)
-			_box(root, Vector3(0, 1.48, z + side * 0.34), Vector3(0.88, 0.15, 0.12), wood, 0.04)
+			for x: float in [-0.34, 0.34]:
+				_bar(root, Vector3(x, 0.74, z - 0.27), Vector3(x, 0.06, z + 0.31), 0.035, frame)
+				_bar(root, Vector3(x, 0.74, z + 0.27), Vector3(x, 0.06, z - 0.31), 0.035, frame)
+				_bar(root, Vector3(x, 0.68, z + side * 0.30), Vector3(x, 1.43, z + side * 0.34), 0.035, frame)
+			for y: float in [1.18, 1.38]:
+				_box(root, Vector3(0, y, z + side * 0.34), Vector3(0.83, 0.14, 0.08), wood)
 		else:
-			_box(root, Vector3(0, 0.65, z), Vector3(0.90, 0.12, 0.78), dark_wood, 0.04)
-			_box(root, Vector3(0, 0.76, z), Vector3(0.84, 0.16, 0.72), fabric, 0.075)
-			var back: MeshInstance3D = _box(root, Vector3(0, 1.26, z + side * 0.31), Vector3(0.88, 0.78, 0.16), fabric, 0.07)
-			back.rotation.x = side * 0.10
-			if variant == "premium":
-				for x: float in [-0.24, 0.24]:
-					_sphere(root, Vector3(x, 1.30, z + side * 0.20), Vector3.ONE * 0.028, brass)
-		for x: float in [-0.31, 0.31]:
-			for offset: float in [-0.25, 0.25]:
-				_bar(root, Vector3(x, 0.66, z + offset), Vector3(x * 1.08, 0.08, z + offset * 1.1), 0.035 if variant == "premium" else 0.045, brass if variant == "premium" else dark_wood)
-	_cylinder(root, Vector3(-0.42, 1.43, 0.48), 0.09, 0.19, _mat(CREAM, 0, 0.35))
-	_cylinder(root, Vector3(0.38, 1.46, -0.22), 0.085, 0.24, _mat(tint.darkened(0.10), 0, 0.3))
-	for i: int in range(3):
-		_sphere(root, Vector3(0.38 + float(i - 1) * 0.045, 1.66, -0.22), Vector3(0.075, 0.11, 0.06), _mat(Color("6a8f67")))
-
-static func _leaf(parent: Node3D, center: Vector3, size: Vector2, angle: float, material: Material, split: bool) -> void:
-	if not split:
-		var leaf: MeshInstance3D = _sphere(parent, center, Vector3(size.x, 0.018, size.y), material)
-		leaf.rotation = Vector3(-0.30, angle, 0.12)
-		return
-	# A single triangulated, lobed monstera leaf has real silhouette splits.
-	var surface: SurfaceTool = SurfaceTool.new()
-	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var outline: Array[Vector3] = []
-	for i: int in range(28):
-		var a: float = float(i) * TAU / 28.0
-		var cut: float = 0.64 if i % 4 == 1 else 1.0
-		outline.append(Vector3(cos(a) * size.x * cut, 0.025 * cos(a * 2.0), sin(a) * size.y * cut))
-	for i: int in range(outline.size()):
-		surface.set_normal(Vector3.UP)
-		surface.set_uv(Vector2(0.5, 0.5))
-		surface.add_vertex(Vector3(0, 0.035, 0))
-		surface.set_normal(Vector3.UP)
-		surface.set_uv(Vector2.ZERO)
-		surface.add_vertex(outline[(i + 1) % outline.size()])
-		surface.set_normal(Vector3.UP)
-		surface.set_uv(Vector2.ONE)
-		surface.add_vertex(outline[i])
-	var leaf: MeshInstance3D = _mesh(parent, surface.commit(), center, material)
-	leaf.rotation = Vector3(-0.45, angle, 0)
+			for x: float in [-0.33, 0.33]:
+				for dz: float in [-0.25, 0.25]:
+					_bar(root, Vector3(x, 0.72, z + dz), Vector3(x * 1.08, 0.07, z + dz * 1.12), 0.04, frame)
+			_box(root, Vector3(0, 0.78, z), Vector3(0.82, 0.12, 0.67), _mat(CREAM, 2) if variant == "comfort" else blue, 0.045)
+			if variant == "comfort":
+				_rattan(root, Vector3(0, 1.22, z + side * 0.34), Vector2(0.77, 0.65))
+			else:
+				_box(root, Vector3(0, 1.22, z + side * 0.34), Vector3(0.83, 0.74, 0.12), frame, 0.045)
+				_box(root, Vector3(0, 1.24, z + side * 0.265), Vector3(0.77, 0.62, 0.09), blue, 0.045)
+		_plate(root, Vector3(0, 1.35, side * 0.55), 0.19)
+		_box(root, Vector3(0.29, 1.35, side * 0.56), Vector3(0.13, 0.018, 0.25), _mat(CREAM, 2), 0.005)
+	_cylinder(root, Vector3(-0.43, 1.43, 0.38), 0.07, 0.17, _mat(Color("87a8a8"), 0, 0.27))
+	_bottle(root, Vector3(-0.40, 1.35, -0.15), Color("7d8d59"))
 
 static func _plant(root: Node3D, variant: String, tint: Color) -> void:
-	var leaf_dark: Material = _mat(Color("416f50"), 0, 0.73)
-	var leaf_light: Material = _mat(Color("739264"), 0, 0.68)
-	var soil: Material = _mat(Color("514738"))
-	if variant == "basic":
-		var clay: Material = _mat(tint, 0, 0.88)
-		_cylinder(root, Vector3(0, 0.27, 0), 0.22, 0.48, clay, 0.31)
-		_ring(root, Vector3(0, 0.50, 0), 0.29, 0.03, clay)
-		_cylinder(root, Vector3(0, 0.49, 0), 0.27, 0.015, soil)
-		for i: int in range(7):
-			var a: float = float(i) * 2.399
-			var top: Vector3 = Vector3(cos(a) * 0.16, 0.85 + float(i % 3) * 0.17, sin(a) * 0.16)
-			_bar(root, Vector3(0, 0.48, 0), top, 0.012, leaf_dark)
-			_leaf(root, top, Vector2(0.07, 0.20), a, leaf_dark if i % 2 else leaf_light, false)
-	elif variant == "comfort":
-		var ceramic: Material = _mat(tint.lightened(0.12), 0, 0.24)
-		_sphere(root, Vector3(0, 0.32, 0), Vector3(0.31, 0.30, 0.31), ceramic)
-		_cylinder(root, Vector3(0, 0.12, 0), 0.24, 0.16, ceramic)
-		_ring(root, Vector3(0, 0.55, 0), 0.23, 0.035, ceramic)
-		_cylinder(root, Vector3(0, 0.55, 0), 0.22, 0.025, soil)
-		for i: int in range(5):
-			var a: float = float(i) * 2.399
-			var tip: Vector3 = Vector3(cos(a) * 0.13, 0.95 + float(i % 3) * 0.24, sin(a) * 0.13)
-			_bar(root, Vector3(0, 0.54, 0), tip, 0.018, leaf_dark)
-			_leaf(root, tip, Vector2(0.20, 0.24), a, leaf_dark if i % 2 else leaf_light, true)
+	var clay := _mat(Color("b38c70").lerp(tint, 0.35), 0, 0.85)
+	var soil := _mat(Color("514737"))
+	var green := _mat(Color("63885a"))
+	if variant == "comfort":
+		for side: float in [-1, 1]:
+			for y: float in [0.14, 0.30, 0.46]:
+				_box(root, Vector3(side * 0.32, y, 0), Vector3(0.06, 0.13, 0.66), _mat(tint, 1))
+				_box(root, Vector3(0, y, side * 0.32), Vector3(0.66, 0.13, 0.06), _mat(tint, 1))
+		_box(root, Vector3(0, 0.46, 0), Vector3(0.58, 0.06, 0.58), soil)
 	else:
-		var brass: Material = _mat(BRASS, 0, 0.32, 0.70)
-		_box(root, Vector3(0, 0.19, 0), Vector3(0.66, 0.24, 0.48), brass, 0.09)
-		_box(root, Vector3(0, 0.315, 0), Vector3(0.54, 0.015, 0.36), soil)
-		for x: float in [-0.22, 0.22]:
-			_sphere(root, Vector3(x, 0.07, 0), Vector3(0.09, 0.07, 0.16), brass)
-		var bark: Material = _mat(Color("775c42"), 1)
-		_bar(root, Vector3(-0.09, 0.30, 0), Vector3(0.07, 0.78, 0), 0.055, bark)
-		_bar(root, Vector3(0.07, 0.78, 0), Vector3(-0.11, 1.20, 0.05), 0.037, bark)
-		for i: int in range(4):
-			var p: Vector3 = Vector3(-0.15 + float(i % 2) * 0.30, 0.79 + float(i) * 0.14, float(i % 2) * 0.13 - 0.06)
-			_bar(root, Vector3(0, p.y - 0.13, 0), p, 0.025, bark)
-			_sphere(root, p, Vector3(0.22, 0.11, 0.20), leaf_dark if i % 2 else leaf_light)
+		var height: float = 0.46 if variant == "basic" else 0.66
+		_cylinder(root, Vector3(0, height * 0.5, 0), 0.23, height, clay, 0.32)
+		_ring(root, Vector3(0, height, 0), 0.30, 0.025, clay)
+		_cylinder(root, Vector3(0, height - 0.02, 0), 0.275, 0.025, soil)
+		for i: int in range(8):
+			var a: float = i * 2.399
+			_sphere(root, Vector3(cos(a) * 0.20, height, sin(a) * 0.20), Vector3(0.055, 0.025, 0.04), _mat(CREAM.darkened(i % 3 * 0.08)))
+	if variant == "premium":
+		_bar(root, Vector3(0, 0.60, 0), Vector3(0.06, 1.55, 0), 0.055, _mat(tint.darkened(0.22), 1))
+		for y: float in [0.78, 0.92, 1.06, 1.20, 1.34]:
+			_ring(root, Vector3(0.06 * (y - 0.6), y, 0), 0.052, 0.008, _mat(Color("b9a180")))
+		for i: int in range(8):
+			var a: float = i * TAU / 8
+			var start := Vector3(0.03, 1.54, 0)
+			var end := Vector3(cos(a) * 0.32, 1.42 + (i % 2) * 0.22, sin(a) * 0.32)
+			_bar(root, start, end, 0.012, green)
+			for j: int in range(1, 6):
+				var p: Vector3 = start.lerp(end, j / 6.0)
+				for side: float in [-1, 1]:
+					var leaf := _sphere(root, p + Vector3(cos(a + side * 1.2), -0.02, sin(a + side * 1.2)) * 0.045, Vector3(0.025, 0.012, 0.095), green)
+					leaf.rotation = Vector3(0.32, -a + side * 0.65, 0)
+	else:
+		for i: int in range(9 if variant == "comfort" else 6):
+			var a: float = i * 2.399
+			var p := Vector3(cos(a) * 0.18, 0.77 + (i % 3) * 0.12, sin(a) * 0.18)
+			_bar(root, Vector3(p.x * 0.6, 0.45, p.z * 0.6), p, 0.011, green)
+			for side: float in [-1, 1]:
+				var leaf := _sphere(root, p + Vector3(side * 0.045, -0.07, 0), Vector3(0.075, 0.025, 0.13), green)
+				leaf.rotation = Vector3(-0.35, a + side, 0.2)
+			if variant == "comfort":
+				for petal: int in range(5):
+					var angle: float = petal * TAU / 5
+					_sphere(root, p + Vector3(cos(angle) * 0.028, 0, sin(angle) * 0.028), Vector3(0.025, 0.015, 0.025), _mat(CREAM if i % 2 else Color("d19d83")))
 
-static func _rug_material(variant: String, tint: Color) -> ShaderMaterial:
-	var key: String = "rug:" + variant + tint.to_html()
+static func _woven_rug(tint: Color) -> Material:
+	var key: String = "harbor-woven:" + tint.to_html()
 	if _materials.has(key):
-		return _materials[key] as ShaderMaterial
+		return _materials[key]
 	if _rug_shader == null:
 		_rug_shader = Shader.new()
 		_rug_shader.code = """
 shader_type spatial;
-uniform vec4 base_color : source_color;
-uniform int pattern_kind = 0;
-varying vec3 rug_pos;
-void vertex() { rug_pos = VERTEX; }
+uniform vec4 sea : source_color;
+varying vec3 p;
+void vertex() { p = VERTEX; }
 void fragment() {
-	vec2 uv = rug_pos.xz / vec2(2.8,3.2) + 0.5;
-	vec2 p = (uv - 0.5) * 2.0;
-	float edge = max(abs(p.x),abs(p.y));
-	float weave = sin(rug_pos.x * 230.0) * sin(rug_pos.z * 200.0) / (1.0 + length(fwidth(rug_pos.xz)) * 180.0);
-	vec3 color = base_color.rgb * (0.95 + 0.035 * weave);
-	vec3 cream = vec3(0.73,0.64,0.46);
-	vec3 dark = base_color.rgb * 0.46;
-	if (pattern_kind == 0) {
-		float stripe = step(0.83,abs(p.y)) * (1.0-step(0.91,abs(p.y)));
-		color = mix(color, cream, stripe * 0.75);
-	} else if (pattern_kind == 1) {
-		float diamond = abs(p.x) + abs(p.y);
-		float lines = 1.0-smoothstep(0.025,0.05,abs(fract(diamond*2.0)-0.5));
-		color = mix(color,base_color.rgb*0.70,lines*0.38);
-		color = mix(color,cream,step(0.89,edge)*0.55);
-	} else {
-		float border = step(0.70,edge) * (1.0-step(0.91,edge));
-		color = mix(color,dark,border);
-		float diamonds = abs(fract(uv.x*12.0)-0.5) + abs(fract(uv.y*14.0)-0.5);
-		color = mix(color,cream,border * (1.0-step(0.28,diamonds)));
-		float r = length(p * vec2(1.10,1.0));
-		float petal = 0.26 + 0.055*cos(atan(p.y,p.x)*8.0);
-		float medallion = 1.0-smoothstep(petal,petal+0.018,r);
-		color = mix(color,cream,medallion);
-		color = mix(color,dark,(1.0-step(0.11,abs(p.x)+abs(p.y))));
-		float corner = step(0.78,abs(p.x)+abs(p.y))*(1.0-step(0.67,edge));
-		color = mix(color,cream,corner*0.55);
-		float piping = (step(0.68,edge)-step(0.70,edge))+(step(0.91,edge)-step(0.93,edge));
-		color = mix(color,cream,piping);
-	}
+	vec2 q = p.xz;
+	vec2 a = abs(q / vec2(1.37, 1.55));
+	float edge = max(a.x, a.y);
+	float aa = max(fwidth(edge), 0.003);
+	vec3 sand = vec3(0.38, 0.30, 0.20);
+	float twill = sin((q.x + abs(fract(q.y * 8.0) - 0.5) * 0.10) * 150.0);
+	float weave = twill * sin(q.y * 180.0) / (1.0 + length(fwidth(q)) * 180.0);
+	vec3 color = sand * (1.0 + 0.13 * weave + 0.025 * sin(q.y * 23.0));
+	float border = smoothstep(0.73-aa, 0.73+aa, edge) * (1.0-smoothstep(0.92-aa, 0.92+aa, edge));
+	color = mix(color, sea.rgb * (0.84 + weave * 0.10), border);
+	float braid = abs(sin((a.x > a.y ? q.y : q.x) * 46.0 + sin(edge * 105.0)));
+	float piping = (1.0-smoothstep(0.012, 0.012+aa, abs(edge-0.77))) + (1.0-smoothstep(0.012, 0.012+aa, abs(edge-0.88)));
+	color = mix(color, vec3(0.48,0.39,0.27), clamp(piping,0.0,1.0) * braid * 0.75);
+	// Subtle woven waves leave the centre calm, with a crafted coastal motif.
+	float wave = abs(q.y - 0.08 * sin(q.x * 5.0));
+	float motif = (1.0-smoothstep(0.012,0.023+fwidth(wave),abs(wave-0.14))) * (1.0-smoothstep(0.78,0.86,abs(q.x)));
+	color = mix(color, sea.rgb, motif * 0.62);
 	ALBEDO = color;
-	ROUGHNESS = 0.96;
-	SPECULAR = 0.15;
+	ROUGHNESS = 0.98;
+	SPECULAR = 0.12;
 }
 """
-	var material: ShaderMaterial = ShaderMaterial.new()
-	material.shader = _rug_shader
-	material.set_shader_parameter("base_color", tint)
-	material.set_shader_parameter("pattern_kind", 0 if variant == "basic" else (1 if variant == "comfort" else 2))
-	_materials[key] = material
-	return material
+	var mat := ShaderMaterial.new()
+	mat.shader = _rug_shader
+	mat.set_shader_parameter("sea", Color("496777").lerp(tint, 0.08))
+	_materials[key] = mat
+	return mat
 
 static func _rug(root: Node3D, variant: String, tint: Color) -> void:
-	var thickness: float = 0.025 if variant == "basic" else (0.095 if variant == "comfort" else 0.045)
-	var material: Material = _rug_material(variant, tint.lightened(0.20) if variant == "comfort" else tint.darkened(0.12))
-	_box(root, Vector3(0, 0.065 + thickness * 0.5, 0), Vector3(2.8, thickness, 3.12 if variant == "premium" else 3.2), material, 0.06)
-	if variant == "comfort":
-		var trim: Material = _mat(tint.lightened(0.32), 2, 0.98)
-		for side: float in [-1.0, 1.0]:
-			_box(root, Vector3(side * 1.35, 0.13, 0), Vector3(0.08, 0.045, 3.12), trim, 0.02)
-			_box(root, Vector3(0, 0.13, side * 1.55), Vector3(2.68, 0.045, 0.08), trim, 0.02)
+	var sand := _mat(Color("b39c74").lerp(tint, 0.15), 2)
+	var blue := _mat(Color("547c8d").lerp(tint, 0.12), 2)
+	var body: Material = _mat(Color("52798b").lerp(tint, 0.18), 4) if variant == "comfort" else sand
+	if variant == "premium":
+		body = _woven_rug(tint)
+	_box(root, Vector3(0, 0.08, 0), Vector3(2.74, 0.035, 3.10), body, 0.015)
+	var edge: Material = _mat(Color("76664e"), 2) if variant == "basic" else blue
+	for side: float in [-1, 1]:
+		_box(root, Vector3(side * 1.34, 0.095, 0), Vector3(0.10, 0.025, 3.10), edge, 0.008)
+		_box(root, Vector3(0, 0.095, side * 1.50), Vector3(2.70, 0.025, 0.10), edge, 0.008)
+	if variant == "basic":
+		var label := _text(root, "WELCOME", Vector3(0, 0.105, 0), 0.009, Color("5e513d"))
+		label.rotation.x = -PI / 2
+		for i: int in range(22):
+			_box(root, Vector3(-1.22 + i * 0.116, 0.101, 0), Vector3(0.018, 0.008, 2.78), _mat(Color("a28b63"), 2), 0.002)
 	elif variant == "premium":
-		var fringe: Material = _mat(CREAM, 2, 0.97)
-		for side: float in [-1.0, 1.0]:
+		var stitch := _mat(Color("ad9978"), 2, 0.98)
+		# Raised binding and individual stitches sit above the woven surface.
+		for side: float in [-1, 1]:
+			for i: int in range(42):
+				var z: float = -1.44 + i * 2.88 / 41.0
+				_bar(root, Vector3(side * 1.30, 0.113, z - 0.012), Vector3(side * 1.37, 0.113, z + 0.012), 0.0045, stitch)
+			for i: int in range(36):
+				var x: float = -1.26 + i * 2.52 / 35.0
+				_bar(root, Vector3(x - 0.012, 0.113, side * 1.46), Vector3(x + 0.012, 0.113, side * 1.53), 0.0045, stitch)
+		for side: float in [-1, 1]:
 			for i: int in range(22):
-				_bar(root, Vector3(-1.31 + float(i) * 0.125, 0.078, side * 1.50), Vector3(-1.31 + float(i) * 0.125, 0.073, side * 1.60), 0.014, fringe)
+				var x: float = -1.25 + i * 0.119
+				_sphere(root, Vector3(x, 0.086, side * 1.55), Vector3(0.022, 0.012, 0.018), stitch)
+				for strand: float in [-0.012, 0, 0.012]:
+					_bar(root, Vector3(x, 0.084, side * 1.54), Vector3(x + strand, 0.075, side * 1.59), 0.005, stitch)
+
+static func _lantern(parent: Node3D, pos: Vector3, scale: float, tint: Color) -> void:
+	# Explicit points avoid temporary nodes and preserve the static batching pass.
+	var metal := _mat(DARK, 0, 0.48, 0.4)
+	_cylinder(parent, pos, 0.20 * scale, 0.08 * scale, metal)
+	_cylinder(parent, pos + Vector3.UP * 0.42 * scale, 0.22 * scale, 0.13 * scale, _mat(tint, 0, 0.5), 0.09 * scale)
+	_cylinder(parent, pos + Vector3.UP * 0.20 * scale, 0.12 * scale, 0.30 * scale, _glass(Color("e5d5a9")))
+	_sphere(parent, pos + Vector3.UP * 0.19 * scale, Vector3(0.067, 0.13, 0.067) * scale, _glow(Color("e9bb71")))
+	for i: int in range(6):
+		var a: float = i * TAU / 6
+		var p := Vector3(cos(a) * 0.16, 0, sin(a) * 0.16) * scale
+		_bar(parent, pos + p, pos + p + Vector3.UP * 0.40 * scale, 0.015 * scale, metal)
+	var handle := _ring(parent, pos + Vector3.UP * 0.57 * scale, 0.12 * scale, 0.016 * scale, metal)
+	handle.rotation.x = PI / 2
 
 static func _lamp(root: Node3D, variant: String, tint: Color) -> void:
-	var metal: Material = _mat(BRASS, 0, 0.30, 0.78)
-	var dark_metal: Material = _mat(DARK, 0, 0.35, 0.65)
-	_cylinder(root, Vector3(0, 0.10, 0), 0.30, 0.11, metal if variant != "basic" else dark_metal)
-	_ring(root, Vector3(0, 0.13, 0), 0.27, 0.025, metal if variant != "basic" else dark_metal)
+	var wood := _mat(tint, 1)
+	if variant == "premium":
+		_mast_lamp(root, tint)
+		return
 	if variant == "basic":
-		_cylinder(root, Vector3(0, 1.02, 0), 0.035, 1.84, _mat(tint.darkened(0.20), 1))
-		_cylinder(root, Vector3(0, 2.02, 0), 0.37, 0.48, _mat(tint.lightened(0.20), 2, 0.95), 0.24)
-		_ring(root, Vector3(0, 1.78, 0), 0.365, 0.02, _mat(CREAM))
-		_ring(root, Vector3(0, 2.26, 0), 0.238, 0.016, _mat(CREAM))
-	elif variant == "comfort":
-		# A sculpted swan-neck arc fits inside the same 0.8 m footprint.
-		var previous: Vector3 = Vector3(-0.18, 0.14, 0)
-		for i: int in range(1, 13):
-			var f: float = float(i) / 12.0
-			var current: Vector3 = Vector3(-0.18 + 0.36 * pow(f, 3.0), 0.14 + 2.18 * sin(f * PI * 0.53), 0)
-			_bar(root, previous, current, 0.028, metal)
-			previous = current
-		var shade: MeshInstance3D = _sphere(root, Vector3(0.15, 2.14, 0), Vector3(0.23, 0.13, 0.23), _mat(tint, 0, 0.30, 0.20))
-		shade.rotation.z = -0.18
-		_ring(root, Vector3(0.15, 2.08, 0), 0.21, 0.016, metal)
+		_cylinder(root, Vector3(0, 0.11, 0), 0.28, 0.22, wood)
+		_lantern(root, Vector3(0, 0.26, 0), 1.3, tint)
 	else:
-		_cylinder(root, Vector3(0, 1.05, 0), 0.035, 1.90, dark_metal)
-		for y: float in [0.38, 1.66, 1.82]:
-			_sphere(root, Vector3(0, y, 0), Vector3(0.08, 0.095, 0.08), metal)
-		# Colored glass wedge panels and dark seams form a Tiffany-style shade.
-		for i: int in range(12):
-			var a: float = float(i) * TAU / 12.0
-			var b: float = float(i + 1) * TAU / 12.0
-			var surface: SurfaceTool = SurfaceTool.new()
-			surface.begin(Mesh.PRIMITIVE_TRIANGLES)
-			var points: Array[Vector3] = [Vector3(cos(a)*0.35,1.96,sin(a)*0.35),Vector3(cos(b)*0.35,1.96,sin(b)*0.35),Vector3(cos(b)*0.14,2.28,sin(b)*0.14),Vector3(cos(a)*0.14,2.28,sin(a)*0.14)]
-			for index: int in [0, 2, 1, 0, 3, 2]:
-				surface.set_uv(Vector2.ZERO)
-				surface.add_vertex(points[index])
-			surface.generate_normals()
-			var color: Color = [tint, Color("afae76"), Color("69978c")][i % 3]
-			_mesh(root, surface.commit(), Vector3.ZERO, _glow(color))
-			_bar(root, points[0], points[3], 0.013, dark_metal)
-		_ring(root, Vector3(0, 1.96, 0), 0.35, 0.018, dark_metal)
-		_ring(root, Vector3(0, 2.28, 0), 0.14, 0.014, dark_metal)
-	_sphere(root, Vector3(0.10 if variant == "comfort" else 0.0, 1.95, 0), Vector3.ONE * 0.08, _glow(Color("e8c88a")))
+		_cylinder(root, Vector3(0, 0.09, 0), 0.33, 0.18, _mat(Color("89918a"), 0))
+		_box(root, Vector3(0, 1.12, 0), Vector3(0.12, 2.15, 0.12), wood)
+		_rope(root, Vector3(0, 0.22, 0), 0.085, 6)
+		_box(root, Vector3(0, 2.04, 0), Vector3(0.67, 0.09, 0.10), wood)
+		for side: float in [-1, 1]:
+			if variant == "comfort" and side < 0:
+				continue
+			var x: float = side * 0.23
+			_bar(root, Vector3(x, 2.04, 0), Vector3(x, 1.89, 0), 0.014, _mat(DARK, 0, 0.5, 0.4))
+			_lantern(root, Vector3(x, 1.40, 0), 0.7, tint)
+			_bar(root, Vector3(0, 1.65, 0), Vector3(side * 0.27, 2, 0), 0.022, wood)
+
+static func _mast_lamp(root: Node3D, tint: Color) -> void:
+	var timber := _mat(tint.darkened(0.17), 1, 0.88)
+	var iron := _mat(Color("2f4851"), 0, 0.76, 0.28)
+	var bronze := _mat(Color("8e7856"), 0, 0.72, 0.32)
+	_cylinder(root, Vector3(0, 0.055, 0), 0.31, 0.11, iron)
+	_cylinder(root, Vector3(0, 0.15, 0), 0.22, 0.10, bronze, 0.16)
+	_cylinder(root, Vector3(0, 0.32, 0), 0.13, 0.30, iron, 0.09)
+	_cylinder(root, Vector3(0, 1.30, 0), 0.080, 1.85, timber, 0.055)
+	for y: float in [0.48, 0.61, 1.56, 1.80, 2.14]:
+		_ring(root, Vector3(0, y, 0), 0.083 if y < 1 else 0.067, 0.014, bronze)
+	_sphere(root, Vector3(0, 2.24, 0), Vector3(0.072, 0.095, 0.072), bronze)
+	_cylinder(root, Vector3(0, 2.16, 0), 0.089, 0.05, iron)
+	for i: int in range(6):
+		var a: float = i * TAU / 6
+		_cylinder(root, Vector3(cos(a) * 0.245, 0.118, sin(a) * 0.245), 0.017, 0.015, bronze)
+	_rope(root, Vector3(0, 0.67, 0), 0.087, 5)
+	var knot := _ring(root, Vector3(0.04, 0.73, 0.095), 0.035, 0.013, _mat(Color("948263"), 2))
+	knot.rotation.x = PI / 2
+	_bar(root, Vector3(0.03, 0.73, 0.10), Vector3(0.08, 0.55, 0.10), 0.012, _mat(Color("948263"), 2))
+	for side: float in [-1, 1]:
+		# Forged arch, hanging chain and a curved supporting brace.
+		var previous := Vector3(0, 1.92, 0)
+		for i: int in range(1, 13):
+			var t: float = i / 12.0
+			var point := Vector3(side * 0.23 * t, 1.92 + sin(t * PI * 0.75) * 0.24, 0)
+			_bar(root, previous, point, 0.021, iron)
+			previous = point
+		for i: int in range(3):
+			var link := _ring(root, Vector3(side * 0.23, 2.06 - i * 0.045, 0), 0.027, 0.007, bronze)
+			link.rotation = Vector3(PI / 2, i % 2 * PI / 2, 0)
+		previous = Vector3(0, 1.68, 0)
+		for i: int in range(1, 9):
+			var t: float = i / 8.0
+			var point := Vector3(side * 0.17 * sin(t * PI / 2), 1.68 + t * 0.34, 0)
+			_bar(root, previous, point, 0.012, bronze)
+			previous = point
+		var base := Vector3(side * 0.23, 1.38, 0)
+		_cylinder(root, base, 0.135, 0.055, iron)
+		_cylinder(root, base + Vector3.UP * 0.035, 0.113, 0.025, bronze)
+		_cylinder(root, base + Vector3.UP * 0.24, 0.088, 0.36, _glass(Color("91aeb2")))
+		_cylinder(root, base + Vector3.UP * 0.13, 0.045, 0.09, bronze)
+		_sphere(root, base + Vector3.UP * 0.235, Vector3(0.032, 0.085, 0.032), _glow(Color("b58e57")))
+		for y: float in [0.08, 0.38]:
+			_ring(root, base + Vector3.UP * y, 0.106, 0.012, bronze)
+		for i: int in range(8):
+			var a: float = i * TAU / 8
+			var offset := Vector3(cos(a) * 0.104, 0, sin(a) * 0.104)
+			_bar(root, base + offset + Vector3.UP * 0.05, base + offset + Vector3.UP * 0.40, 0.008, iron)
+			_sphere(root, base + offset + Vector3.UP * 0.075, Vector3.ONE * 0.012, bronze)
+		_cylinder(root, base + Vector3.UP * 0.425, 0.14, 0.095, iron, 0.065)
+		_ring(root, base + Vector3.UP * 0.38, 0.133, 0.010, bronze)
+		_cylinder(root, base + Vector3.UP * 0.495, 0.051, 0.055, bronze)
+		for i: int in range(8):
+			var a: float = i * TAU / 8
+			_box(root, base + Vector3(cos(a) * 0.047, 0.497, sin(a) * 0.047), Vector3(0.016, 0.029, 0.014), iron, 0.003)
+		var handle := _ring(root, base + Vector3.UP * 0.565, 0.042, 0.009, iron)
+		handle.rotation.x = PI / 2
+
+static func _bench(root: Node3D, variant: String, tint: Color) -> void:
+	var wood := _mat(tint, 1)
+	var pale := _mat(Color("819ba4").lerp(tint, 0.08), 1, 0.90)
+	var blue := _mat(Color("52798b").lerp(tint, 0.18), 4)
+	if variant == "premium":
+		for x: float in [-0.97, 0.97]:
+			for z: float in [-0.10, 0.37]:
+				_bar(root, Vector3(x, 0.07, z), Vector3(x, 0.62, z), 0.043, wood)
+			_box(root, Vector3(x, 0.83, 0.13), Vector3(0.10, 0.10, 0.62), wood)
+		_box(root, Vector3(0, 0.56, 0.16), Vector3(2.02, 0.12, 0.60), wood)
+		_rattan(root, Vector3(0, 0.94, 0.42), Vector2(1.96, 0.70))
+		for x: float in [-0.49, 0.49]:
+			_box(root, Vector3(x, 0.67, 0.16), Vector3(0.93, 0.17, 0.52), _mat(CREAM, 2), 0.06)
+			_box(root, Vector3(x, 0.95, 0.32), Vector3(0.79, 0.43, 0.12), blue, 0.05)
+		_box(root, Vector3(0, 0.38, -0.34), Vector3(0.81, 0.07, 0.29), wood)
+		for x: float in [-0.30, 0.30]:
+			_box(root, Vector3(x, 0.20, -0.34), Vector3(0.055, 0.36, 0.20), wood)
+		_cylinder(root, Vector3(0.15, 0.46, -0.34), 0.045, 0.10, _mat(CREAM, 0, 0.3))
+		return
+	for x: float in [-0.86, 0.86]:
+		var leg := _box(root, Vector3(x, 0.29, 0), Vector3(0.18, 0.57, 0.65), wood if variant == "basic" else pale)
+		leg.rotation.z = x * 0.09
+	for z: float in [-0.27, 0, 0.27]:
+		_box(root, Vector3(0, 0.61, z), Vector3(2.20, 0.11, 0.25), wood if variant == "basic" else pale)
+	if variant == "basic":
+		_bar(root, Vector3(-0.9, 0.23, 0), Vector3(0.9, 0.23, 0), 0.06, wood)
+	else:
+		for x: float in [-0.97, 0.97]:
+			_bar(root, Vector3(x, 0.58, 0.36), Vector3(x, 1.25, 0.39), 0.045, pale)
+		for y: float in [0.95, 1.17]:
+			_box(root, Vector3(0, y, 0.39), Vector3(2.08, 0.15, 0.07), pale)
+		_box(root, Vector3(0, 0.72, 0), Vector3(2.06, 0.13, 0.68), blue, 0.05)
+		for x: float in [-0.78, 0.78]:
+			_box(root, Vector3(x, 0.97, 0.23), Vector3(0.35, 0.36, 0.14), _mat(CREAM, 2), 0.06)
+
+static func _quad(parent: Node3D, points: Array[Vector3], material: Material) -> void:
+	var surface := SurfaceTool.new()
+	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for index: int in [0, 1, 2, 0, 2, 3, 2, 1, 0, 3, 2, 0]:
+		surface.add_vertex(points[index])
+	surface.generate_normals()
+	_mesh(parent, surface.commit(), Vector3.ZERO, material)
+
+static func _parasol(root: Node3D, variant: String, tint: Color) -> void:
+	var wood := _mat(tint, 1)
+	var cloth := _mat(CREAM, 2)
+	if variant == "premium":
+		for x: float in [-1.20, 1.20]:
+			for z: float in [-1.20, 1.20]:
+				_box(root, Vector3(x, 1.25, z), Vector3(0.12, 2.5, 0.12), wood)
+				_box(root, Vector3(x, 0.08, z), Vector3(0.22, 0.16, 0.22), _mat(DARK))
+		for side: float in [-1, 1]:
+			_box(root, Vector3(side * 1.20, 2.48, 0), Vector3(0.13, 0.16, 2.55), wood)
+			_box(root, Vector3(0, 2.48, side * 1.20), Vector3(2.55, 0.16, 0.13), wood)
+		for i: int in range(8):
+			var x: float = -1.28 + i * 0.32
+			_quad(root, [Vector3(x, 2.60, -1.28), Vector3(x + 0.32, 2.60, -1.28), Vector3(x + 0.32, 2.55, 1.28), Vector3(x, 2.55, 1.28)], cloth if i % 2 else _mat(Color("8eaaa7"), 2))
+		# Partly lowered back blind and its rolled top; all stay inside the footprint.
+		_box(root, Vector3(0, 2.22, -1.23), Vector3(2.20, 0.44, 0.025), cloth, 0.008)
+		var roll := _cylinder(root, Vector3(0, 2.47, -1.23), 0.065, 2.24, cloth)
+		roll.rotation.z = PI / 2
+		for i: int in range(7):
+			var x: float = -1.05 + i * 0.35
+			var y: float = 2.33 - 0.13 * (1.0 - absf(x) / 1.05)
+			if i > 0:
+				var px: float = x - 0.35
+				_bar(root, Vector3(px, 2.33 - 0.13 * (1.0 - absf(px) / 1.05), 1.20), Vector3(x, y, 1.20), 0.012, _mat(DARK))
+			_sphere(root, Vector3(x, y - 0.055, 1.20), Vector3(0.043, 0.06, 0.043), _glow(Color("e8c282")))
+		return
+	_cylinder(root, Vector3(0, 0.09, 0), 0.34, 0.18, _mat(Color("89918a")))
+	_cylinder(root, Vector3(0, 1.43, 0), 0.04, 2.78, wood)
+	_rope(root, Vector3(0, 0.22, 0), 0.054, 4)
+	for i: int in range(12):
+		var a: float = i * TAU / 12
+		var b: float = (i + 1) * TAU / 12
+		var edge_a := Vector3(cos(a) * 1.31, 2.25, sin(a) * 1.31)
+		var edge_b := Vector3(cos(b) * 1.31, 2.25, sin(b) * 1.31)
+		var material: Material = cloth if variant == "basic" or i % 2 else _mat(Color("52798b").lerp(tint, 0.15), 2)
+		_quad(root, [Vector3(0, 2.79, 0), edge_a, edge_b, Vector3(0, 2.79, 0)], material)
+		_quad(root, [edge_a, edge_a - Vector3.UP * 0.13, edge_b - Vector3.UP * 0.13, edge_b], material)
+		_bar(root, Vector3(0, 2.76, 0), edge_a - Vector3.UP * 0.02, 0.012, wood)
+	_sphere(root, Vector3(0, 2.83, 0), Vector3(0.06, 0.08, 0.06), wood)
+
+static func _fish_on_ice(parent: Node3D, pos: Vector3, scale: float = 1.0, angle: float = 0.0) -> void:
+	var fish := Node3D.new()
+	fish.position = pos
+	fish.rotation.y = angle
+	parent.add_child(fish)
+	var silver := _mat(Color("9cafac"), 0, 0.38, 0.12)
+	_sphere(fish, Vector3.ZERO, Vector3(0.25, 0.07, 0.10) * scale, silver)
+	_sphere(fish, Vector3(-0.01, 0.04, 0), Vector3(0.20, 0.025, 0.055) * scale, _mat(Color("537681")))
+	_quad(fish, [Vector3(-0.20, 0.02, 0) * scale, Vector3(-0.33, 0.025, -0.11) * scale, Vector3(-0.29, 0.025, 0) * scale, Vector3(-0.33, 0.025, 0.11) * scale], silver)
+	for side: float in [-1, 1]:
+		_sphere(fish, Vector3(0.17, 0.045, side * 0.065) * scale, Vector3.ONE * 0.014 * scale, _mat(DARK))
+	# Bake local fish transform into its meshes so the furniture can batch them too.
+	for node: Node in fish.get_children():
+		var part := node as MeshInstance3D
+		var transform: Transform3D = fish.transform * part.transform
+		fish.remove_child(part)
+		parent.add_child(part)
+		part.transform = transform
+	parent.remove_child(fish)
+	fish.free()
+
+static func _ice(parent: Node3D, pos: Vector3, size: Vector2) -> void:
+	var tray := _mat(Color("4f686b"), 0, 0.69, 0.12)
+	_box(parent, pos - Vector3.UP * 0.015, Vector3(size.x, 0.07, size.y), tray, 0.02)
+	_box(parent, pos + Vector3.UP * 0.018, Vector3(size.x - 0.055, 0.028, size.y - 0.055), _mat(Color("688a8c"), 0, 0.73), 0.012)
+	for i: int in range(34):
+		var p := pos + Vector3(sin(i * 7.3) * size.x * 0.40, 0.042 + (i % 3) * 0.003, cos(i * 4.7) * size.y * 0.37)
+		var color: Color = [Color("7d999b"), Color("8ba7a6"), Color("729396")][i % 3]
+		var chip := _box(parent, p, Vector3(0.055 + (i % 3) * 0.01, 0.028, 0.048), _mat(color, 0, 0.64), 0.008)
+		chip.rotation = Vector3(0.10 * sin(i), i * 1.7, 0.12 * cos(i))
 
 static func _shelf(root: Node3D, variant: String, tint: Color) -> void:
-	var wood: Material = _mat(tint, 1, 0.64)
-	var dark: Material = _mat(tint.darkened(0.20), 1, 0.62)
-	var brass: Material = _mat(BRASS, 0, 0.35, 0.65)
-	var height: float = 1.85 if variant == "basic" else (2.12 if variant == "comfort" else 2.34)
+	var wood := _mat(tint, 1)
+	var pale := _mat(Color("819ba4").lerp(tint, 0.10), 1, 0.90)
 	if variant == "premium":
-		wood = _mat(Color("705440").lerp(tint, 0.25), 1, 0.47)
-		dark = _mat(Color("4b4034"), 1, 0.54)
-	for x: float in [-0.82, 0.82]:
-		_box(root, Vector3(x, height * 0.5 + 0.08, 0), Vector3(0.12, height, 0.74), wood, 0.035)
-	if variant != "basic":
-		_box(root, Vector3(0, height * 0.5 + 0.08, -0.34), Vector3(1.60, height, 0.07), dark)
-	for i: int in range(3 if variant == "basic" else 4):
-		var y: float = 0.18 + float(i) * (height - 0.12) / (2.0 if variant == "basic" else 3.0)
-		_box(root, Vector3(0, y, 0), Vector3(1.78, 0.10, 0.78), wood, 0.025)
+		pale = _mat(Color("748d98").lerp(tint, 0.06), 1, 0.94)
+	if variant == "basic":
+		for x: float in [-0.82, 0.82]:
+			for z: float in [-0.32, 0.32]:
+				_box(root, Vector3(x, 0.95, z), Vector3(0.07, 1.88, 0.07), wood)
+		for y: float in [0.16, 0.88, 1.60]:
+			_box(root, Vector3(0, y, 0), Vector3(1.76, 0.08, 0.76), wood)
+			for i: int in range(4):
+				_plate(root, Vector3(-0.39, y + 0.055 + i * 0.025, 0.03), 0.20)
+			for x: float in [0.20, 0.44, 0.66]:
+				_cylinder(root, Vector3(x, y + 0.13, 0.04), 0.075, 0.18, _mat(CREAM, 0, 0.3))
+				var handle := _ring(root, Vector3(x + 0.08, y + 0.13, 0.04), 0.041, 0.012, _mat(CREAM, 0, 0.3))
+				handle.rotation.x = PI / 2
+		_bar(root, Vector3(-0.78, 0.2, -0.34), Vector3(0.78, 1.82, -0.34), 0.026, wood)
+		return
+	_box(root, Vector3(0, 0.57, 0), Vector3(1.72, 1.04, 0.70), pale)
+	for x: float in [-0.72, 0.72]:
+		for z: float in [-0.26, 0.26]:
+			_box(root, Vector3(x, 0.10, z), Vector3(0.10, 0.20, 0.10), wood)
+	_box(root, Vector3(0, 1.12, 0), Vector3(1.78, 0.10, 0.78), wood)
+	for side: float in [-1, 1]:
+		_box(root, Vector3(side * 0.41, 0.58, 0.359), Vector3(0.74, 0.82, 0.035), _mat(DARK))
+		for i: int in range(8):
+			var slat := _box(root, Vector3(side * 0.41, 0.24 + i * 0.095, 0.372), Vector3(0.71, 0.075, 0.035), pale, 0.006)
+			slat.rotation.x = -0.20
+		_sphere(root, Vector3(side * 0.09, 0.60, 0.385), Vector3(0.02, 0.025, 0.01), _mat(DARK))
 	if variant == "comfort":
-		var glass: Material = _glass(Color("a3bcb2"))
-		for side: float in [-1.0, 1.0]:
-			_box(root, Vector3(side * 0.41, 1.20, 0.365), Vector3(0.70, 1.65, 0.02), glass, 0.002)
-			for x: float in [-0.36, 0.36]:
-				_box(root, Vector3(side * 0.41 + x, 1.20, 0.38), Vector3(0.045, 1.74, 0.04), wood)
-			for y: float in [0.33, 2.07]:
-				_box(root, Vector3(side * 0.41, y, 0.38), Vector3(0.74, 0.045, 0.04), wood)
-			_sphere(root, Vector3(side * 0.09, 1.18, 0.37), Vector3(0.035, 0.035, 0.025), brass)
-	elif variant == "premium":
-		_box(root, Vector3(0, height + 0.17, 0), Vector3(1.8, 0.13, 0.8), wood, 0.04)
-		for side: float in [-1.0, 1.0]:
-			_box(root, Vector3(side * 0.40, 0.45, 0.35), Vector3(0.72, 0.48, 0.07), wood, 0.03)
-			_box(root, Vector3(side * 0.40, 0.45, 0.39), Vector3(0.54, 0.30, 0.012), dark)
-			_sphere(root, Vector3(side * 0.13, 0.47, 0.37), Vector3(0.035, 0.035, 0.025), brass)
-		_box(root, Vector3(0, height - 0.08, -0.16), Vector3(1.45, 0.025, 0.10), _glow(Color("d9bd83")))
-		for x: float in [-0.77, 0.77]:
-			_cylinder(root, Vector3(x, 0.08, 0), 0.055, 0.15, brass)
-	# Curated books, ceramics and a shell give each tier a distinct display.
-	for i: int in range(4):
-		_box(root, Vector3(-0.55 + float(i) * 0.16, 0.48, -0.02), Vector3(0.12, 0.48 + float(i % 2) * 0.08, 0.37), _mat([Color("879c88"), Color("c1a377"), Color("aa7866")][i % 3]), 0.01)
-	var vase_y: float = 1.20 if variant == "basic" else 1.18
-	_cylinder(root, Vector3(0.38, vase_y, 0), 0.14, 0.38, _mat(CREAM, 0, 0.30), 0.09)
-	_sphere(root, Vector3(-0.36, vase_y, 0), Vector3(0.19, 0.15, 0.14), _mat(tint.lightened(0.28), 0, 0.30))
-	if variant != "basic":
-		_cylinder(root, Vector3(0.40, 1.79, 0), 0.18, 0.08, _mat(CREAM, 0, 0.34))
-		var shell: MeshInstance3D = _sphere(root, Vector3(-0.30, 1.85, 0), Vector3(0.24, 0.20, 0.065), _mat(Color("c5aa8d"), 0, 0.56))
-		shell.rotation.x = -0.25
+		for i: int in range(4):
+			_bottle(root, Vector3(-0.65 + i * 0.17, 1.18, -0.08), Color("788d61") if i % 2 else Color("b48159"))
+		for i: int in range(4):
+			_plate(root, Vector3(0.44, 1.18 + i * 0.026, 0), 0.21)
+		_box(root, Vector3(0.18, 1.18, 0.15), Vector3(0.14, 0.025, 0.30), _mat(CREAM, 2))
+	else:
+		_ice(root, Vector3(0, 1.21, 0), Vector2(1.61, 0.61))
+		for i: int in range(3):
+			_fish_on_ice(root, Vector3(-0.50 + i * 0.49, 1.29, 0), 0.74, -0.5)
+		for x: float in [-0.61, 0.58]:
+			_cylinder(root, Vector3(x, 1.30, 0.20), 0.06, 0.015, _mat(Color("d7bd63")))
+		for x: float in [-0.82, 0.82]:
+			_box(root, Vector3(x, 1.44, 0), Vector3(0.025, 0.49, 0.70), _glass(Color("a1c3c0")), 0.004)
+			_bar(root, Vector3(x, 1.20, -0.34), Vector3(x, 1.67, -0.34), 0.015, _mat(DARK))
+		_box(root, Vector3(0, 1.68, 0), Vector3(1.69, 0.02, 0.72), _glass(Color("a1c3c0")), 0.004)
+		_box(root, Vector3(0, 1.44, -0.35), Vector3(1.66, 0.48, 0.02), _glass(Color("a1c3c0")), 0.004)
+		_box(root, Vector3(0, 1.85, -0.25), Vector3(0.83, 0.30, 0.045), wood)
+		_box(root, Vector3(0, 1.85, -0.219), Vector3(0.75, 0.23, 0.015), _mat(DARK))
+		_text(root, "今日渔获  42G", Vector3(0, 1.85, -0.206), 0.0026)
 
-
-
-
+static func _coastal(root: Node3D, variant: String, tint: Color) -> void:
+	var wood := _mat(tint, 1)
+	if variant == "basic":
+		for x: float in [-0.43, 0.43]:
+			_bar(root, Vector3(x, 0.06, -0.35), Vector3(x, 1.42, 0), 0.035, wood)
+			_bar(root, Vector3(x, 0.06, 0.35), Vector3(x, 1.42, 0), 0.035, wood)
+		_box(root, Vector3(0, 0.92, 0.09), Vector3(0.98, 1.03, 0.07), wood)
+		_box(root, Vector3(0, 0.92, 0.134), Vector3(0.85, 0.89, 0.025), _mat(Color("294743")))
+		_text(root, "今日鲜鱼\n———\n海盐鲜鱼\n香煎渔获", Vector3(0, 1.02, 0.154), 0.0037)
+		# Chalk fish silhouette under the menu.
+		_sphere(root, Vector3(0, 0.63, 0.155), Vector3(0.17, 0.055, 0.004), _mat(CREAM))
+		_quad(root, [Vector3(-0.14, 0.63, 0.16), Vector3(-0.25, 0.70, 0.16), Vector3(-0.23, 0.63, 0.16), Vector3(-0.25, 0.56, 0.16)], _mat(CREAM))
+		_box(root, Vector3(0, 0.42, 0.19), Vector3(0.95, 0.05, 0.17), wood)
+	elif variant == "comfort":
+		_box(root, Vector3(-0.10, 0.08, 0), Vector3(0.85, 0.12, 0.85), wood)
+		for side: float in [-1, 1]:
+			for y: float in [0.18, 0.34, 0.50]:
+				_box(root, Vector3(-0.10 + side * 0.41, y, 0), Vector3(0.07, 0.13, 0.86), wood)
+				_box(root, Vector3(-0.10, y, side * 0.41), Vector3(0.86, 0.13, 0.07), wood)
+		_ice(root, Vector3(-0.10, 0.48, 0), Vector2(0.68, 0.67))
+		_fish_on_ice(root, Vector3(-0.17, 0.57, -0.07), 0.85, 0.4)
+		for i: int in range(2):
+			_sphere(root, Vector3(0.31, 0.65 + i * 0.19, 0.15), Vector3(0.12, 0.16, 0.12), _mat(Color("b87958") if i == 0 else Color("689298")))
+		_rope(root, Vector3(0.31, 0.04, -0.34), 0.18, 4)
+	else:
+		# A compact dinghy display: tapered bow, plank hull, gunwale and trestles.
+		for z: float in [-0.30, 0.30]:
+			_box(root, Vector3(0, 0.30, z), Vector3(0.68, 0.10, 0.12), wood)
+			for x: float in [-0.25, 0.25]:
+				_box(root, Vector3(x, 0.17, z), Vector3(0.085, 0.34, 0.12), wood)
+		var sections: Array[Vector2] = [Vector2(-0.54, 0.04), Vector2(-0.32, 0.38), Vector2(0.27, 0.46), Vector2(0.51, 0.31)]
+		for side: float in [-1, 1]:
+			for i: int in range(sections.size() - 1):
+				var a: Vector2 = sections[i]
+				var b: Vector2 = sections[i + 1]
+				for plank: int in range(3):
+					var f: float = plank / 3.0
+					var g: float = (plank + 1) / 3.0
+					_quad(root, [Vector3(side * a.y * (0.65 + f * 0.35), 0.36 + f * 0.30, a.x), Vector3(side * b.y * (0.65 + f * 0.35), 0.36 + f * 0.30, b.x), Vector3(side * b.y * (0.65 + g * 0.35), 0.36 + g * 0.30, b.x), Vector3(side * a.y * (0.65 + g * 0.35), 0.36 + g * 0.30, a.x)], _mat(tint.lightened(plank * 0.06), 1))
+				_bar(root, Vector3(side * a.y, 0.67, a.x), Vector3(side * b.y, 0.67, b.x), 0.026, _mat(Color("9c937b"), 1, 0.90))
+		_box(root, Vector3(0, 0.52, 0.50), Vector3(0.60, 0.30, 0.035), wood)
+		_ice(root, Vector3(0, 0.55, 0.04), Vector2(0.57, 0.69))
+		_fish_on_ice(root, Vector3(0, 0.63, 0), 0.9, 1.4)
+		for z: float in [-0.23, 0.24]:
+			_cylinder(root, Vector3(0.18, 0.63, z), 0.06, 0.015, _mat(Color("d7bd63")))
+		_rope(root, Vector3(0, 0.69, -0.33), 0.09, 2)

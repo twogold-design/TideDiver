@@ -80,6 +80,11 @@ var layout_zoom: float = 31.0
 var layout_panel_visible: bool = true
 var layout_pan: Vector3 = Vector3.ZERO
 var layout_panning: bool = false
+var layout_orbiting: bool = false
+const LAYOUT_DEFAULT_YAW: float = 0.5317240673
+const LAYOUT_DEFAULT_PITCH: float = 0.8829062407
+var layout_camera_yaw: float = LAYOUT_DEFAULT_YAW
+var layout_camera_pitch: float = LAYOUT_DEFAULT_PITCH
 const LAYOUT_AREA = Rect2(332,96,1100,708)
 
 func _ready() -> void:
@@ -457,6 +462,9 @@ func confirm_new_game() -> void:
 	layout_panel_visible = true
 	layout_pan = Vector3.ZERO
 	layout_panning = false
+	layout_orbiting = false
+	layout_camera_yaw = LAYOUT_DEFAULT_YAW
+	layout_camera_pitch = LAYOUT_DEFAULT_PITCH
 	for effect in effects:
 		if is_instance_valid(effect.node):
 			effect.node.queue_free()
@@ -558,11 +566,14 @@ func toggle_pause() -> void:
 	hud.rebuild()
 
 func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+		layout_panning = false
+		layout_orbiting = false
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT and state in ["dive","service"] and not capture_mode and not smoke_mode:
 		toggle_pause()
 
 func _input(event: InputEvent) -> void:
-	if not layout_mode or not layout_panning:
+	if not layout_mode or not (layout_panning or layout_orbiting):
 		return
 	if event is InputEventMouseMotion or (event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_MIDDLE and not event.pressed):
 		_layout_input(event)
@@ -1283,6 +1294,9 @@ func enter_layout() -> void:
 	layout_pan = Vector3.ZERO
 	layout_panel_visible = true
 	layout_panning = false
+	layout_orbiting = false
+	layout_camera_yaw = LAYOUT_DEFAULT_YAW
+	layout_camera_pitch = LAYOUT_DEFAULT_PITCH
 	_rebuild_restaurant()
 	hud.rebuild()
 
@@ -1564,21 +1578,37 @@ func reset_layout_camera() -> void:
 	layout_zoom = 31
 	layout_pan = Vector3.ZERO
 	layout_panning = false
+	layout_orbiting = false
+	layout_camera_yaw = LAYOUT_DEFAULT_YAW
+	layout_camera_pitch = LAYOUT_DEFAULT_PITCH
+	if layout_mode:
+		update_layout_camera()
 
 func update_layout_camera() -> void:
-	var right := Vector3(17,0,-10).normalized()
+	var right := Vector3(cos(layout_camera_yaw),0,-sin(layout_camera_yaw))
 	var focus := restaurant_node.position + Vector3(0,0,3) + layout_pan
 	if layout_panel_visible:
 		focus -= right * layout_zoom * 0.112
-	camera.position = focus + Vector3(10,24,17)
+	var offset := Vector3(sin(layout_camera_yaw)*cos(layout_camera_pitch),sin(layout_camera_pitch),cos(layout_camera_yaw)*cos(layout_camera_pitch)) * 31.064449134
+	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
+	camera.size = layout_zoom
+	camera.position = focus + offset
 	camera.look_at(focus)
 
 func _layout_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_MIDDLE:
 		if not event.pressed:
 			layout_panning = false
+			layout_orbiting = false
 		elif layout_view_rect().has_point(event.position):
-			layout_panning = true
+			layout_orbiting = event.alt_pressed
+			layout_panning = not layout_orbiting
+		return
+	if event is InputEventMouseMotion and layout_orbiting:
+		layout_camera_yaw = wrapf(layout_camera_yaw-event.relative.x*0.006,-PI,PI)
+		layout_camera_pitch = clampf(layout_camera_pitch+event.relative.y*0.006,deg_to_rad(20),deg_to_rad(85))
+		update_layout_camera()
+		_update_layout_preview()
 		return
 	if event is InputEventMouseMotion and layout_panning:
 		# Keep the grabbed floor point under the cursor, without furniture grid snapping.
@@ -1609,8 +1639,10 @@ func _layout_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.pressed and layout_view_rect().has_point(event.position):
 		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
 			layout_zoom = maxf(12,layout_zoom-1.5)
+			update_layout_camera()
 		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			layout_zoom = minf(52,layout_zoom+1.5)
+			update_layout_camera()
 		elif event.button_index == MOUSE_BUTTON_RIGHT:
 			cancel_layout_placement()
 		elif event.button_index == MOUSE_BUTTON_LEFT:

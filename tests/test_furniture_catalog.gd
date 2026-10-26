@@ -2,16 +2,17 @@ extends SceneTree
 ## Variant pricing, legacy migration and expanded layout; fixtures stay in tests/temp.
 const P = preload("res://scripts/progression.gd")
 const Rules = preload("res://scripts/layout_rules.gd")
+const Art = preload("res://scripts/furniture_art.gd")
 const TEST_PATH := "res://tests/temp/furniture_catalog_v4.json"
 const EXPECTED := {
-	"table":[["原木小圆桌",70],["橡木软座桌",160],["大理石餐桌",320]],
-	"plant":[["陶盆绿植",25],["釉陶龟背竹",65],["黄铜盆景",130]],
-	"rug":[["普通编织地毯",30],["羊毛地毯",90],["波斯纹样地毯",180]],
-	"lamp":[["布罩落地灯",40],["黄铜弧光灯",110],["彩玻璃落地灯",220]],
-	"shelf":[["松木开放架",55],["橡木玻璃柜",140],["胡桃木陈列柜",280]],
-	"bench":[["漂木长椅",60],["软垫长椅",125],["藤编休闲椅",240]],
-	"parasol":[["条纹遮阳伞",85],["流苏遮阳伞",165],["灯串庭院伞",290]],
-	"coastal":[["贝壳陈列箱",35],["航海浮标桶",90],["珊瑚水族箱",210]],
+	"table":[["旧木双人桌",70],["浅蓝藤椅圆桌",160],["柚木条纹餐桌",320]],
+	"plant":[["陶盆海岸绿植",25],["木箱组合花草",65],["陶缸棕榈",130]],
+	"rug":[["椰纤迎宾垫",30],["条纹户外地毯",90],["沙色海蓝地毯",180]],
+	"lamp":[["船用提灯",40],["木杆悬挂渔灯",110],["双灯船桅庭院灯",220]],
+	"shelf":[["木制碗碟架",55],["百叶门餐具柜",140],["冰鲜海产展示柜",280]],
+	"bench":[["漂木长凳",60],["条纹坐垫长椅",125],["藤编沙发茶几",240]],
+	"parasol":[["浅蓝帆布伞",85],["海蓝条纹大伞",165],["卷帘木架凉棚",290]],
+	"coastal":[["今日鲜鱼黑板",35],["渔获木箱浮球",90],["小木船陈列台",210]],
 }
 var failures: int = 0
 var checks: int = 0
@@ -20,6 +21,7 @@ func _init() -> void:
 	_test_expanded_geometry()
 	_test_legacy_and_invalid_variants()
 	_test_disk_roundtrip()
+	_test_model_bounds()
 	print("%s: Tide Diver furniture catalog (%d checks)." % ["PASS" if failures == 0 else "FAIL", checks])
 	quit(0 if failures == 0 else 1)
 func _check(condition: bool, description: String) -> void:
@@ -27,6 +29,29 @@ func _check(condition: bool, description: String) -> void:
 	if not condition:
 		failures += 1
 		printerr("FAIL: " + description)
+
+func _mesh_bounds(node: Node3D, transform: Transform3D, result: Array) -> void:
+	var local: Transform3D = transform * node.transform
+	if node is MeshInstance3D:
+		var box: AABB = local * (node as MeshInstance3D).get_aabb()
+		result.append(box)
+	for child: Node in node.get_children():
+		if child is Node3D:
+			_mesh_bounds(child, local, result)
+
+func _test_model_bounds() -> void:
+	# Replacing assets must not silently overlap neighbors in existing saved layouts.
+	for kind: String in EXPECTED:
+		for variant: String in ["basic", "comfort", "premium"]:
+			var model: Node3D = Art.build({"uid":100, "kind":kind, "variant":variant, "color":0})
+			var bounds: Array = []
+			_mesh_bounds(model, Transform3D.IDENTITY, bounds)
+			var valid: bool = not bounds.is_empty()
+			var size: Vector2 = Rules.footprint(kind, 0)
+			for box: AABB in bounds:
+				valid = valid and box.position.x >= -size.x * 0.5 - 0.001 and box.end.x <= size.x * 0.5 + 0.001 and box.position.z >= -size.y * 0.5 - 0.001 and box.end.z <= size.y * 0.5 + 0.001
+			_check(valid, "Actual harbor model stays within its saved placement footprint: " + kind + "/" + variant)
+			model.free()
 func _new() -> RefCounted:
 	var p = P.new()
 	p.persistence_enabled = false
@@ -54,8 +79,8 @@ func _test_prices_and_purchase() -> void:
 	_check(p.buy_furniture("table","invalid") == -1 and p.buy_furniture("invalid","basic") == -1 and p.coins == 1000, "Invalid purchases never silently charge a different tier")
 	var basic: int = p.buy_furniture("table")
 	_check(p.furniture_by_uid(basic).variant == "basic" and p.coins == 930, "Existing single-argument purchase remains basic-compatible")
-	_check(Rules.variant_data("table","invalid").name == "原木小圆桌" and Rules.variant_data("invalid").is_empty(), "Catalog display safely handles invalid category and variant")
-	_check(Rules.item_name({"kind":"lamp"}) == "布罩落地灯", "Legacy item labels default to basic tier")
+	_check(Rules.variant_data("table","invalid").name == "旧木双人桌" and Rules.variant_data("invalid").is_empty(), "Catalog display safely handles invalid category and variant")
+	_check(Rules.item_name({"kind":"lamp"}) == "船用提灯", "Legacy item labels default to basic tier")
 func _test_expanded_geometry() -> void:
 	var p = _new()
 	p.coins = 1000
