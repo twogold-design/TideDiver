@@ -51,17 +51,22 @@ func _run() -> void:
 	_test_default_reset()
 	_test_variants_and_expanded_floor()
 	_test_viewport_and_camera()
+	_test_drag_tracks_pointer()
+	_test_edge_rotation()
 	await _test_shop_buttons()
 	_test_purchase_cancellation()
+	_test_recycling_flow()
 	_test_renovation_gifts_and_return()
-	if "--capture-layout-fixes" in OS.get_cmdline_user_args():
+	if "--capture-layout-fixes" in OS.get_cmdline_user_args() or "--capture-layout-controls" in OS.get_cmdline_user_args():
 		game.enter_layout()
 		game.hud.restaurant_ui.layout_ui.set_page("owned")
+		if "--capture-layout-controls" in OS.get_cmdline_user_args():
+			game.select_furniture(1)
 		game._physics_process(0.0)
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		await process_frame
 		await RenderingServer.frame_post_draw
-		root.get_texture().get_image().save_png("res://artifacts/layout_gift_storage.png")
+		root.get_texture().get_image().save_png("res://artifacts/layout_controls.png" if "--capture-layout-controls" in OS.get_cmdline_user_args() else "res://artifacts/layout_gift_storage.png")
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	game.free()
 	await process_frame
@@ -132,9 +137,10 @@ func _test_commit_and_undo() -> void:
 	_key(KEY_G)
 	_check(game.layout_rotation == int(game.layout_work.furniture_by_uid(purchased_uid).rotation) and game.layout_rotation == int(progress.furniture_by_uid(purchased_uid).rotation), "Rotate then undo and G uses restored item rotation in move preview")
 	_key(KEY_DELETE)
-	_check(not game.layout_work.furniture_by_uid(purchased_uid).placed and progress.furniture_by_uid(purchased_uid).placed, "Delete stores only draft furniture")
+	_check(game.layout_work.furniture_by_uid(purchased_uid).is_empty() and game.layout_work.coins == progress.coins+20 and progress.furniture_by_uid(purchased_uid).placed, "Delete recycles only draft furniture and refunds half its price")
 	_key(KEY_Z,true)
-	_check(game.layout_work.furniture_by_uid(purchased_uid).placed, "Ctrl+Z restores last storage operation")
+	_check(game.layout_work.furniture_by_uid(purchased_uid).placed and game.layout_work.coins == progress.coins, "Ctrl+Z restores recycled furniture and removes refund")
+	game.select_furniture(purchased_uid)
 	game.begin_move_furniture()
 	_key(KEY_ESCAPE)
 	_check(game.layout_mode and not game.layout_placing, "First Escape cancels pending placement while retaining draft")
@@ -263,10 +269,43 @@ func _mouse_button(button: MouseButton, point: Vector2, pressed: bool = true) ->
 	event.position = point
 	event.pressed = pressed
 	game._layout_input(event)
-func _mouse_motion(relative: Vector2) -> void:
+func _mouse_motion(relative: Vector2, position: Vector2 = Vector2(800,400)) -> void:
 	var event := InputEventMouseMotion.new()
 	event.relative = relative
+	event.position = position
 	game._layout_input(event)
+func _test_drag_tracks_pointer() -> void:
+	var before := _snapshot()
+	var saves_before: int = progress.saves
+	game.enter_layout()
+	var draft_before := JSON.stringify(game.layout_work._save_data())
+	for panel: bool in [true,false]:
+		for zoom: float in [12.0,31.0,52.0]:
+			for motion: Vector2 in [Vector2(80,0),Vector2(-80,0),Vector2(0,60),Vector2(0,-60),Vector2(65,-45)]:
+				game.layout_panel_visible = panel
+				game.layout_zoom = zoom
+				game.layout_pan = Vector3.ZERO
+				game._physics_process(0.0)
+				var landmark: Vector3 = game.restaurant_node.position+Vector3(3,0.08,3)
+				var start: Vector2 = game.camera.unproject_position(landmark)
+				_mouse_button(MOUSE_BUTTON_MIDDLE,start)
+				_mouse_motion(motion,start+motion)
+				game._physics_process(0.0)
+				var actual: Vector2 = game.camera.unproject_position(landmark)-start
+				_check(actual.distance_to(motion) < 0.05,"Ground follows pointer direction and distance: panel=%s zoom=%s drag=%s" % [panel,zoom,motion])
+				_mouse_button(MOUSE_BUTTON_MIDDLE,start+motion,false)
+			var landmark: Vector3 = game.restaurant_node.position+Vector3(3,0.08,3)
+			var start: Vector2 = game.camera.unproject_position(landmark)
+			_mouse_button(MOUSE_BUTTON_MIDDLE,start)
+			_mouse_motion(Vector2(25,20),start+Vector2(25,20))
+			_mouse_motion(Vector2(-10,15),start+Vector2(15,35))
+			_check(game.camera.unproject_position(landmark).distance_to(start+Vector2(15,35)) < 0.05,"Consecutive drag events follow pointer before next physics frame")
+			_mouse_button(MOUSE_BUTTON_MIDDLE,start+Vector2(15,35),false)
+			var point: Variant = game._layout_point(start+Vector2(15,35))
+			_check(point != null and point.is_equal_approx(Vector3(3,0.08,3)),"Furniture picking stays under pointer after camera drag")
+	_check(JSON.stringify(game.layout_work._save_data()) == draft_before,"Direction correction does not move furniture in the draft")
+	game.cancel_layout()
+	_check(_snapshot() == before and progress.saves == saves_before,"Navigation correction does not change or save player progress")
 func _test_viewport_and_camera() -> void:
 	var before := _snapshot()
 	game.enter_layout()
@@ -305,6 +344,92 @@ func _test_viewport_and_camera() -> void:
 	_check(game.layout_panel_visible and JSON.stringify(game.layout_work._save_data()) == draft_before, "Camera and panel controls never mutate draft furniture or money")
 	game.cancel_layout()
 	_check(_snapshot() == before, "Exiting camera navigation leaves real progress unchanged")
+func _test_edge_rotation() -> void:
+	var before := _snapshot()
+	game.enter_layout()
+	game.select_furniture(1)
+	game.layout_rotation = 0
+	_check(game.place_layout_at(-8.5,2),"Edge fixture fits before rotation")
+	var original: Dictionary = game.layout_work.furniture_by_uid(1).duplicate(true)
+	_key(KEY_R)
+	_check(game.layout_placing and game.layout_rotation == 1 and game.layout_work.furniture_by_uid(1) == original,"Out-of-bounds rotation starts a rotated preview without changing original placement")
+	_check(not game.place_layout_at(-8.5,2) and game.layout_rotation == 1,"Invalid landing still requires a legal position while keeping preview rotation")
+	for rotation in [2,3,0,1]:
+		_key(KEY_R)
+		_check(game.layout_rotation == rotation and game.layout_placing,"Rotation continues through all orientations while near boundary: "+str(rotation))
+	_mouse_button(MOUSE_BUTTON_RIGHT,Vector2(800,400))
+	_check(not game.layout_placing and game.layout_work.furniture_by_uid(1) == original,"Cancel restores original table after out-of-bounds rotation")
+	_key(KEY_R)
+	_check(game.place_layout_at(-7.5,2) and game.layout_work.furniture_by_uid(1).rotation == 1,"Rotated preview can be moved inward and placed")
+	game.undo_layout()
+	_check(game.layout_work.furniture_by_uid(1) == original,"Undo restores position and rotation together")
+	game.cancel_layout()
+	_check(_snapshot() == before,"Edge rotation never writes the real layout before save")
+
+func _test_recycling_flow() -> void:
+	var before := _snapshot()
+	var saves_before: int = progress.saves
+	game.enter_layout()
+	game.select_furniture(purchased_uid)
+	var item: Dictionary = game.layout_work.furniture_by_uid(purchased_uid).duplicate(true)
+	var refund: int = game.layout_work.furniture_refund(purchased_uid)
+	var button: Button
+	for control in game.hud.restaurant_ui.layout_ui.controls:
+		if control is Button and control.text == "回收 +%d G" % refund:
+			button = control
+	_check(button != null and not button.disabled,"Selected furniture shows its concrete refund on the actual recycle button")
+	if button != null:
+		button.pressed.emit()
+	_check(game.layout_work.furniture_by_uid(purchased_uid).is_empty() and game.layout_work.coins == progress.coins+refund and progress.saves == saves_before,"Recycle button removes only the draft item and adds draft refund")
+	game.recycle_selected_furniture()
+	_check(game.layout_work.coins == progress.coins+refund,"Repeated recycle with no selection cannot pay twice")
+	game.undo_layout()
+	_check(game.layout_work.furniture_by_uid(purchased_uid) == item and game.layout_work.coins == progress.coins,"Undo restores the furniture and reverses its refund")
+	game.select_furniture(purchased_uid)
+	game.recycle_selected_furniture()
+	game.cancel_layout()
+	_check(_snapshot() == before and progress.saves == saves_before,"Cancel discards recycling without touching actual money or ownership")
+	game.enter_layout()
+	game.select_furniture(purchased_uid)
+	game.recycle_selected_furniture()
+	game.save_layout()
+	_check(progress.furniture_by_uid(purchased_uid).is_empty() and progress.coins == int(JSON.parse_string(before).coins)+refund and progress.saves == saves_before+1,"Save commits furniture removal and refund together exactly once")
+	game.save_layout()
+	_check(progress.saves == saves_before+1,"Repeated save cannot duplicate the refund")
+	game.enter_layout()
+	game.select_furniture(1)
+	_key(KEY_DELETE)
+	_check(game.layout_work.furniture_by_uid(1).is_empty() and 1 in game.layout_work.recycled_gifts,"Delete recycles gift table and records its retirement in the draft")
+	game.undo_layout()
+	_check(not game.layout_work.furniture_by_uid(1).is_empty() and 1 not in game.layout_work.recycled_gifts,"Undo restores gift ownership and clears retirement")
+	game.select_furniture(1)
+	game.recycle_selected_furniture()
+	game.save_layout()
+	game.return_to_dock()
+	game.start_dive()
+	game.finish_dive(false)
+	game.open_restaurant()
+	_check(progress.furniture_by_uid(1).is_empty() and not game.restaurant_node._furniture_nodes.has(1),"Dive and return do not regenerate a recycled gift table")
+	game.enter_layout()
+	game.buy_layout_furniture("plant")
+	var money: int = progress.coins
+	game.recycle_selected_furniture()
+	_check(game.layout_pending_purchase.is_empty() and game.layout_work.coins == money,"Recycling an unplaced purchase cancels it with a full reservation refund")
+	game.cancel_layout()
+	game.enter_layout()
+	for furniture in game.layout_work.furniture_items().duplicate(true):
+		game.select_furniture(furniture.uid)
+		game.recycle_selected_furniture()
+	_check(game.layout_work.furniture_items().is_empty() and game.restaurant_node._furniture_nodes.is_empty() and game.restaurant_node._placed_tables.is_empty(),"Recycling the final item leaves an actually empty restaurant, without fallback gift models")
+	game.save_layout()
+	progress._apply_save_data(progress._save_data().duplicate(true))
+	game._rebuild_restaurant()
+	_check(progress.furniture_items().is_empty() and game.restaurant_node._furniture_nodes.is_empty() and progress.seats() == 0,"An empty recycled inventory survives reload and cannot open without tables")
+	progress._apply_save_data(JSON.parse_string(before))
+	game._rebuild_restaurant()
+	game.hud.rebuild()
+	_check(progress.furniture_by_uid(purchased_uid) == item,"Test fixture restores earlier ownership for subsequent regression checks")
+
 func _test_shop_buttons() -> void:
 	var starting_money: int = progress.coins
 	progress.coins = 10000

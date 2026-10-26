@@ -1351,7 +1351,7 @@ func select_furniture(uid: int) -> void:
 	layout_selected = uid
 	layout_rotation = int(item.rotation)
 	layout_placing = not item.placed
-	layout_reason = "移动鼠标预览，左键放下，R 旋转。" if layout_placing else "已选中家具 · G 移动 / R 旋转 / Delete 收回"
+	layout_reason = "移动鼠标预览，左键放下，R 旋转。" if layout_placing else "已选中家具 · G 移动 / R 旋转 / Delete 半价回收 · 可撤销"
 	restaurant_node.clear_layout_preview()
 	restaurant_node.highlight_furniture(uid)
 	hud.rebuild()
@@ -1420,7 +1420,11 @@ func rotate_layout() -> void:
 	var rotation: int = (int(item.rotation)+1)%4
 	var reason: String = layout_work.placement_reason(layout_selected,item.x,item.z,rotation)
 	if not reason.is_empty():
-		layout_reason = reason + "，可先移动家具再转向。"
+		layout_placing = true
+		layout_rotation = rotation
+		layout_reason = reason + " · 已旋转预览，请移动到空位后放下；右键可取消。"
+		_update_layout_preview()
+		hud.rebuild()
 		return
 	_remember_layout()
 	layout_work.place_furniture(layout_selected,item.x,item.z,rotation)
@@ -1440,6 +1444,26 @@ func store_selected_furniture() -> void:
 		return
 	layout_placing = false
 	layout_reason = "家具已收回收纳箱，可随时再次摆放，不需要重新购买。"
+	_rebuild_restaurant()
+	hud.rebuild()
+
+func recycle_selected_furniture() -> void:
+	if not layout_mode or state != "restaurant":
+		return
+	if not layout_pending_purchase.is_empty():
+		cancel_layout_placement()
+		return
+	if layout_work.furniture_by_uid(layout_selected).is_empty():
+		return
+	_remember_layout()
+	var refund: int = layout_work.recycle_furniture(layout_selected)
+	if refund <= 0:
+		layout_history.pop_back()
+		layout_reason = "暂时不能回收；金币达到上限时请先消费。"
+	else:
+		layout_selected = -1
+		layout_placing = false
+		layout_reason = "已回收家具，退还 %d G（售价50%%，向上取整）；保存后生效，可撤销。" % refund
 	_rebuild_restaurant()
 	hud.rebuild()
 
@@ -1492,7 +1516,7 @@ func place_layout_at(x: float, z: float) -> bool:
 	hud.rebuild()
 	return true
 
-func _layout_point(screen_position: Vector2) -> Variant:
+func _layout_plane_point(screen_position: Vector2) -> Variant:
 	var origin: Vector3 = camera.project_ray_origin(screen_position)
 	var direction: Vector3 = camera.project_ray_normal(screen_position)
 	if absf(direction.y) < 0.001:
@@ -1500,7 +1524,13 @@ func _layout_point(screen_position: Vector2) -> Variant:
 	var distance: float = (restaurant_node.global_position.y+0.08-origin.y)/direction.y
 	if distance < 0:
 		return null
-	var local: Vector3 = restaurant_node.to_local(origin + direction*distance)
+	return origin + direction*distance
+
+func _layout_point(screen_position: Vector2) -> Variant:
+	var point: Variant = _layout_plane_point(screen_position)
+	if point == null:
+		return null
+	var local: Vector3 = restaurant_node.to_local(point)
 	var snapped: Vector2 = Layout.snap_position(local.x,local.z)
 	return Vector3(snapped.x,0.08,snapped.y)
 
@@ -1551,11 +1581,15 @@ func _layout_input(event: InputEvent) -> void:
 			layout_panning = true
 		return
 	if event is InputEventMouseMotion and layout_panning:
-		var right: Vector3 = camera.global_transform.basis.x
-		var forward := Vector3(right.z,0,-right.x)
-		layout_pan -= (right * event.relative.x + forward * event.relative.y) * layout_zoom / 1000.0
+		# Keep the grabbed floor point under the cursor, without furniture grid snapping.
+		var previous: Variant = _layout_plane_point(event.position-event.relative)
+		var current: Variant = _layout_plane_point(event.position)
+		if previous == null or current == null:
+			return
+		layout_pan += previous-current
 		layout_pan.x = clampf(layout_pan.x,-16,16)
 		layout_pan.z = clampf(layout_pan.z,-14,14)
+		update_layout_camera()
 		return
 	if event is InputEventKey and event.pressed and not event.echo:
 		match event.physical_keycode:
@@ -1568,7 +1602,7 @@ func _layout_input(event: InputEvent) -> void:
 			KEY_F: reset_layout_camera()
 			KEY_R: rotate_layout()
 			KEY_G: begin_move_furniture()
-			KEY_DELETE: store_selected_furniture()
+			KEY_DELETE: recycle_selected_furniture()
 			KEY_Z:
 				if event.ctrl_pressed:
 					undo_layout()

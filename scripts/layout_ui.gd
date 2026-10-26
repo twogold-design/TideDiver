@@ -110,10 +110,13 @@ func rebuild() -> void:
 	_button("还原默认摆位",Rect2(174,839,142,41),game.reset_layout_draft)
 	var selected: Dictionary = game.layout_work.furniture_by_uid(game.layout_selected)
 	var empty: bool = selected.is_empty()
+	_button("仅收纳",Rect2(725,839,98,41),game.store_selected_furniture,false,empty or not selected.get("placed",false))
 	_button("移动  G",Rect2(835,839,130,41),game.begin_move_furniture,false,empty)
 	_button("旋转  R",Rect2(978,839,130,41),game.rotate_layout,false,empty)
 	_button("切换配色",Rect2(1121,839,130,41),game.color_selected_furniture,false,empty)
-	_button("收回家具",Rect2(1264,839,148,41),game.store_selected_furniture,false,empty or not selected.get("placed",false))
+	var pending: bool = not game.layout_pending_purchase.is_empty()
+	var refund: int = game.layout_work.furniture_refund(game.layout_selected)
+	_button("取消选购" if pending else ("回收 +%d G" % refund if not empty else "半价回收"),Rect2(1264,839,148,41),game.recycle_selected_furniture,false,empty)
 	if game.layout_panel_visible:
 		_button("家具商店",Rect2(20,110,142,40),func(): set_page("shop"),page=="shop")
 		_button("我的家具",Rect2(174,110,142,40),func(): set_page("owned"),page=="owned")
@@ -176,7 +179,8 @@ func _draw() -> void:
 	_text(Vector2(24,40),"一间有你风格的海岸小店",25)
 	_text(Vector2(26,68),"TIDE TABLE  /  家具与空间",13,MINT)
 	_text(Vector2(702,39),"可用 %d G" % game.layout_work.coins,22,GOLD)
-	_text(Vector2(702,66),"本次新购 %d G · 保存才扣款" % (game.progress.coins-game.layout_work.coins),14,MUTED)
+	var cost: int = game.progress.coins-game.layout_work.coins
+	_text(Vector2(702,66),("本次支出 %d G" % cost if cost >= 0 else "本次返还 %d G" % -cost)+" · 保存后生效",14,MUTED)
 	if game.layout_panel_visible:
 		_panel(Rect2(8,96,320,704))
 		if page == "shop":
@@ -203,7 +207,7 @@ func _draw() -> void:
 		else:
 			_text(Vector2(22,177),"点选收纳家具即可重新摆放",14,MUTED)
 			_text(Vector2(22,625),"房间风格 / 免费切换",17,MINT)
-			_text(Vector2(22,779),"收纳保留家具，随时重新摆放",13,MUTED)
+			_text(Vector2(22,779),"回收退50% · 仅收纳则保留家具",13,MUTED)
 	draw_rect(Rect2(0,804,1440,96),Color("09232d"))
 	var selected: Dictionary = game.layout_work.furniture_by_uid(game.layout_selected)
 	var hint: String = game.layout_reason

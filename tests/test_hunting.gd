@@ -35,6 +35,8 @@ func _run() -> void:
 	game.smoke_mode = true
 	game.muted = true
 	root.add_child(game)
+	game.smoke_mode = true
+	game.set_process_unhandled_input(false)
 	game.set_process(false)
 	game.set_physics_process(false)
 	await physics_frame

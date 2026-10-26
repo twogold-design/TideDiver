@@ -132,7 +132,7 @@ func _palm(parent: Node3D, pos: Vector3, size: float) -> void:
 	for i: int in range(3):
 		_sphere(parent, crown + Vector3(float(i - 1) * 0.25, -0.18, 0.16), Vector3.ONE * 0.23, Color("8c7553"))
 
-func rebuild(renovation: Dictionary, furnishings: Array = [], styles: Dictionary = {}) -> void:
+func rebuild(renovation: Dictionary, furnishings: Variant = null, styles: Dictionary = {}) -> void:
 	clear_reactions()
 	_chef = null
 	_styles = styles.duplicate(true)
@@ -157,7 +157,8 @@ func rebuild(renovation: Dictionary, furnishings: Array = [], styles: Dictionary
 		_build_clutter()
 	if bool(renovation.get("kitchen", false)):
 		_build_kitchen()
-	if not furnishings.is_empty():
+	# An explicit empty inventory means the player recycled everything.
+	if furnishings is Array:
 		for value: Variant in furnishings:
 			if value is Dictionary:
 				var item: Dictionary = value

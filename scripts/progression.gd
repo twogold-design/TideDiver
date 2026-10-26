@@ -62,6 +62,7 @@ var service_stats: Dictionary = {"earned": 0, "served": 0, "lost": 0}
 var last_service_result: Dictionary = {}
 var recovery_notice: String = ""
 var furnishings: Array = []
+var recycled_gifts: Array[int] = []
 var floor_style: int = 0
 var wall_style: int = 0
 var next_furniture_uid: int = 100
@@ -301,7 +302,7 @@ func _save_data() -> Dictionary:
 		"total_fish": total_fish, "best_depth": best_depth, "inventory": inventory, "renovation": renovation,
 		"restaurant_runs": restaurant_runs, "total_served": total_served, "total_lost": total_lost,
 		"restaurant_income": restaurant_income, "last_service_day": last_service_day, "service_active": service_active,
-		"service_stock": service_stock, "service_pending": service_pending, "service_stats": service_stats, "last_service_result": last_service_result, "furnishings": furnishings, "floor_style":floor_style, "wall_style":wall_style, "next_furniture_uid":next_furniture_uid}
+		"service_stock": service_stock, "service_pending": service_pending, "service_stats": service_stats, "last_service_result": last_service_result, "furnishings": furnishings, "recycled_gifts":recycled_gifts, "floor_style":floor_style, "wall_style":wall_style, "next_furniture_uid":next_furniture_uid}
 
 func _allowed_save_path() -> bool:
 	if not (save_path.begins_with("res://saves/") or save_path.begins_with("res://tests/temp/")):
@@ -485,7 +486,7 @@ func furniture_items() -> Array:
 	# Existing entries, including deliberately stored gifts, are never overwritten.
 	for uid in GIFT_FURNITURE:
 		var gift: Dictionary = GIFT_FURNITURE[uid]
-		if not renovation[gift.requires]:
+		if not renovation[gift.requires] or uid in recycled_gifts:
 			continue
 		var exists: bool = false
 		for item in furnishings:
@@ -591,6 +592,29 @@ func store_furniture(uid: int) -> bool:
 	save_game()
 	return true
 
+func furniture_refund(uid: int) -> int:
+	var item := furniture_by_uid(uid)
+	if item.is_empty():
+		return 0
+	return ceili(float(Layout.variant_data(item.kind,item.variant).cost)*0.5)
+
+func recycle_furniture(uid: int) -> int:
+	if service_active or not renovation.clean:
+		return 0
+	var refund: int = furniture_refund(uid)
+	if refund <= 0 or coins > MAX_COINS-refund:
+		return 0
+	for index in range(furnishings.size()):
+		if int(furnishings[index].uid) != uid:
+			continue
+		furnishings.remove_at(index)
+		if GIFT_FURNITURE.has(uid):
+			recycled_gifts.append(uid)
+		coins += refund
+		save_game()
+		return refund
+	return 0
+
 func recolor_furniture(uid: int, color: int) -> bool:
 	if service_active or not renovation.clean or color < 0 or color > 2:
 		return false
@@ -631,6 +655,15 @@ func _load_layout(data: Dictionary) -> void:
 	floor_style = _safe_int(data.get("floor_style"),0,2,0)
 	wall_style = _safe_int(data.get("wall_style"),0,2,0)
 	next_furniture_uid = _safe_int(data.get("next_furniture_uid"),100,999999998,100)
+	recycled_gifts = []
+	var retired: Variant = data.get("recycled_gifts",[])
+	if retired is Array:
+		for value in retired:
+			if not _is_integer(value):
+				continue
+			var uid := int(value)
+			if GIFT_FURNITURE.has(uid) and renovation[GIFT_FURNITURE[uid].requires] and uid not in recycled_gifts:
+				recycled_gifts.append(uid)
 	furnishings = []
 	var raw: Variant = data.get("furnishings", [])
 	var seen: Dictionary = {}
@@ -641,7 +674,7 @@ func _load_layout(data: Dictionary) -> void:
 			if not entry is Dictionary or not _is_integer(entry.get("uid")) or not entry.get("kind") is String:
 				continue
 			var uid: int = _safe_int(entry.uid,0,999999998,0)
-			if uid <= 0 or seen.has(uid) or not Layout.CATALOG.has(entry.kind):
+			if uid <= 0 or seen.has(uid) or uid in recycled_gifts or not Layout.CATALOG.has(entry.kind):
 				continue
 			if uid < 100 and (not GIFT_FURNITURE.has(uid) or not renovation[GIFT_FURNITURE[uid].requires] or entry.kind != GIFT_FURNITURE[uid].kind):
 				continue

@@ -12,6 +12,7 @@ func _init() -> void:
 	_test_sanitization_and_migration()
 	_test_disk_roundtrip()
 	_test_blocked_gift_placement()
+	_test_recycling()
 	print("%s: Tide Diver layout (%d checks)." % ["PASS" if failures == 0 else "FAIL", checks])
 	quit(0 if failures == 0 else 1)
 func _check(condition: bool, description: String) -> void:
@@ -170,6 +171,51 @@ func _test_blocked_gift_placement() -> void:
 	var old_layout: Array = migrated.furniture_items().duplicate(true)
 	migrated._apply_save_data(migrated._save_data().duplicate(true))
 	_check(migrated.furniture_items() == old_layout and migrated.furniture_by_uid(5).placed and not migrated.furniture_by_uid(3).placed, "Existing explicit plant placement and table storage are preserved by loading")
+
+func _test_recycling() -> void:
+	var p = _new(true)
+	p.coins = 1000
+	var uid: int = p.buy_furniture("plant")
+	_check(p.furniture_refund(uid) == 13,"25G plant returns at least half: rounded up to 13G")
+	_check(p.recycle_furniture(uid) == 13 and p.coins == 988 and p.furniture_by_uid(uid).is_empty(),"Stored purchased furniture is removed and refunded exactly once")
+	_check(p.recycle_furniture(uid) == 0 and p.coins == 988,"Repeated recycling cannot refund a missing item")
+	uid = p.buy_furniture("parasol","comfort")
+	_check(p.furniture_refund(uid) == 83,"Refund uses the actual 165G variant rather than category base price")
+	p.place_furniture(uid,7,7,0)
+	_check(p.recycle_furniture(uid) == 83 and p.coins == 906,"Placed furniture receives the same half-price refund")
+	var before: int = p.coins
+	_check(p.recycle_furniture(1) == 35 and p.coins == before+35 and p.seats() == 3,"Gift tables can also be recycled and no longer count as seats")
+	for iteration in range(3):
+		p.furniture_items()
+		p.reset_layout()
+		p._apply_save_data(p._save_data().duplicate(true))
+	_check(p.furniture_by_uid(1).is_empty() and p.coins == before+35 and p.recycle_furniture(1) == 0,"Synchronization, reset and reload never regenerate a recycled gift")
+	_check(p.recycle_furniture(5) == 13 and p.furniture_by_uid(5).is_empty(),"Stored decoration gifts can be recycled once")
+	var saved: Dictionary = p._save_data().duplicate(true)
+	p.service_active = true
+	_check(p.recycle_furniture(2) == 0 and not p.furniture_by_uid(2).is_empty(),"Service blocks recycling")
+	p.service_active = false
+	p.coins = p.MAX_COINS-1
+	_check(p.recycle_furniture(2) == 0 and not p.furniture_by_uid(2).is_empty(),"Coin cap cannot consume furniture for less than its promised refund")
+	p._apply_save_data(saved)
+	p.save_path = TEST_PATH
+	p.persistence_enabled = true
+	p.save_game()
+	var loaded = P.new()
+	loaded.save_path = TEST_PATH
+	loaded.load_game()
+	_check(loaded.coins == p.coins and loaded.recycled_gifts == [1,5] and loaded.furniture_by_uid(1).is_empty() and loaded.furniture_by_uid(5).is_empty(),"Actual disk reload preserves money and retired gifts without paying again")
+	_clear_fixture()
+	var legacy = _new()
+	saved.erase("recycled_gifts")
+	legacy._apply_save_data(saved)
+	_check(not legacy.furniture_by_uid(1).is_empty() and legacy.recycled_gifts.is_empty(),"Old saves without retirement history retain their original gift migration")
+	saved.recycled_gifts = [1,1,"2",100,-1,999,2.5,null]
+	legacy._apply_save_data(saved)
+	_check(legacy.recycled_gifts == [1] and not legacy.furniture_by_uid(2).is_empty(),"Malformed and duplicate gift-retirement values are ignored")
+	legacy.reset_game()
+	legacy.renovation = {"clean":true,"kitchen":true,"tables":true,"sign":false,"expansion":false,"decor":false}
+	_check(legacy.recycled_gifts.is_empty() and legacy.seats() == 2,"New game resets gift retirement for the new playthrough")
 
 func _test_disk_roundtrip() -> void:
 	_clear_fixture()
