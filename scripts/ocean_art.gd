@@ -2,6 +2,7 @@ class_name OceanArt
 extends RefCounted
 
 const Ocean = preload("res://scripts/ocean_config.gd")
+const FishArt = preload("res://scripts/fish_art.gd")
 
 const CORAL: Color = Color("ef9277")
 const MINT: Color = Color("69c6a4")
@@ -306,35 +307,7 @@ static func create_diver() -> Node3D:
 	return root
 
 static func create_fish(kind: int) -> Node3D:
-	var root: Node3D = Node3D.new()
-	root.name = "FishArt"
-	var colors: Array[Color] = [Color("f0bb59"), Color("64c6bd"), Color("ef8d7b"), Color("81a4c1"), Color("c9bc85")]
-	var color: Color = colors[posmod(kind, colors.size())]
-	var body: StandardMaterial3D = _mat(color)
-	var fin: StandardMaterial3D = _mat(color.darkened(0.18))
-	var length: float = 0.65 + float(posmod(kind, 3)) * 0.18
-	var height: float = 0.34 + float(posmod(kind, 2)) * 0.11
-	if kind == 3:
-		length = 1.25
-		height = 0.36
-	_sphere(root, Vector3.ZERO, Vector3(0.24, height, length), body)
-	_sphere(root, Vector3(0, -height * 0.45, -0.07), Vector3(0.21, height * 0.45, length * 0.8), _mat(color.lightened(0.3)))
-	var tail: Node3D = Node3D.new()
-	tail.name = "Tail"
-	tail.position = Vector3(0, 0, length * 0.87)
-	root.add_child(tail)
-	for side: float in [-1.0, 1.0]:
-		var tail_fin: MeshInstance3D = _sphere(tail, Vector3(0, side * 0.19, 0.22), Vector3(0.055, 0.3, 0.31), fin, 6)
-		tail_fin.rotation.x = side * 0.5
-		_sphere(root, Vector3(side * 0.18, height * 0.22, -length * 0.64), Vector3(0.075, 0.085, 0.085), _mat(Color("f5efd7")), 8)
-		_sphere(root, Vector3(side * 0.235, height * 0.22, -length * 0.66), Vector3(0.035, 0.05, 0.05), _mat(Color("142d3a")), 8)
-		var side_fin: MeshInstance3D = _sphere(root, Vector3(side * 0.26, -0.05, 0.04), Vector3(0.20, 0.04, 0.28), fin, 6)
-		side_fin.rotation.z = side * -0.32
-	_sphere(root, Vector3(0, height * 0.85, 0.10), Vector3(0.04, 0.27 if kind == 3 else 0.17, length * 0.45), fin, 6)
-	if kind == 0 or kind == 2:
-		for z: float in [-0.2, 0.25]:
-			_sphere(root, Vector3(0, 0, z), Vector3(0.245, height * 0.96, 0.065), _mat(color.darkened(0.24)), 8)
-	return root
+	return FishArt.build(kind)
 
 static func create_pickup(kind: String) -> Node3D:
 	var root: Node3D = Node3D.new()

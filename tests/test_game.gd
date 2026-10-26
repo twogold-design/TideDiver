@@ -137,6 +137,7 @@ func _test_rescue() -> void:
 	game.cargo.clear()
 	for i in range(10):
 		game.cargo.append({"id": "orange", "value": 18, "weight": 1, "kind": "fish"})
+	# Keep the depth fixture in open water above the new continental shelf.
 	game.player.position = Vector3(200, -26, 200)
 	game.oxygen = 0.01
 	game._update_dive(1.0)
