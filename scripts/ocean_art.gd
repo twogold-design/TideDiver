@@ -274,38 +274,7 @@ static func build_world(parent: Node3D) -> void:
 	_build_outer_ocean(parent)
 
 static func create_diver() -> Node3D:
-	var root: Node3D = Node3D.new()
-	root.name = "DiverArt"
-	var orange: StandardMaterial3D = _mat(Color("ef9257"))
-	var dark: StandardMaterial3D = _mat(Color("163644"))
-	var yellow: StandardMaterial3D = _mat(Color("f2c958"))
-	var skin: StandardMaterial3D = _mat(Color("e4b68d"))
-	var glass: StandardMaterial3D = _mat(Color("7fd8df"), 0.15)
-	# A streamlined horizontal swimming silhouette, facing local -Z.
-	_sphere(root, Vector3(0, 0, 0), Vector3(0.42, 0.28, 0.66), orange)
-	_sphere(root, Vector3(0, 0.02, -0.78), Vector3(0.33, 0.31, 0.34), dark)
-	_sphere(root, Vector3(0, 0.01, -0.96), Vector3(0.25, 0.23, 0.16), skin)
-	_box(root, Vector3(0, 0.10, -1.075), Vector3(0.48, 0.23, 0.09), dark)
-	_box(root, Vector3(0, 0.11, -1.13), Vector3(0.40, 0.14, 0.04), glass)
-	_box(root, Vector3(-0.10, 0.14, -1.155), Vector3(0.09, 0.035, 0.012), _mat(Color("d8f1de"), 0.2))
-	var tank: MeshInstance3D = _cylinder(root, Vector3(0, 0.35, 0.04), 0.22, 0.95, yellow)
-	tank.rotation.x = PI / 2
-	_box(root, Vector3(0, 0.37, -0.04), Vector3(0.49, 0.42, 0.12), dark)
-	_cylinder(root, Vector3(0, 0.35, -0.48), 0.07, 0.16, _mat(Color("adc8b3")))
-	for side: float in [-1.0, 1.0]:
-		var leg: Node3D = Node3D.new()
-		leg.name = "LegLeft" if side < 0 else "LegRight"
-		leg.position = Vector3(side * 0.23, 0, 0.47)
-		root.add_child(leg)
-		_sphere(leg, Vector3(0, 0, 0.43), Vector3(0.16, 0.15, 0.50), dark)
-		_sphere(leg, Vector3(0, -0.03, 1.02), Vector3(0.24, 0.055, 0.37), yellow, 6)
-		_branch(root, Vector3(side * 0.34, -0.04, -0.28), Vector3(side * 0.58, -0.20, -0.80), 0.115, orange)
-		_sphere(root, Vector3(side * 0.58, -0.20, -0.86), Vector3.ONE * 0.12, skin)
-	var gun: MeshInstance3D = _cylinder(root, Vector3(0.58, -0.18, -1.1), 0.065, 0.95, dark)
-	gun.rotation.x = PI / 2
-	var spear: MeshInstance3D = _cylinder(root, Vector3(0.58, -0.15, -1.5), 0.018, 0.7, _mat(Color("d0d9be")))
-	spear.rotation.x = PI / 2
-	return root
+	return preload("res://scripts/diver_art.gd").build()
 
 static func create_fish(kind: int) -> Node3D:
 	return FishArt.build(kind)

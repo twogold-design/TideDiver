@@ -7,8 +7,26 @@ const CATALOG := {
 	"rug": {"name":"地毯", "cost":30, "size":Vector2(2.8,3.2)},
 	"lamp": {"name":"落地灯", "cost":40, "size":Vector2(0.8,0.8)},
 	"shelf": {"name":"展示架", "cost":55, "size":Vector2(1.8,0.8)},
+	"bench": {"name":"长椅", "cost":60, "size":Vector2(2.4,1.0)},
+	"parasol": {"name":"遮阳伞", "cost":85, "size":Vector2(2.8,2.8)},
+	"coastal": {"name":"海岸摆件", "cost":35, "size":Vector2(1.2,1.2)},
 }
 const VARIANTS := {
+	"bench": {
+		"basic":{"name":"漂木长椅","cost":60,"description":"风化木条与结实支脚，海边歇脚处"},
+		"comfort":{"name":"软垫长椅","cost":125,"description":"条纹软垫、靠背与两个抱枕"},
+		"premium":{"name":"藤编休闲椅","cost":240,"description":"弧形藤编靠背与厚亚麻坐垫"},
+	},
+	"parasol": {
+		"basic":{"name":"条纹遮阳伞","cost":85,"description":"海绿帆布与木伞杆"},
+		"comfort":{"name":"流苏遮阳伞","cost":165,"description":"奶油帆布、黄铜伞杆与垂边流苏"},
+		"premium":{"name":"灯串庭院伞","cost":290,"description":"深海蓝伞面与伞下暖色灯串"},
+	},
+	"coastal": {
+		"basic":{"name":"贝壳陈列箱","cost":35,"description":"木箱里的贝壳、玻璃瓶与海边收藏"},
+		"comfort":{"name":"航海浮标桶","cost":90,"description":"绳索木桶、彩色浮标和渔港气息"},
+		"premium":{"name":"珊瑚水族箱","cost":210,"description":"透光玻璃、砂石和珊瑚造景"},
+	},
 	"table": {
 		"basic":{"name":"原木小圆桌","cost":70,"description":"轻巧圆桌搭配朴素木椅，适合海边小店"},
 		"comfort":{"name":"橡木软座桌","cost":160,"description":"厚实橡木桌与软垫座椅，温暖舒适"},

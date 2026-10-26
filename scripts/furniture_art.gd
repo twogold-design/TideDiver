@@ -211,10 +211,78 @@ static func build(item: Dictionary, seat: int = -1) -> Node3D:
 		"rug": _rug(root, variant, tint)
 		"lamp": _lamp(root, variant, tint)
 		"shelf": _shelf(root, variant, tint)
+		"bench": _bench(root, variant, tint)
+		"parasol": _parasol(root, variant, tint)
+		"coastal": _coastal(root, variant, tint)
 	_merge_geometry(root)
 	if kind == "table" and seat >= 0:
 		_table_number(root, seat)
 	return root
+
+static func _bench(root: Node3D, variant: String, tint: Color) -> void:
+	var wood := _mat(tint,1)
+	var fabric := _mat(CREAM,2)
+	for x: float in [-0.85,0.85]:
+		_box(root,Vector3(x,0.3,0),Vector3(0.14,0.6,0.7),wood)
+	for z: float in [-0.28,0.0,0.28]:
+		_box(root,Vector3(0,0.62,z),Vector3(2.2,0.10,0.23),wood)
+	for y: float in [0.85,1.1]:
+		_box(root,Vector3(0,y,0.38),Vector3(2.2,0.17,0.10),wood)
+	if variant != "basic":
+		_box(root,Vector3(0,0.73,0),Vector3(2.05,0.16,0.70),fabric,0.06)
+		for x: float in [-0.72,0.72]:
+			var pillow := _box(root,Vector3(x,0.96,0.22),Vector3(0.44,0.40,0.15),_mat(tint,2),0.07)
+			pillow.rotation.z = x*0.12
+	if variant == "premium":
+		for i in range(16):
+			var x: float = -1.05+i*0.14
+			_bar(root,Vector3(x,0.68,0.35),Vector3(x,1.32-absf(x)*0.15,0.40),0.022,_mat(BRASS,1))
+
+static func _parasol(root: Node3D, variant: String, tint: Color) -> void:
+	var metal := _mat(BRASS,0,0.35,0.5)
+	_cylinder(root,Vector3(0,0.08,0),0.4,0.16,_mat(DARK,3))
+	_cylinder(root,Vector3(0,1.4,0),0.045,2.8,metal)
+	for i in range(12):
+		var a: float = i*TAU/12
+		var b: float = (i+1)*TAU/12
+		var edge_a := Vector3(cos(a)*1.33,2.28,sin(a)*1.33)
+		var edge_b := Vector3(cos(b)*1.33,2.28,sin(b)*1.33)
+		var surface := SurfaceTool.new()
+		surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+		for vertex: Vector3 in [Vector3(0,2.85,0),edge_a,edge_b,edge_b,edge_a,Vector3(0,2.85,0)]:
+			surface.add_vertex(vertex)
+		surface.generate_normals()
+		var color: Color = CREAM if i%2 == 0 else (Color("365d73") if variant == "premium" else tint)
+		_mesh(root,surface.commit(),Vector3.ZERO,_mat(color,2))
+		_bar(root,Vector3(0,2.8,0),edge_a,0.015,metal)
+		if variant == "comfort":
+			for j in range(4):
+				var point := edge_a.lerp(edge_b,j/4.0)
+				_bar(root,point,point-Vector3.UP*0.16,0.014,_mat(CREAM,2))
+		elif variant == "premium":
+			_sphere(root,edge_a-Vector3.UP*0.08,Vector3.ONE*0.055,_glow(Color("ffe1a4")))
+
+static func _coastal(root: Node3D, variant: String, tint: Color) -> void:
+	var wood := _mat(tint,1)
+	if variant == "basic":
+		_box(root,Vector3(0,0.25,0),Vector3(1.0,0.5,0.8),wood)
+		for i in range(5):
+			_sphere(root,Vector3(-0.34+i*0.17,0.54,sin(i)*0.22),Vector3(0.13,0.06,0.16),_mat(CREAM))
+		_cylinder(root,Vector3(0.32,0.73,0.18),0.10,0.45,_glass(Color("6ba89c")))
+	elif variant == "comfort":
+		_cylinder(root,Vector3(0,0.48,0),0.44,0.92,wood,0.38)
+		for y: float in [0.18,0.70]:
+			_ring(root,Vector3(0,y,0),0.44,0.028,_mat(DARK,0,0.4,0.6))
+		for i in range(3):
+			_sphere(root,Vector3(-0.26+i*0.25,1.04,0),Vector3(0.16,0.30,0.16),_mat(Color("cf7751") if i%2 == 0 else CREAM))
+	else:
+		_box(root,Vector3(0,0.40,0),Vector3(1.05,0.8,0.85),wood)
+		_box(root,Vector3(0,1.18,0),Vector3(1.04,0.75,0.84),_glass(Color("77c8ce")))
+		_box(root,Vector3(0,0.86,0),Vector3(0.96,0.08,0.77),_mat(CREAM,3))
+		for i in range(5):
+			var x: float = -0.30+i*0.15
+			_bar(root,Vector3(x,0.9,0),Vector3(x+0.08,1.1+i%3*0.14,0.1),0.045,_mat(Color("c9826d")))
+		_box(root,Vector3(0,1.59,0),Vector3(1.1,0.08,0.90),_mat(DARK))
 
 static func _table_number(parent: Node3D, seat: int) -> void:
 	_box(parent, Vector3(0.40, 1.46, 0.52), Vector3(0.25, 0.25, 0.035), _mat(CREAM))

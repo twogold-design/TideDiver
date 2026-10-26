@@ -15,6 +15,8 @@ const COASTAL_KINDS = [0,1,3,4,6,2]
 const ENTRY_SCHOOL_KINDS = [0,1,3,4,6]
 const ENTRY_FISH_PER_SCHOOL = 2
 const OUTER_FISH_PER_ZONE = 16
+const Harpoon = preload("res://scripts/harpoon.gd")
+const Cuisine = preload("res://scripts/cuisine.gd")
 const TRANSIT_SCHOOLS = 8
 const TRANSIT_FISH_PER_SCHOOL = 5
 const SPEAR_RANGE = 20.0
@@ -34,6 +36,7 @@ var fish: Array = []
 var pickups: Array = []
 var hazards: Array = []
 var effects: Array = []
+var projectiles: Array = []
 var cargo: Array = []
 var oxygen: float = 100.0
 var catch_timer: float = 0.0
@@ -66,6 +69,10 @@ var restaurant_node: Node3D
 var ocean_root: Node3D
 var restaurant_tab: String = "renovation"
 var menu_plan: Dictionary = {"orange":0,"blue":0,"lantern":0}
+var menu_seasoning: Dictionary = {"orange":1,"blue":0,"lantern":2}
+var preparation: Dictionary = {}
+var service_preparation: Dictionary = {}
+var culinary_results: Dictionary = {"excellent":0,"matched":0,"cold":0,"bonus":0}
 var orders: Array = []
 var service_arrived: int = 0
 var service_spawn_time: float = 0.0
@@ -81,6 +88,7 @@ var layout_mode: bool = false
 var layout_work: RefCounted
 var layout_selected: int = -1
 var layout_placing: bool = false
+var layout_pending_purchase: Dictionary = {}
 var layout_rotation: int = 0
 var layout_cursor: Vector3 = Vector3.ZERO
 var layout_reason: String = ""
@@ -571,6 +579,11 @@ func confirm_new_game() -> void:
 	restaurant_node.clear_reactions()
 	summary_visible = false
 	menu_plan = {"orange":0,"blue":0,"lantern":0}
+	menu_seasoning = {"orange":1,"blue":0,"lantern":2}
+	preparation.clear()
+	service_preparation.clear()
+	culinary_results = {"excellent":0,"matched":0,"cold":0,"bonus":0}
+	_clear_projectiles()
 	restaurant_tab = "renovation"
 	service_arrived = 0
 	service_spawn_time = 0
@@ -580,6 +593,7 @@ func confirm_new_game() -> void:
 	layout_work = null
 	layout_selected = -1
 	layout_placing = false
+	layout_pending_purchase.clear()
 	layout_rotation = 0
 	layout_cursor = Vector3.ZERO
 	layout_reason = ""
@@ -625,7 +639,9 @@ func confirm_new_game() -> void:
 func start_dive(animate_entry: bool = true, random_entry: bool = true) -> void:
 	if new_game_confirmation or state != "dock":
 		return
+	_clear_projectiles()
 	restaurant_node.visible = false
+	preparation.clear()
 	ocean_root.visible = true
 	environment.fog_enabled = true
 	camera.fov = 66
@@ -664,6 +680,7 @@ func finish_dive(rescued: bool = false) -> void:
 		return
 	entry_active = false
 	camera.fov = 66
+	_clear_projectiles()
 	last_result = progress.complete_dive(cargo, rescued, depth_record)
 	environment.fog_light_color = Color("136675")
 	environment.background_color = Color("126879")
@@ -749,6 +766,7 @@ func _physics_process(delta: float) -> void:
 			_update_entry(delta)
 		else:
 			_update_dive(delta)
+			_update_projectiles(delta)
 	elif state in ["restaurant","service","service_paused"]:
 		if layout_mode:
 			camera.projection = Camera3D.PROJECTION_ORTHOGONAL
@@ -763,6 +781,8 @@ func _physics_process(delta: float) -> void:
 			restaurant_node.animate(delta)
 		if state == "service":
 			_update_service(delta)
+		elif state == "restaurant" and not layout_mode:
+			_update_preparation(delta)
 	elif state == "dock":
 		var p = Vector3(16 + sin(clock*0.045)*3, -13, 29)
 		camera.position = p
@@ -961,6 +981,7 @@ func _animate_ocean(_delta: float) -> void:
 	storm_school.animate(clock,player.position)
 	for item in fish:
 		if item.alive:
+			item.previous_position = item.node.position
 			_update_fish(item,_delta)
 	for item in pickups:
 		if item.active:
@@ -1032,30 +1053,41 @@ func shoot() -> void:
 	shot_cooldown = SPEAR_COOLDOWN
 	_play_tone(270,0.08)
 	var center := get_viewport().get_visible_rect().size*0.5
+	var origin := camera.project_ray_origin(center)
 	var direction := camera.project_ray_normal(center)
-	var end := player.position+direction*SPEAR_RANGE
+	var distance: float = (player.position-origin).dot(direction)+SPEAR_RANGE
 	var target: Dictionary = target_fish()
 	if not target.is_empty():
-		end = target.node.position
-		_hit_fish(target)
-	else:
-		for item in fish:
-			if item.alive and player.position.distance_to(item.node.position) < 12:
-				FishBrain.alarm(self,item)
-				break
-		var query := PhysicsRayQueryParameters3D.create(player.position,end,1,[player.get_rid()])
-		var hit: Dictionary = get_world_3d().direct_space_state.intersect_ray(query)
-		if not hit.is_empty():
-			end = hit.position
-	_line_effect(player.position+Vector3.UP*0.4,end)
+		distance = (target.node.position-origin).dot(direction)
+	var aim: Vector3 = origin+direction*distance
+	var start: Vector3 = player.position+Vector3(0.58,-0.15,-1.5).rotated(Vector3.UP,yaw)
+	var obstruction := get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(player.position,start,1,[player.get_rid()]))
+	if not obstruction.is_empty():
+		Harpoon.impact(self,obstruction.position,false)
+		return
+	projectiles.append(Harpoon.launch(self,start,(aim-start).normalized()))
 
-func _hit_fish(target: Dictionary) -> void:
+func _update_projectiles(delta: float) -> void:
+	if state != "dive" or entry_active or delta <= 0:
+		return
+	for index in range(projectiles.size()-1,-1,-1):
+		if Harpoon.step(self,projectiles[index],delta):
+			Harpoon.dispose(projectiles[index])
+			projectiles.remove_at(index)
+	for item in fish:
+		item.previous_position = item.node.position
+
+func _clear_projectiles() -> void:
+	for shot in projectiles:
+		Harpoon.dispose(shot)
+	projectiles.clear()
+func _hit_fish(target: Dictionary, launched_damage: int = -1) -> void:
 	if state != "dive" or entry_active or not target.alive:
 		return
 	hit_timer = 0.18
 	FishBrain.prepare(target)
 	var data: Dictionary = FishData.SPECIES[target.kind]
-	var damage: int = progress.spear_damage()
+	var damage: int = progress.spear_damage() if launched_damage < 0 else launched_damage
 	var armored: bool = bool(target.armor)
 	if armored:
 		damage = mini(1,damage)
@@ -1074,23 +1106,6 @@ func _hit_fish(target: Dictionary) -> void:
 			tell("背包空间不足，猎物仍在逃跑。上浮返航清空背包。",4)
 	elif not armored:
 		tell("命中 %s！剩余耐久 %d / %d" % [data.name,target.hp,data.hp],2)
-
-func _line_effect(start: Vector3, end: Vector3) -> void:
-	var mesh = MeshInstance3D.new()
-	var cylinder = CylinderMesh.new()
-	cylinder.top_radius = 0.026
-	cylinder.bottom_radius = 0.026
-	cylinder.height = start.distance_to(end)
-	cylinder.radial_segments = 5
-	mesh.mesh = cylinder
-	var mat = StandardMaterial3D.new()
-	mat.albedo_color = Color("d9ffdb")
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mesh.material_override = mat
-	mesh.position = (start+end)*0.5
-	mesh.quaternion = Quaternion(Vector3.UP,(end-start).normalized())
-	add_child(mesh)
-	effects.append({"node":mesh,"life":0.16})
 
 func _update_effects(delta: float) -> void:
 	for i in range(effects.size()-1,-1,-1):
@@ -1232,9 +1247,12 @@ func _run_smoke() -> void:
 	player.position = Vector3(0,-8,14)
 	camera.position = Vector3(0,-6,21)
 	target.node.position = Vector3(0,-7,2)
+	target.previous_position = target.node.position
 	camera.look_at(target.node.position)
 	assert(not target_fish().is_empty())
 	shoot()
+	for frame in range(50):
+		_update_projectiles(0.02)
 	assert(cargo.size() == 2)
 	toggle_pause()
 	assert(state == "paused")
@@ -1280,6 +1298,8 @@ func return_to_dock() -> void:
 func _clamp_menu() -> void:
 	for id in Progress.RECIPES:
 		menu_plan[id] = clampi(int(menu_plan.get(id,0)),0,int(progress.inventory.get(id,0)))
+		if preparation.has(id) and int(preparation[id].count) != int(menu_plan[id]):
+			preparation.erase(id)
 
 func sell_goods(id: String, amount: int) -> void:
 	if layout_mode or state != "restaurant":
@@ -1303,7 +1323,16 @@ func renovate_shop(id: String) -> void:
 		return
 	if progress.renovate(id):
 		_rebuild_restaurant()
-		tell("%s 已完成，店面焕然一新！" % Progress.RENOVATIONS[id].name,4)
+		if id in ["tables","expansion"]:
+			var stored: int = 0
+			for uid in ([1,2] if id == "tables" else [3,4]):
+				if not progress.furniture_by_uid(uid).placed:
+					stored += 1
+			tell("赠送2套餐桌：%d套已摆放，%d套在收纳中；自由布置 → 我的家具可摆放。" % [2-stored,stored] if stored > 0 else "赠送的2套餐桌已摆到空位，现有家具位置保持不变。",8)
+		elif id == "decor":
+			tell("海洋软装已完成，赠送的2盆绿植与2张地毯已入收纳；到“我的家具”自主摆放。",8)
+		else:
+			tell("%s 已完成，店面焕然一新！" % Progress.RENOVATIONS[id].name,4)
 		_play_tone(800,0.2)
 	else:
 		tell(progress.renovation_reason(id),4)
@@ -1313,7 +1342,45 @@ func change_menu(id: String, change: int) -> void:
 	if layout_mode or state != "restaurant":
 		return
 	menu_plan[id] = clampi(int(menu_plan.get(id,0))+change,0,int(progress.inventory.get(id,0)))
+	preparation.erase(id)
 	hud.rebuild()
+
+func change_seasoning(id: String) -> void:
+	if state != "restaurant" or layout_mode or not Progress.RECIPES.has(id):
+		return
+	menu_seasoning[id] = (int(menu_seasoning.get(id,0))+1)%3
+	preparation.erase(id)
+	hud.rebuild()
+
+func prepare_dish(id: String) -> void:
+	if state != "restaurant" or layout_mode or not progress.renovation.kitchen or int(menu_plan.get(id,0)) <= 0:
+		return
+	if preparation.has(id):
+		return
+	preparation[id] = {"left":Cuisine.PREP_TIME,"count":int(menu_plan[id]),"seasoning":int(menu_seasoning.get(id,0))}
+	tell("正在清理、切配与腌制，完成后本批菜品获得备料品质。",4)
+	hud.rebuild()
+
+func _update_preparation(delta: float) -> void:
+	if state != "restaurant" or layout_mode:
+		return
+	var active := false
+	for id in preparation:
+		if float(preparation[id].left) > 0:
+			preparation[id].left = maxf(0,float(preparation[id].left)-delta)
+			if preparation[id].left <= 0:
+				tell("%s 的备料已完成，开业后可争取更好的火候与评价。" % Progress.RECIPES[id].name,4)
+				hud.rebuild()
+		active = active or float(preparation[id].left) > 0
+	restaurant_node.set_preparing(active)
+
+func preparation_label(id: String) -> String:
+	if not preparation.has(id):
+		return "精细备料 · 4秒"
+	var left: float = preparation[id].left
+	if left <= 0:
+		return "已备好 · 品质+1"
+	return "%s %.1fs" % ["清理" if left > 2.7 else ("切配" if left > 1.3 else "腌制"),left]
 
 func menu_total() -> int:
 	var count: int = 0
@@ -1332,6 +1399,9 @@ func service_block_reason() -> String:
 		return "今日已营业，先潜水补货迎接下一天"
 	if menu_total() <= 0:
 		return "在备菜页为菜单添加至少一份鱼料理"
+	for batch in preparation.values():
+		if float(batch.left) > 0:
+			return "厨房正在备料，完成后即可营业"
 	return ""
 
 func start_service() -> void:
@@ -1345,6 +1415,9 @@ func start_service() -> void:
 		tell("无法开业，请检查装修、库存和今日营业状态。",5)
 		return
 	state = "service"
+	service_preparation = preparation.duplicate(true)
+	preparation.clear()
+	culinary_results = {"excellent":0,"matched":0,"cold":0,"bonus":0}
 	orders.clear()
 	service_arrived = 0
 	service_spawn_time = 0.2
@@ -1354,7 +1427,7 @@ func start_service() -> void:
 	service_reviews = {"satisfied":0,"okay":0,"lost":0}
 	restaurant_node.clear_reactions()
 	restaurant_node.set_customers(orders)
-	tell("潮间食堂开门迎客！点击制作，完成后记得上菜。",6)
+	tell("开门迎客！留意口味偏好，绿色火候区点击翻面，摆盘后趁热上菜。",7)
 	hud.rebuild()
 
 func service_remaining() -> int:
@@ -1376,7 +1449,7 @@ func _spawn_customer() -> void:
 	while seat in occupied:
 		seat += 1
 	order_serial += 1
-	orders.append({"id":order_serial,"seat":seat,"dish":dish,"state":"waiting","patience":progress.patience(),"max_patience":progress.patience(),"cook_left":0.0})
+	orders.append({"id":order_serial,"seat":seat,"dish":dish,"state":"waiting","patience":progress.patience(),"max_patience":progress.patience(),"cook_left":0.0,"cook_total":float(Progress.RECIPES[dish].cook_time),"preference":(order_serial-1)%3,"seasoning":int(menu_seasoning.get(dish,0)),"prepped":service_preparation.has(dish) and float(service_preparation[dish].left) <= 0,"heat_result":"","plated":false,"ready_age":0.0})
 	service_arrived += 1
 	restaurant_node.set_customers(orders)
 	hud.rebuild()
@@ -1395,9 +1468,16 @@ func _update_service(delta: float) -> void:
 			tell("一位顾客等得太久离开了，已用食材计为损耗。",4)
 			continue
 		if order.state == "cooking":
+			var before: float = order.cook_left
 			order.cook_left = maxf(0,order.cook_left-delta)
 			if order.cook_left <= 0:
 				order.state = "ready"
+				order.ready_age = maxf(0,delta-before)
+				changed = true
+		elif order.state == "ready":
+			var was_hot: bool = float(order.get("ready_age",0)) <= Cuisine.HOT_WINDOW
+			order.ready_age = float(order.get("ready_age",0))+delta
+			if was_hot and order.ready_age > Cuisine.HOT_WINDOW:
 				changed = true
 	service_spawn_time -= delta
 	if service_spawn_time <= 0:
@@ -1426,15 +1506,41 @@ func serve_order(id: int) -> void:
 		return
 	for order in orders.duplicate():
 		if order.id == id and order.state == "ready":
-			var earned: int = progress.record_served(order.dish)
+			var bonus: int = Cuisine.bonus_percent(order)
+			var earned: int = progress.record_served(order.dish,bonus)
 			if earned > 0:
+				culinary_results.excellent += int(Cuisine.quality(order) >= 3)
+				culinary_results.matched += int(Cuisine.matches(order))
+				culinary_results.cold += int(float(order.get("ready_age",0)) > Cuisine.HOT_WINDOW)
+				culinary_results.bonus += int(float(Progress.RECIPES[order.dish].price)*bonus/100.0)
 				_record_customer_feedback(order)
 				orders.erase(order)
-				tell("热腾腾的料理送达 · +%d G" % earned,3)
+				tell("料理送达 · %s · +%d G" % [Cuisine.quality_label(order),earned],3)
 				_play_tone(900,0.12)
 			break
 	restaurant_node.set_customers(orders)
 	hud.rebuild()
+
+func tend_order(id: int) -> void:
+	if state != "service":
+		return
+	for order in orders:
+		if order.id != id:
+			continue
+		if order.state == "cooking" and str(order.get("heat_result","")) == "":
+			var fraction: float = Cuisine.heat_fraction(order)
+			order.heat_result = "perfect" if fraction >= 0.4 and fraction <= 0.75 else "missed"
+			tell("翻面恰到好处，火候品质+2！" if order.heat_result == "perfect" else "这次翻面偏早或偏晚，下一份留意绿色区域。",3)
+		elif order.state == "ready" and not order.get("plated",false):
+			order.plated = true
+			tell("点缀柠檬与香草，摆盘完成。趁热送到客人桌上吧！",3)
+		break
+	restaurant_node.set_customers(orders)
+	hud.rebuild()
+
+func order_price(order: Dictionary) -> int:
+	var base: int = int(Progress.RECIPES[order.dish].price)
+	return base + (int(base/10.0) if progress.renovation.decor else 0) + int(base*Cuisine.bonus_percent(order)/100.0)
 
 func customer_mood(order: Dictionary) -> Dictionary:
 	return Feedback.live(order)
@@ -1452,7 +1558,7 @@ func finish_service() -> void:
 		return
 	for order in orders:
 		_record_customer_feedback(order,true)
-	service_summary = progress.end_service(orders.size(),service_reviews)
+	service_summary = progress.end_service(orders.size(),service_reviews,culinary_results)
 	summary_visible = true
 	orders.clear()
 	restaurant_node.set_customers(orders)
@@ -1488,6 +1594,7 @@ func enter_layout() -> void:
 	layout_mode = true
 	layout_selected = -1
 	layout_placing = false
+	layout_pending_purchase.clear()
 	layout_reason = "点选家具，或从左侧选购；保存前不会扣除真实金币。"
 	layout_history.clear()
 	layout_zoom = 31
@@ -1500,6 +1607,7 @@ func enter_layout() -> void:
 func save_layout() -> void:
 	if not layout_mode or state != "restaurant":
 		return
+	_discard_pending_purchase()
 	progress._apply_save_data(layout_work._save_data().duplicate(true))
 	progress.save_game()
 	_end_layout()
@@ -1514,6 +1622,7 @@ func cancel_layout() -> void:
 func _end_layout() -> void:
 	layout_mode = false
 	layout_placing = false
+	layout_pending_purchase.clear()
 	layout_selected = -1
 	layout_history.clear()
 	layout_work = null
@@ -1525,15 +1634,21 @@ func _end_layout() -> void:
 	hud.rebuild()
 
 func _remember_layout() -> void:
-	layout_history.append(layout_work._save_data().duplicate(true))
+	var snapshot: Dictionary = layout_work._save_data().duplicate(true)
+	snapshot["pending_purchase"] = layout_pending_purchase.duplicate(true)
+	layout_history.append(snapshot)
 	if layout_history.size() > 20:
 		layout_history.pop_front()
 
 func undo_layout() -> void:
 	if not layout_mode or layout_history.is_empty():
 		return
-	layout_work._apply_save_data(layout_history.pop_back())
-	layout_placing = false
+	var snapshot: Dictionary = layout_history.pop_back()
+	layout_work._apply_save_data(snapshot)
+	layout_pending_purchase = snapshot.get("pending_purchase",{}).duplicate(true)
+	layout_placing = not layout_pending_purchase.is_empty()
+	if layout_placing:
+		layout_selected = int(layout_pending_purchase.uid)
 	if layout_work.furniture_by_uid(layout_selected).is_empty():
 		layout_selected = -1
 	if layout_selected >= 0:
@@ -1548,10 +1663,13 @@ func select_furniture(uid: int) -> void:
 	var item: Dictionary = layout_work.furniture_by_uid(uid)
 	if item.is_empty():
 		return
+	if not layout_pending_purchase.is_empty() and int(layout_pending_purchase.uid) != uid:
+		_remember_layout()
+		_discard_pending_purchase()
 	layout_selected = uid
 	layout_rotation = int(item.rotation)
 	layout_placing = not item.placed
-	layout_reason = "移动鼠标预览，左键放下，R 旋转。" if layout_placing else "已选中家具 · G 移动 / R 旋转 / Delete 收回"
+	layout_reason = "移动鼠标预览，左键放下，R 旋转。" if layout_placing else "已选中家具 · G 移动 / R 旋转 / Delete 半价回收 · 可撤销"
 	restaurant_node.clear_layout_preview()
 	restaurant_node.highlight_furniture(uid)
 	hud.rebuild()
@@ -1567,6 +1685,7 @@ func begin_move_furniture() -> void:
 func buy_layout_furniture(kind: String, variant: String = "basic") -> void:
 	if not layout_mode:
 		return
+	_discard_pending_purchase()
 	_remember_layout()
 	var uid: int = layout_work.buy_furniture(kind,variant)
 	if uid < 0:
@@ -1574,8 +1693,37 @@ func buy_layout_furniture(kind: String, variant: String = "basic") -> void:
 		layout_reason = "金币不足，或该家具暂时不能购买。"
 		hud.rebuild()
 		return
+	layout_pending_purchase = {"uid":uid,"cost":int(Layout.variant_data(kind,variant).cost)}
 	select_furniture(uid)
-	layout_reason = "新家具已加入草稿收纳箱，保存布局时才会扣款。"
+	layout_reason = "选购待放置 · 右键 / Esc 取消不扣款；放下并保存后才购买。"
+
+func _discard_pending_purchase() -> void:
+	if layout_pending_purchase.is_empty():
+		return
+	var uid: int = int(layout_pending_purchase.uid)
+	for index in range(layout_work.furnishings.size()):
+		if int(layout_work.furnishings[index].uid) == uid:
+			layout_work.furnishings.remove_at(index)
+			layout_work.coins += int(layout_pending_purchase.cost)
+			break
+	if layout_selected == uid:
+		layout_selected = -1
+	layout_pending_purchase.clear()
+	layout_placing = false
+	restaurant_node.clear_layout_preview()
+
+func cancel_layout_placement() -> void:
+	if not layout_mode:
+		return
+	var was_purchase: bool = not layout_pending_purchase.is_empty()
+	if was_purchase:
+		_remember_layout()
+		_discard_pending_purchase()
+	layout_placing = false
+	restaurant_node.clear_layout_preview()
+	layout_reason = "已取消选购，预留金币已退回，其他修改保留。" if was_purchase else "已取消这次摆放，原位置和其他修改保留。"
+	_rebuild_restaurant()
+	hud.rebuild()
 
 func rotate_layout() -> void:
 	if not layout_mode:
@@ -1590,7 +1738,11 @@ func rotate_layout() -> void:
 	var rotation: int = (int(item.rotation)+1)%4
 	var reason: String = layout_work.placement_reason(layout_selected,item.x,item.z,rotation)
 	if not reason.is_empty():
-		layout_reason = reason + "，可先移动家具再转向。"
+		layout_placing = true
+		layout_rotation = rotation
+		layout_reason = reason + " · 已旋转预览，请移动到空位后放下；右键可取消。"
+		_update_layout_preview()
+		hud.rebuild()
 		return
 	_remember_layout()
 	layout_work.place_furniture(layout_selected,item.x,item.z,rotation)
@@ -1601,12 +1753,35 @@ func rotate_layout() -> void:
 func store_selected_furniture() -> void:
 	if not layout_mode:
 		return
+	if not layout_pending_purchase.is_empty():
+		cancel_layout_placement()
+		return
 	_remember_layout()
 	if not layout_work.store_furniture(layout_selected):
 		layout_history.pop_back()
 		return
 	layout_placing = false
 	layout_reason = "家具已收回收纳箱，可随时再次摆放，不需要重新购买。"
+	_rebuild_restaurant()
+	hud.rebuild()
+
+func recycle_selected_furniture() -> void:
+	if not layout_mode or state != "restaurant":
+		return
+	if not layout_pending_purchase.is_empty():
+		cancel_layout_placement()
+		return
+	if layout_work.furniture_by_uid(layout_selected).is_empty():
+		return
+	_remember_layout()
+	var refund: int = layout_work.recycle_furniture(layout_selected)
+	if refund <= 0:
+		layout_history.pop_back()
+		layout_reason = "暂时不能回收；金币达到上限时请先消费。"
+	else:
+		layout_selected = -1
+		layout_placing = false
+		layout_reason = "已回收家具，退还 %d G（售价50%%，向上取整）；保存后生效，可撤销。" % refund
 	_rebuild_restaurant()
 	hud.rebuild()
 
@@ -1633,6 +1808,7 @@ func set_layout_style(surface: String, style: int) -> void:
 func reset_layout_draft() -> void:
 	if not layout_mode:
 		return
+	_discard_pending_purchase()
 	_remember_layout()
 	layout_work.reset_layout()
 	layout_placing = false
@@ -1651,13 +1827,14 @@ func place_layout_at(x: float, z: float) -> bool:
 	if not layout_work.place_furniture(layout_selected,x,z,layout_rotation):
 		layout_history.pop_back()
 		return false
+	layout_pending_purchase.clear()
 	layout_placing = false
 	layout_reason = "已摆放在草稿中，点击保存布局生效。"
 	_rebuild_restaurant()
 	hud.rebuild()
 	return true
 
-func _layout_point(screen_position: Vector2) -> Variant:
+func _layout_plane_point(screen_position: Vector2) -> Variant:
 	var origin: Vector3 = camera.project_ray_origin(screen_position)
 	var direction: Vector3 = camera.project_ray_normal(screen_position)
 	if absf(direction.y) < 0.001:
@@ -1665,7 +1842,13 @@ func _layout_point(screen_position: Vector2) -> Variant:
 	var distance: float = (restaurant_node.global_position.y+0.08-origin.y)/direction.y
 	if distance < 0:
 		return null
-	var local: Vector3 = restaurant_node.to_local(origin + direction*distance)
+	return origin + direction*distance
+
+func _layout_point(screen_position: Vector2) -> Variant:
+	var point: Variant = _layout_plane_point(screen_position)
+	if point == null:
+		return null
+	var local: Vector3 = restaurant_node.to_local(point)
 	var snapped: Vector2 = Layout.snap_position(local.x,local.z)
 	return Vector3(snapped.x,0.08,snapped.y)
 
@@ -1716,27 +1899,28 @@ func _layout_input(event: InputEvent) -> void:
 			layout_panning = true
 		return
 	if event is InputEventMouseMotion and layout_panning:
-		var right: Vector3 = camera.global_transform.basis.x
-		var forward := Vector3(right.z,0,-right.x)
-		layout_pan -= (right * event.relative.x + forward * event.relative.y) * layout_zoom / 1000.0
+		# Keep the grabbed floor point under the cursor, without furniture grid snapping.
+		var previous: Variant = _layout_plane_point(event.position-event.relative)
+		var current: Variant = _layout_plane_point(event.position)
+		if previous == null or current == null:
+			return
+		layout_pan += previous-current
 		layout_pan.x = clampf(layout_pan.x,-16,16)
 		layout_pan.z = clampf(layout_pan.z,-14,14)
+		update_layout_camera()
 		return
 	if event is InputEventKey and event.pressed and not event.echo:
 		match event.physical_keycode:
 			KEY_ESCAPE:
 				if layout_placing:
-					layout_placing = false
-					restaurant_node.clear_layout_preview()
-					layout_reason = "已取消这次摆放，草稿中的其他修改保留。"
-					hud.rebuild()
+					cancel_layout_placement()
 				else:
 					cancel_layout()
 			KEY_TAB: toggle_layout_panel()
 			KEY_F: reset_layout_camera()
 			KEY_R: rotate_layout()
 			KEY_G: begin_move_furniture()
-			KEY_DELETE: store_selected_furniture()
+			KEY_DELETE: recycle_selected_furniture()
 			KEY_Z:
 				if event.ctrl_pressed:
 					undo_layout()
@@ -1746,9 +1930,7 @@ func _layout_input(event: InputEvent) -> void:
 		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			layout_zoom = minf(52,layout_zoom+1.5)
 		elif event.button_index == MOUSE_BUTTON_RIGHT:
-			layout_placing = false
-			restaurant_node.clear_layout_preview()
-			layout_reason = "已取消摆放。"
+			cancel_layout_placement()
 		elif event.button_index == MOUSE_BUTTON_LEFT:
 			var point: Variant = _layout_point(event.position)
 			if point == null:

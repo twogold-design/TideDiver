@@ -112,6 +112,8 @@ func rebuild() -> void:
 				var y: float = 268+i*140
 				_button("−",Rect2(1080,y,65,36),func(): game.change_menu(id,-1),false,int(game.menu_plan.get(id,0)) <= 0)
 				_button("+",Rect2(1300,y,65,36),func(): game.change_menu(id,1),true,int(game.menu_plan.get(id,0)) >= int(game.progress.inventory.get(id,0)))
+				_button("口味 · "+game.Cuisine.SEASONINGS[int(game.menu_seasoning.get(id,0))],Rect2(1080,y+44,136,31),func(): game.change_seasoning(id))
+				_button("备料中" if game.preparation.has(id) and game.preparation[id].left > 0 else ("备料完成" if game.preparation.has(id) else "精细备料"),Rect2(1224,y+44,150,31),func(): game.prepare_dish(id),false,game.preparation.has(id) or int(game.menu_plan.get(id,0)) <= 0 or not game.progress.renovation.kitchen)
 				i += 1
 		_button("自由布置",Rect2(357,726,173,58),game.enter_layout,false,not game.progress.renovation.clean)
 		var reason: String = game.service_block_reason()
@@ -127,13 +129,13 @@ func rebuild() -> void:
 			if order.state == "cooking":
 				label = "料理制作中…"
 			elif order.state == "ready":
-				var sale_price: int = int(P.RECIPES[order.dish].price)
-				if game.progress.renovation.get("decor",false):
-					sale_price += int(sale_price / 10.0)
-				label = "上菜  +%d G" % sale_price
+				label = "上菜  +%d G" % game.order_price(order)
 			var order_id: int = order.id
 			if order.state == "ready":
-				_button(label,Rect2(x+18,747,292,40),func(): game.serve_order(order_id),true)
+				_button("已摆盘" if order.get("plated",false) else "精致摆盘",Rect2(x+18,747,122,40),func(): game.tend_order(order_id),false,order.get("plated",false))
+				_button(label,Rect2(x+148,747,162,40),func(): game.serve_order(order_id),true)
+			elif order.state == "cooking":
+				_button("已掌勺" if order.get("heat_result","") != "" else "翻面 · 在绿色火候区点击",Rect2(x+18,747,292,40),func(): game.tend_order(order_id),true,order.get("heat_result","") != "")
 			else:
 				_button(label,Rect2(x+18,747,292,40),func(): game.cook_order(order_id),false,order.state == "cooking")
 	queue_redraw()
@@ -185,12 +187,12 @@ func _draw_management() -> void:
 		i += 1
 	_center(Vector2(169,647),"%d / %d" % [warehouse_page + 1, _warehouse_page_count()],15,MINT)
 	var completed: int = game.progress.total_served + game.progress.total_lost
-	var satisfaction: String = "尚未营业" if completed == 0 else "满意度 %d%%" % int(float(game.progress.total_served)/completed*100)
+	var satisfaction: String = "尚未营业" if completed == 0 else "出餐率 %d%%" % int(float(game.progress.total_served)/completed*100)
 	_text(Vector2(54,678),"营业 %d 场 · %s" % [game.progress.restaurant_runs,satisfaction],13,MINT)
 	_panel(Rect2(1050,164,356,606))
 	if game.restaurant_tab == "renovation":
 		i = 0
-		var descriptions: Dictionary = {"clean":"清除杂物，修复地板与墙面", "kitchen":"开业必需 · 炉灶与料理台", "tables":"开业必需 · 同时服务 2 位", "sign":"每场目标顾客 +2", "expansion":"4 个座位 · 目标顾客再 +2", "decor":"耐心 +8 秒 · 料理小费 +10%"}
+		var descriptions: Dictionary = {"clean":"清除杂物，修复地板与墙面", "kitchen":"开业必需 · 炉灶与料理台", "tables":"开业必需 · 同时服务 2 位", "sign":"每场目标顾客 +2", "expansion":"赠2套餐桌 · 上限4位 · 客流+2", "decor":"耐心+8秒 · 小费+10% · 赠品入收纳"}
 		for id in P.RENOVATIONS:
 			var y: float = 207+i*94
 			_text(Vector2(1072,y),P.RENOVATIONS[id].name,17)
@@ -206,9 +208,10 @@ func _draw_management() -> void:
 			_text(Vector2(1074,y),P.RECIPES[id].name,19)
 			_text(Vector2(1074,y+24),"售价 %d G · %d 秒 · 库存 %d" % [P.RECIPES[id].price,P.RECIPES[id].cook_time,int(game.progress.inventory.get(id,0))],13,MUTED)
 			_center(Vector2(1223,y+56),"%d 份" % int(game.menu_plan.get(id,0)),23,GOLD)
+			_text(Vector2(1080,y+116),game.preparation_label(id),13,MINT)
 			i += 1
 		_text(Vector2(1074,689),"计划共 %d 份 · 每份消耗 1 条鱼" % game.menu_total(),16,MINT)
-		_text(Vector2(1074,720),"未接单的备料打烊后会退回仓库",13,MUTED)
+		_text(Vector2(1074,720),"备料 / 火候 / 摆盘 · 品质收入最高+25%",12,MUTED)
 	var stage: String = "待修复的旧店"
 	if game.progress.can_open():
 		stage = "海岸小餐厅 · 可以备菜开业"
@@ -244,7 +247,7 @@ func _draw_service() -> void:
 		_text(Vector2(52,309+i*32),"%02d 桌 · %s" % [feedback.seat+1,feedback.text],13,_mood_color(feedback.mood))
 	for seat in range(game.progress.seats()):
 		var x: float = 32+seat*352
-		_panel(Rect2(x,608,328,196))
+		_panel(Rect2(x,568,328,236))
 		var current: Dictionary = {}
 		for order in game.orders:
 			if order.seat == seat:
@@ -253,17 +256,23 @@ func _draw_service() -> void:
 			_center(Vector2(x+164,681),"等待下一位客人",19,MUTED)
 			_center(Vector2(x+164,714),"TABLE %02d" % (seat+1),13,MINT)
 			continue
-		_text(Vector2(x+18,638),"%02d 号桌" % (seat+1),14,MUTED)
-		_text(Vector2(x+18,671),P.RECIPES[current.dish].name,21)
+		_text(Vector2(x+18,598),"%02d 号桌 · 偏好%s" % [seat+1,game.Cuisine.SEASONINGS[int(current.get("preference",0))]],14,MUTED)
+		_text(Vector2(x+18,629),P.RECIPES[current.dish].name,21)
 		var fraction: float = clampf(current.patience/float(current.get("max_patience",game.progress.patience())),0,1)
-		draw_style_box(_style(Color("31515a")),Rect2(x+18,685,292,7))
-		draw_style_box(_style(MINT if fraction > 0.3 else Color("ed8e78")),Rect2(x+18,685,maxf(1,292*fraction),7))
+		draw_style_box(_style(Color("31515a")),Rect2(x+18,643,292,7))
+		draw_style_box(_style(MINT if fraction > 0.3 else Color("ed8e78")),Rect2(x+18,643,maxf(1,292*fraction),7))
 		var label: String = "顾客等待中 · 耐心 %.0f 秒" % current.patience
 		if current.state == "cooking":
 			label = "制作中 · 还需 %.1f 秒" % current.cook_left
 		elif current.state == "ready":
-			label = "料理完成！点击上菜领取收入"
-		_text(Vector2(x+18,714),label,14,GOLD if current.state == "ready" else MUTED)
+			label = "%s · 趁热 %.1fs" % [game.Cuisine.quality_label(current),maxf(0,game.Cuisine.HOT_WINDOW-float(current.get("ready_age",0)))]
+		_text(Vector2(x+18,676),label,14,GOLD if current.state == "ready" else MUTED)
+		if current.state == "cooking":
+			draw_rect(Rect2(x+18,689,292,10),Color("31515a"))
+			draw_rect(Rect2(x+18+292*0.4,689,292*0.35,10),Color("559b70"))
+			var marker: float = x+18+292*game.Cuisine.heat_fraction(current)
+			draw_line(Vector2(marker,685),Vector2(marker,703),GOLD,3)
+		_text(Vector2(x+18,718),"%s口味 · %s · 品质+%d%%" % [game.Cuisine.SEASONINGS[int(current.get("seasoning",0))],"精细备料" if current.get("prepped",false) else "普通备料",game.Cuisine.bonus_percent(current)],13,MINT)
 		var mood: Dictionary = game.customer_mood(current)
 		_text(Vector2(x+18,738),"“%s”" % mood.text,13,_mood_color(mood.mood))
 
@@ -273,6 +282,9 @@ func _draw_bill() -> void:
 	_center(Vector2(720,263),"潮汐落幕，烟火未散",28)
 	_center(Vector2(720,296),"今日营业账单  /  TIDE TABLE",14,MINT)
 	var result: Dictionary = game.service_summary
+	if result.get("culinary") is Dictionary:
+		var cooking: Dictionary = result.culinary
+		_center(Vector2(720,328),"拿手 %d · 合口味 %d · 凉菜 %d · 品质增收 %dG" % [cooking.get("excellent",0),cooking.get("matched",0),cooking.get("cold",0),cooking.get("bonus",0)],14,MINT)
 	_center(Vector2(720,367),"收入  %d G" % int(result.get("earned",0)),43,GOLD)
 	_text(Vector2(510,426),"完成用餐",18)
 	_text(Vector2(840,426),"%d 位" % int(result.get("served",0)),22,MINT)
@@ -282,7 +294,7 @@ func _draw_bill() -> void:
 	_text(Vector2(840,516),"%d 份" % int(result.get("returned",0)),22)
 	if result.get("reviews") is Dictionary:
 		var reviews: Dictionary = result.reviews
-		_center(Vector2(720,555),"满意 %d   ·   等餐较久 %d   ·   未吃到 %d" % [reviews.get("satisfied",0),reviews.get("okay",0),reviews.get("lost",0)],17,MINT)
+		_center(Vector2(720,555),"满意 %d   ·   待改进 %d   ·   未吃到 %d" % [reviews.get("satisfied",0),reviews.get("okay",0),reviews.get("lost",0)],17,MINT)
 		var suggestion: String = "料理送得很及时，继续保持！"
 		if int(reviews.get("lost",0)) > 0:
 			suggestion = "建议：优先照顾催单顾客，打烊前送完已接订单。"

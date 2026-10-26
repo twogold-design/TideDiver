@@ -6,6 +6,7 @@ const Feedback = preload("res://scripts/customer_feedback.gd")
 const Person = preload("res://scripts/restaurant_person.gd")
 const Furniture = preload("res://scripts/furniture_art.gd")
 const Layout = preload("res://scripts/layout_rules.gd")
+const Coast = preload("res://scripts/coast_art.gd")
 const TABLE_POSITIONS: Array[Vector3] = [Vector3(-3.5, 0, -0.5), Vector3(3.5, 0, -0.5), Vector3(-3.5, 0, 3.5), Vector3(3.5, 0, 3.5)]
 const CREAM: Color = Color("efdfbd")
 const WOOD: Color = Color("ba865b")
@@ -101,25 +102,37 @@ func _text(parent: Node3D, text: String, pos: Vector3, size: int = 46, pixel: fl
 	parent.add_child(label)
 	return label
 
-func _plant(parent: Node3D, pos: Vector3, size: float = 1.0) -> void:
-	_cylinder(parent, pos + Vector3(0, 0.22 * size, 0), 0.27 * size, 0.44 * size, Color("c98869"), 0.37 * size)
-	_cylinder(parent, pos + Vector3(0, 0.44 * size, 0), 0.37 * size, 0.07 * size, Color("dfae87"))
-	for i: int in range(7):
-		var angle: float = float(i) * 2.399
-		var leaf: MeshInstance3D = _sphere(parent, pos + Vector3(cos(angle) * 0.22 * size, (0.81 + float(i % 3) * 0.12) * size, sin(angle) * 0.22 * size), Vector3(0.14, 0.51, 0.08) * size, Color("518f73") if i % 2 else Color("7fab7f"))
-		leaf.rotation = Vector3(sin(angle) * 0.35, angle, cos(angle) * 0.35)
-
 func _palm(parent: Node3D, pos: Vector3, size: float) -> void:
 	var crown: Vector3 = pos + Vector3(size * 0.25, size * 2.8, 0)
 	_bar(parent, pos, crown, size * 0.15, Color("ab8c63"))
-	for i: int in range(7):
-		var angle: float = float(i) * TAU / 7.0
-		var leaf: MeshInstance3D = _sphere(parent, crown + Vector3(cos(angle) * size * 0.8, 0, sin(angle) * size * 0.8), Vector3(size * 0.32, size * 0.08, size * 1.1), Color("648d6e") if i % 2 else Color("91ad78"))
-		leaf.rotation = Vector3(0.25, -angle + PI / 2, 0)
+	for ring in range(12):
+		var point: Vector3 = pos.lerp(crown,ring/12.0)
+		_cylinder(parent,point,size*0.153,0.04,Color("86785b"))
+	for i: int in range(9):
+		var angle: float = float(i) * TAU / 9.0
+		var direction := Vector3(cos(angle),0,sin(angle))
+		var across := Vector3(-sin(angle),0,cos(angle))
+		var mesh := SurfaceTool.new()
+		mesh.begin(Mesh.PRIMITIVE_TRIANGLES)
+		var previous := crown
+		for section in range(1,13):
+			var t: float = section/12.0
+			var point: Vector3 = crown+direction*(t*size*2.0)+Vector3.UP*size*(sin(t*PI)*0.35-t*t*0.65)
+			var width: float = sin(t*PI)*size*0.36
+			var tip: Vector3 = point+direction*size*0.16-Vector3.UP*size*0.08
+			for side: float in [-1.0,1.0]:
+				for vertex: Vector3 in [previous,point,tip+across*width*side]:
+					mesh.add_vertex(vertex)
+			previous = point
+		mesh.generate_normals()
+		var leaf := _mesh(parent,mesh.commit(),Vector3.ZERO,Color("52765b") if i%2 else Color("799660"))
+		var leaf_material: StandardMaterial3D = leaf.material_override.duplicate()
+		leaf_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+		leaf.material_override = leaf_material
 	for i: int in range(3):
 		_sphere(parent, crown + Vector3(float(i - 1) * 0.25, -0.18, 0.16), Vector3.ONE * 0.23, Color("8c7553"))
 
-func rebuild(renovation: Dictionary, furnishings: Array = [], styles: Dictionary = {}) -> void:
+func rebuild(renovation: Dictionary, furnishings: Variant = null, styles: Dictionary = {}) -> void:
 	clear_reactions()
 	_chef = null
 	_styles = styles.duplicate(true)
@@ -144,7 +157,8 @@ func rebuild(renovation: Dictionary, furnishings: Array = [], styles: Dictionary
 		_build_clutter()
 	if bool(renovation.get("kitchen", false)):
 		_build_kitchen()
-	if not furnishings.is_empty():
+	# An explicit empty inventory means the player recycled everything.
+	if furnishings is Array:
 		for value: Variant in furnishings:
 			if value is Dictionary:
 				var item: Dictionary = value
@@ -177,10 +191,7 @@ func rebuild(renovation: Dictionary, furnishings: Array = [], styles: Dictionary
 	highlight_furniture(selected)
 
 func _build_shore() -> void:
-	_box(_room, Vector3(0, -0.65, 4), Vector3(57, 0.7, 47), Color("b8a47d"))
-	_box(_room, Vector3(0, -0.63, -29), Vector3(150, 0.2, 35), Color("6ba8aa"))
-	for i: int in range(7):
-		_box(_room, Vector3(float(i % 2) * 4, -0.51, -13.0 - float(i) * 1.9), Vector3(50 - i * 3, 0.025, 0.12), Color("a4c6b8"))
+	Coast.build(_room)
 	_palm(_room, Vector3(-14.4, -0.3, -5.0), 1.9)
 	_palm(_room, Vector3(14.2, -0.3, -6.5), 1.65)
 	_palm(_room, Vector3(-14.8, -0.3, 10.0), 1.4)
@@ -321,9 +332,7 @@ func _build_sign() -> void:
 	_room.add_child(glow)
 
 func _build_decor() -> void:
-	# Interior decorations are placed furniture; only terrace plants stay fixed.
-	_plant(_room, Vector3(-8.5, 0.05, 11.1), 1.15)
-	_plant(_room, Vector3(8.5, 0.05, 11.1), 1.15)
+	# Potted plants come exclusively from placed furniture.
 	# Two slender posts support a gentle light string above the open room.
 	for x: float in [-10.8, 10.8]:
 		_cylinder(_room, Vector3(x, 2.0, 9.0), 0.065, 4.0, Color("947250"))
@@ -413,6 +422,12 @@ func set_customers(orders: Array) -> void:
 			_people.remove_child(existing)
 			existing.queue_free()
 			_ready_plates.erase(identity)
+		existing = _ready_plates.get(identity) as Node3D
+		if is_instance_valid(existing) and order.get("plated",false) and not existing.has_meta("garnished"):
+			existing.set_meta("garnished",true)
+			_cylinder(existing,Vector3(-0.16,0.06,-0.12),0.09,0.025,Color("e9cd68"))
+			for leaf in range(3):
+				_sphere(existing,Vector3(0.13+leaf*0.035,0.08,-0.13+leaf*0.04),Vector3(0.04,0.025,0.08),Color("679960"))
 	for identity: Variant in _customers.keys():
 		if not present.has(identity):
 			var person: Node3D = _customers[identity] as Node3D
@@ -427,6 +442,10 @@ func set_customers(orders: Array) -> void:
 
 	if is_instance_valid(_chef):
 		_chef.update_kitchen(_chef_counts.x, _chef_counts.y, _chef_counts.z)
+
+func set_preparing(active: bool) -> void:
+	if is_instance_valid(_chef):
+		_chef.update_kitchen(1 if active else 0,0,0)
 
 func react_customer(order: Dictionary, outcome: String) -> void:
 	var identity: int = int(order.get("id", -1))

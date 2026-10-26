@@ -104,7 +104,9 @@ func _test_first_service() -> void:
 	game.serve_order(first_id)
 	_check(progress.coins == money_before and order.state == "waiting", "Uncooked dishes cannot be served")
 	game.cook_order(first_id)
-	_check(order.state == "cooking" and _button_disabled("料理制作中"), "Cooking begins and disables duplicate cooking button")
+	order.cook_left -= 0.1
+	game.cook_order(first_id)
+	_check(order.state == "cooking" and _button("翻面") != null and order.cook_left < order.cook_total, "Cooking exposes heat action and cannot be restarted")
 	game.serve_order(first_id)
 	_check(progress.coins == money_before, "Cooking dishes cannot be served early")
 	game.toggle_pause()

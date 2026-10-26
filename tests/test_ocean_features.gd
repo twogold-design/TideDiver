@@ -103,7 +103,10 @@ func _test_storm(storm: Node3D) -> void:
 	game.camera.look_at(target_point, Vector3.UP)
 	game.shot_cooldown = 0
 	game.shoot()
-	_check(independent and game.fish.size() == 167 and game.target_fish().is_empty() and game.cargo.is_empty() and memory.inventory_total() == 0, "The decorative vortex cannot be targeted, caught or duplicated into cargo or inventory")
+	_check(game.projectiles.size() == 1, "Shooting into the decorative vortex launches a real flying hook")
+	for frame in range(50):
+		game._update_projectiles(0.02)
+	_check(independent and game.fish.size() == 167 and game.projectiles.is_empty() and game.target_fish().is_empty() and game.cargo.is_empty() and memory.inventory_total() == 0, "A physical hook crossing the decorative vortex cannot catch or duplicate it into cargo or inventory")
 
 func _test_storm_geometry(storm: Node3D, visual: MultiMeshInstance3D) -> void:
 	var mesh: ArrayMesh = visual.multimesh.mesh as ArrayMesh

@@ -92,8 +92,11 @@ func _test_capacity_and_catching() -> void:
 	game._update_dive(0.0)
 	var center: Vector2 = root.get_visible_rect().size * 0.5
 	target.node.position = game.camera.project_ray_origin(center) + game.camera.project_ray_normal(center) * 12.0
+	target.previous_position = target.node.position
 	_check(not game.target_fish().is_empty(), "Fish can be acquired at reticle")
 	_key(KEY_SPACE)
+	for frame in range(50):
+		game._update_projectiles(0.02)
 	_check(game.cargo.size() == 1 and game.weight() == memory.capacity(), "Full bag rejects caught fish without overflow")
 	_check(target.alive and target.hp == 1 and target.node.visible, "Fish remains available after full-bag rejection")
 	_check(game.catch_timer == 0, "Full bag does not report a successful catch")
@@ -101,6 +104,9 @@ func _test_capacity_and_catching() -> void:
 	game.shot_cooldown = 0.0
 	game.muted = false
 	_key(KEY_SPACE)
+	_check(target.alive and game.cargo.is_empty(), "Shooting creates flight without instant target damage")
+	for frame in range(50):
+		game._update_projectiles(0.02)
 	game.muted = true
 	_check(is_equal_approx(game.sound_player.stream.get_length(), 0.5), "Catch confirmation sound is not overwritten by firing sound")
 	_check(game.catch_timer == 2.4 and game.catch_kind == 0 and game.hit_timer > 0, "Successful catch triggers named card and hit marker")
@@ -260,6 +266,7 @@ func _test_rock_occlusion() -> void:
 	game.player.position = Vector3(8.0, rock_y, 7.0)
 	game.camera.position = Vector3(8.0, rock_y, 8.0)
 	target.node.position = Vector3(8.0, rock_y, -12.0)
+	target.previous_position = target.node.position
 	game.camera.look_at(target.node.position)
 	var query := PhysicsRayQueryParameters3D.create(game.camera.position, target.node.position, 1, [game.player.get_rid()])
 	var hit: Dictionary = game.get_world_3d().direct_space_state.intersect_ray(query)
@@ -268,10 +275,13 @@ func _test_rock_occlusion() -> void:
 	var cargo_before: int = game.cargo.size()
 	game.shot_cooldown = 0.0
 	game.shoot()
+	for frame in range(50):
+		game._update_projectiles(0.02)
 	_check(target.alive and target.hp == 1 and game.cargo.size() == cargo_before, "Harpoon cannot damage or capture fish through reef")
 	game.camera.position.x = 22.0
 	game.player.position.x = 22.0
 	target.node.position.x = 22.0
+	target.previous_position = target.node.position
 	game.camera.look_at(target.node.position)
 	_check(not game.target_fish().is_empty(), "Same fish becomes targetable along an unobstructed sight ray")
 
