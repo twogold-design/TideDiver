@@ -74,6 +74,14 @@ func rebuild() -> void:
 		_button("确认重新开始",Rect2(733,511,256,53),game.confirm_new_game)
 		queue_redraw()
 		return
+	if game.gm_menu_open:
+		for index in range(game.Ocean.DIVE_SITES.size()):
+			var y: float = 215 + index * 66
+			_button("船上入水",Rect2(817,y+8,150,40),game.gm_select_dive_site.bind(index,false))
+			_button("直达景观",Rect2(982,y+8,170,40),game.gm_select_dive_site.bind(index,true),true)
+		_button("返回游戏 · F1 / Esc",Rect2(580,715,280,48),game.close_gm_menu)
+		queue_redraw()
+		return
 	if game.state == "dock":
 		_button("出发潜水    →",Rect2(64,486,370,64),game.start_dive,true)
 		var kinds = ["tank","bag","spear"]
@@ -85,11 +93,13 @@ func rebuild() -> void:
 		_button("我的餐厅  ·  仓库 / 装修 / 营业",Rect2(64,561,370,49),game.open_restaurant)
 		_button("退出游戏",Rect2(64,782,150,43),func(): get_tree().quit())
 		_button("重新开始游戏",Rect2(230,782,204,43),game.request_new_game)
+		_button("GM 自选潜点 · F1",Rect2(545,782,260,43),game.open_gm_menu)
 	elif game.state == "paused":
 		_button("重新开始游戏",Rect2(545,558,350,48),game.request_new_game)
 		_button("继续探索",Rect2(545,410,350,58),game.toggle_pause,true)
 		_button("呼叫救援 · 保留 35% 收益",Rect2(545,484,350,58),_rescue)
 		_button("退出游戏",Rect2(545,620,350,48),func(): get_tree().quit())
+		_button("GM 自选潜点 · F1",Rect2(545,680,350,48),game.open_gm_menu)
 	queue_redraw()
 
 func _rescue() -> void:
@@ -117,7 +127,7 @@ func _draw() -> void:
 		_draw_hud()
 	if game.state == "paused":
 		draw_rect(Rect2(0,0,1440,900),Color(0.01,0.05,0.08,0.75))
-		_panel(Rect2(495,260,450,450),Color("0d303d"))
+		_panel(Rect2(495,260,450,510),Color("0d303d"))
 		_center(Vector2(720,317),"静候下一次呼吸",29)
 		_center(Vector2(720,351),"PAUSED / 潜水已暂停",14,MUTED)
 	if game.notice_timer > 0 and game.state != "paused":
@@ -132,6 +142,36 @@ func _draw() -> void:
 		_center(Vector2(720,387),"金币、装备、仓库、店面和家具将全部重置。",19,LIGHT)
 		_center(Vector2(720,423),"从第 1 天重新开始，并覆盖当前自动存档。",18,GOLD)
 		_center(Vector2(720,467),game.new_game_error if not game.new_game_error.is_empty() else "取消或按 Esc 可保留当前进度。",16,GOLD if not game.new_game_error.is_empty() else MUTED)
+	if game.gm_test_active and game.state == "dive":
+		_panel(Rect2(30,414,220,44),Color(0.08,0.17,0.20,0.94),Color(GOLD,0.65))
+		_text(Vector2(44,442),"GM 试游 · F1 切换潜点",14,GOLD)
+	if game.gm_menu_open and not game.new_game_confirmation:
+		_draw_gm_menu()
+
+func _draw_gm_menu() -> void:
+	draw_rect(Rect2(0,0,1440,900),Color(0.01,0.04,0.07,0.87))
+	_panel(Rect2(245,102,950,696),Color("0d303d"),Color(MINT,0.42))
+	_text(Vector2(286,151),"GM · 自选潜点",30,LIGHT)
+	_text(Vector2(1010,148),"F1 / Esc 关闭",15,MUTED)
+	var subtitle: String = "选择潜点开始本次潜水；船上入水播放跳水动画，直达景观立即进入水下。" if game.gm_return_state == "dock" else "潜水中切换地点会保留背包和气瓶量，不结算本次潜水。"
+	_text(Vector2(286,187),subtitle,16,MUTED)
+	var descriptions: Array[String] = [
+		"浅水鱼群与近岸采集，适合试游和捕鱼。",
+		"深切峡谷与双门遗迹，体验顺流 / 逆流。",
+		"发光海植与深水鱼群，留意气瓶量。",
+		"沉船结构与宝藏，检查遮挡与鱼叉弹道。",
+		"大片鹿角、桌状珊瑚与海扇，沿通道游览。",
+		"420 条杰克鱼旋游风暴，观赏鱼不进入背包。",
+		"贝壳环礁与珍珠采集，观察远海浅水鱼群。"
+	]
+	for index in range(game.Ocean.DIVE_SITES.size()):
+		var y: float = 215 + index * 66
+		var selected: bool = game.gm_test_active and game.entry_site_index == index
+		_panel(Rect2(270,y,900,56),Color("153f49") if selected else Color("10353e"),Color(GOLD,0.55) if selected else Color(MINT,0.12))
+		_text(Vector2(286,y+31),"%02d" % (index+1),15,MINT,true)
+		_text(Vector2(326,y+25),game.Ocean.DIVE_SITES[index].name,19,GOLD if selected else LIGHT)
+		_text(Vector2(326,y+46),descriptions[index],13,MUTED)
+	_center(Vector2(720,784),"船上入水体验完整跳水 · 直达景观快速检查潜点特色",13,MUTED)
 
 func _draw_dock() -> void:
 	# An editorial split layout keeps the underwater vista visible.
@@ -223,6 +263,8 @@ func _draw_hud() -> void:
 	_text(Vector2(644,48),"N   ·   %03d°   ·   S" % int(heading),17,MINT,true)
 	draw_line(Vector2(720,61),Vector2(720,72),GOLD,2)
 	_center(Vector2(720,102),game.ocean_zone_name(),19,LIGHT)
+	if not game.current_hint.is_empty():
+		_center(Vector2(720,137), "峡谷水流 向南 ↓ · %s · %.1f m/s" % [game.current_hint,game.drift_current.length()], 16, MINT)
 	if game.ocean_edge_distance() < 18:
 		_center(Vector2(720,137),"前方洋流增强 · 请转向海域内部",18,GOLD)
 	_draw_ocean_map()
@@ -271,7 +313,7 @@ func _draw_hud() -> void:
 	_draw_depth_gauge()
 	_panel(Rect2(290,768,1035,43),Color(0.025,0.12,0.16,0.85))
 	_text(Vector2(308,794),"WASD 游泳   Q / E 潜浮   Shift 冲刺   Ctrl 慢游   左键 / 空格 鱼叉 · 20m   F 互动   Esc 暂停",15,MUTED)
-	_text(Vector2(42,882),"M  音效开关",12,MUTED)
+	_text(Vector2(42,882),"M  音效开关   ·   F1  GM 自选潜点",12,MUTED)
 	_text(Vector2(1200,882),"TIDAL BAY / 01",13,MUTED,true)
 	if game.hurt_cooldown > 1.8:
 		draw_rect(Rect2(0,0,1440,900),Color(0.85,0.2,0.2,0.08))

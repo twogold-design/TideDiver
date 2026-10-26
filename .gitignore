@@ -39,3 +39,7 @@ artifacts/save-*-layout.json
 
 !artifacts/merged_jack_storm.png
 !artifacts/merged_coral_garden.png
+!artifacts/canyon_current_gameplay.png
+!artifacts/canyon_upstream_gameplay.png
+!artifacts/gm_site_selector.png
+!artifacts/gm_underwater_selector.png

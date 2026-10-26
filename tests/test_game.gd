@@ -44,7 +44,7 @@ func _run() -> void:
 	game.set_physics_process(false)
 	game.smoke_mode = true
 	_check(game.state == "dock", "Game starts at dock")
-	_check(game.hud.buttons.size() == 7, "Dock has launch, three upgrades, restaurant, new game, and exit")
+	_check(game.hud.buttons.size() == 8, "Dock has launch, three upgrades, restaurant, new game, GM, and exit")
 	_test_water_entry()
 	game.state = "dock"
 	game.start_dive(false, false)
@@ -122,7 +122,7 @@ func _test_capacity_and_catching() -> void:
 
 func _test_pause() -> void:
 	_key(KEY_ESCAPE)
-	_check(game.state == "paused" and game.hud.buttons.size() == 4, "Escape opens pause menu with new-game entry")
+	_check(game.state == "paused" and game.hud.buttons.size() == 5, "Escape opens pause menu with new-game and GM entries")
 	var feedback_before: float = game.catch_timer
 	var oxygen_before: float = game.oxygen
 	var clock_before: float = game.clock

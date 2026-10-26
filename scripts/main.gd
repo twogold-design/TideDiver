@@ -23,11 +23,17 @@ const SPEAR_RANGE = 20.0
 const SPEAR_COOLDOWN = 0.95
 var progress = Progress.new()
 var state: String = "dock"
+var canyon_root: Node3D
+var drift_current: Vector3 = Vector3.ZERO
+var current_hint: String = ""
 var storm_school: Node3D
 var boat: Node3D
 var dive_origin: Vector3 = Vector3.ZERO
 var entry_site_index: int = -1
 var entry_rng = RandomNumberGenerator.new()
+var gm_menu_open: bool = false
+var gm_return_state: String = "dock"
+var gm_test_active: bool = false
 var player: CharacterBody3D
 var camera: Camera3D
 var environment: Environment
@@ -295,6 +301,7 @@ func _setup_world() -> void:
 	ocean_root = Node3D.new()
 	add_child(ocean_root)
 	Art.build_world(ocean_root)
+	canyon_root = ocean_root.get_node("OuterOcean/twin_gates/TidalCanyon")
 	storm_school = StormSchool.new()
 	storm_school.position = StormSchool.CENTER
 	ocean_root.add_child(storm_school)
@@ -438,7 +445,12 @@ func _clear_fish_home(point: Vector3, kind: int) -> Vector3:
 	push_error("No open water available for fish spawn")
 	return Vector3.INF
 
-func _select_dive_site(random_entry: bool) -> void:
+func _select_dive_site(random_entry: bool, site_override: int = -1) -> void:
+	if site_override >= 0 and site_override < Ocean.DIVE_SITES.size():
+		entry_site_index = site_override
+		dive_origin = Ocean.DIVE_SITES[site_override].origin
+		boat.position = dive_origin + Vector3(0,0.3,14)
+		return
 	if not random_entry:
 		dive_origin = Vector3.ZERO
 		entry_site_index = 0
@@ -543,7 +555,7 @@ func _jellyfish() -> Node3D:
 	return root
 
 func request_new_game() -> void:
-	if state not in ["dock","paused"] or new_game_confirmation:
+	if state not in ["dock","paused"] or new_game_confirmation or gm_menu_open:
 		return
 	new_game_confirmation = true
 	new_game_error = ""
@@ -564,8 +576,13 @@ func confirm_new_game() -> void:
 		hud.rebuild()
 		return
 	new_game_confirmation = false
+	gm_menu_open = false
+	gm_test_active = false
+	gm_return_state = "dock"
 	state = "dock"
 	entry_active = false
+	drift_current = Vector3.ZERO
+	current_hint = ""
 	entry_time = 0.0
 	entry_splashed = false
 	catch_timer = 0.0
@@ -636,22 +653,27 @@ func confirm_new_game() -> void:
 	tell("新的旅程开始了。从第一天出海，重新打造你的海岸小店。",9)
 	hud.rebuild()
 
-func start_dive(animate_entry: bool = true, random_entry: bool = true) -> void:
-	if new_game_confirmation or state != "dock":
+func start_dive(animate_entry: bool = true, random_entry: bool = true, site_override: int = -1) -> void:
+	if new_game_confirmation or gm_menu_open or state != "dock":
 		return
+	if site_override < -1 or site_override >= Ocean.DIVE_SITES.size():
+		return
+	gm_test_active = false
 	_clear_projectiles()
 	restaurant_node.visible = false
 	preparation.clear()
 	ocean_root.visible = true
 	environment.fog_enabled = true
 	camera.fov = 66
-	_select_dive_site(random_entry)
+	_select_dive_site(random_entry, site_override)
 	_spawn_population()
 	cargo.clear()
 	oxygen = progress.oxygen_max()
 	depth_record = 0
 	catch_timer = 0.0
 	hit_timer = 0.0
+	drift_current = Vector3.ZERO
+	current_hint = ""
 	entry_active = animate_entry
 	entry_time = 0.0
 	entry_splashed = false
@@ -675,9 +697,119 @@ func start_dive(animate_entry: bool = true, random_entry: bool = true) -> void:
 		_update_entry(0.0)
 	_play_tone(480, 0.18)
 
+func open_gm_menu() -> void:
+	if gm_menu_open or new_game_confirmation or layout_mode or state not in ["dock","dive","paused"]:
+		return
+	gm_return_state = state
+	gm_menu_open = true
+	if state == "dive":
+		state = "paused"
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	hud.rebuild()
+
+func close_gm_menu() -> void:
+	if not gm_menu_open:
+		return
+	gm_menu_open = false
+	state = gm_return_state
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED if state == "dive" else Input.MOUSE_MODE_VISIBLE
+	hud.rebuild()
+
+func gm_select_dive_site(index: int, direct: bool = false) -> void:
+	if not gm_menu_open or index < 0 or index >= Ocean.DIVE_SITES.size():
+		return
+	var from_dock: bool = gm_return_state == "dock"
+	gm_menu_open = false
+	if from_dock:
+		state = "dock"
+		start_dive(not direct, false, index)
+	else:
+		# Move within this dive: harvested fish, cargo, air and progress stay intact.
+		_select_dive_site(false, index)
+		_clear_projectiles()
+		state = "dive"
+	gm_test_active = true
+	entry_active = not direct
+	entry_time = 0.0
+	entry_splashed = false
+	player.velocity = Vector3.ZERO
+	player.rotation = Vector3.ZERO
+	drift_current = Vector3.ZERO
+	current_hint = ""
+	catch_timer = 0.0
+	hit_timer = 0.0
+	shot_cooldown = 0.0
+	hurt_cooldown = 0.0
+	poison_timer = 0.0
+	hunt_warning_timer = 0.0
+	hunt_warning = ""
+	camera.fov = 66
+	camera.projection = Camera3D.PROJECTION_PERSPECTIVE
+	if direct:
+		var pose: Dictionary = _gm_test_pose(index)
+		player.position = pose.position
+		yaw = pose.yaw
+		pitch = pose.pitch
+		player.rotation.y = yaw
+		var forward := Vector3(-sin(yaw)*cos(pitch),sin(pitch),-cos(yaw)*cos(pitch))
+		var desired_camera: Vector3 = player.position - forward*7.5 + Vector3.UP*1.7
+		var ray := PhysicsRayQueryParameters3D.create(player.position+Vector3.UP*0.8,desired_camera,1,[player.get_rid()])
+		var obstruction: Dictionary = get_world_3d().direct_space_state.intersect_ray(ray)
+		camera.position = desired_camera if obstruction.is_empty() else obstruction.position+obstruction.normal*0.4
+		camera.look_at(player.position+forward*3+Vector3.UP*0.6)
+		var deep: float = clampf((-player.position.y-12)/110,0,1)
+		environment.fog_light_color = Color("14596b").lerp(Color("061c30"),deep)
+		environment.background_color = environment.fog_light_color
+		environment.fog_density = 0.024
+	else:
+		_update_entry(0.0)
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	tell("GM · %s · %s" % [Ocean.DIVE_SITES[index].name,"直达景观" if direct else "船上入水"],5)
+	hud.rebuild()
+
+func _gm_test_pose(index: int) -> Dictionary:
+	var point: Vector3 = Ocean.DIVE_SITES[index].origin + Vector3(0,-9,12)
+	var heading: float = 0.0
+	var tilt: float = -0.12
+	match index:
+		1:
+			point = Vector3(Ocean.canyon_center_x(-270),-76,-270)
+			heading = PI
+		2:
+			point = Vector3(35,Ocean.seabed_height(35,-325)+14,-325)
+		3:
+			point = Vector3(310,Ocean.seabed_height(310,-92)+14,-92)
+		4:
+			point = Vector3(-180,-11,180)
+			tilt = -0.25
+		5:
+			point = StormSchool.CENTER + Vector3(0,0,37)
+		6:
+			point = Vector3(245,Ocean.seabed_height(245,276)+12,276)
+	# Verify real terrain/landmark collision before placing a player at a viewpoint.
+	if not _open_water(point):
+		var found: bool = false
+		for ring in range(1,13):
+			for direction in range(8):
+				var angle: float = float(direction)*TAU/8.0
+				var candidate := point + Vector3(sin(angle)*ring*2.0,ring*1.5,cos(angle)*ring*2.0)
+				candidate.y = clampf(candidate.y,Ocean.seabed_height(candidate.x,candidate.z)+3,-6)
+				if _open_water(candidate):
+					point = candidate
+					found = true
+					break
+			if found:
+				break
+		if not found:
+			point = Ocean.DIVE_SITES[index].origin + Vector3(0,-6,25)
+	return {"position":point,"yaw":heading,"pitch":tilt}
+
 func finish_dive(rescued: bool = false) -> void:
 	if state != "dive":
 		return
+	gm_test_active = false
+	drift_current = Vector3.ZERO
+	current_hint = ""
 	entry_active = false
 	camera.fov = 66
 	_clear_projectiles()
@@ -703,6 +835,9 @@ func upgrade(kind: String) -> void:
 	hud.rebuild()
 
 func toggle_pause() -> void:
+	if gm_menu_open:
+		close_gm_menu()
+		return
 	if new_game_confirmation:
 		cancel_new_game()
 		return
@@ -734,10 +869,19 @@ func _unhandled_input(event: InputEvent) -> void:
 		if event is InputEventKey and event.pressed and event.physical_keycode == KEY_ESCAPE:
 			cancel_new_game()
 		return
+	if gm_menu_open:
+		if event is InputEventKey and event.pressed and not event.echo and event.physical_keycode in [KEY_ESCAPE,KEY_F1]:
+			close_gm_menu()
+			get_viewport().set_input_as_handled()
+		return
 	if layout_mode:
 		_layout_input(event)
 		return
 	if event is InputEventKey and event.pressed and not event.echo:
+		if event.physical_keycode == KEY_F1:
+			open_gm_menu()
+			get_viewport().set_input_as_handled()
+			return
 		if event.physical_keycode == KEY_ESCAPE:
 			toggle_pause()
 		if event.physical_keycode == KEY_M:
@@ -944,7 +1088,19 @@ func _update_dive(delta: float) -> void:
 	var move = Vector3(horizontal.x,vertical,horizontal.z).limit_length()
 	var boosting: bool = Input.is_action_pressed("boost") and move.length() > 0.1
 	var speed: float = 2.8 if Input.is_action_pressed("stealth") else (11.5 if boosting else 6.2)
-	player.velocity = move * speed
+	drift_current = Ocean.current_velocity(player.position)
+	current_hint = ""
+	if drift_current.length() > 0.05:
+		var alignment: float = move.dot(drift_current.normalized())
+		if move.length() < 0.1:
+			current_hint = "随流漂行"
+		elif alignment > 0.25:
+			current_hint = "顺流 · 水流助推"
+		elif alignment < -0.25:
+			current_hint = "逆流 · 轻微阻力"
+		else:
+			current_hint = "横向游动 · 水流侧推"
+	player.velocity = move * speed + drift_current
 	player.move_and_slide()
 	player.position.x = clampf(player.position.x,Ocean.X_MIN,Ocean.X_MAX)
 	player.position.z = clampf(player.position.z,Ocean.Z_MIN,Ocean.Z_MAX)
@@ -978,6 +1134,7 @@ func _update_dive(delta: float) -> void:
 		finish_dive(true)
 
 func _animate_ocean(_delta: float) -> void:
+	canyon_root.animate(clock,player.position)
 	storm_school.animate(clock,player.position)
 	for item in fish:
 		if item.alive:
@@ -1166,6 +1323,8 @@ func ocean_edge_distance() -> float:
 	return minf(minf(player.position.x-Ocean.X_MIN,Ocean.X_MAX-player.position.x),minf(player.position.z-Ocean.Z_MIN,Ocean.Z_MAX-player.position.z))
 
 func ocean_zone_name() -> String:
+	if absf(player.position.z-Ocean.CANYON_CENTER.z) < Ocean.CANYON_HALF_LENGTH+8 and absf(player.position.x-Ocean.canyon_center_x(player.position.z)) < 42:
+		return Ocean.ZONES[0].name
 	var nearest: String = "蓝海航道"
 	if Vector2(player.position.x,player.position.z).length() < 42:
 		return "潮汐湾 · 近岸"
