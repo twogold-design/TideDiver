@@ -194,7 +194,7 @@ func _draw_hud() -> void:
 	if game.entry_active:
 		var immersion: float = 1.0 - smoothstep(-1.5, 0.6, game.camera.position.y)
 		draw_rect(Rect2(0,0,1440,900), Color(0.02,0.28,0.34,immersion * 0.12))
-		_center(Vector2(720,710), "跃入潮汐湾" if not game.entry_splashed else "沉入蔚蓝", 28, LIGHT)
+		_center(Vector2(720,710), ("跃入%s" % game.Ocean.DIVE_SITES[game.entry_site_index].name) if not game.entry_splashed else "沉入蔚蓝", 28, LIGHT)
 		if game.entry_splashed:
 			for i in range(16):
 				var age: float = maxf(0, game.entry_time - 1.4)

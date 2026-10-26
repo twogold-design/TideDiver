@@ -24,6 +24,17 @@ const ZONES := [
 	{"id":"pearl_atoll","name":"月贝环礁","center":Vector3(245,-32,240),"radius":42.0,"fish_kind":1},
 ]
 
+# Boat origins keep the stern jump on the open-water approach to each landmark.
+const DIVE_SITES := [
+	{"name":"潮汐湾近岸", "origin":Vector3(0,0,0)},
+	{"name":"双门遗迹", "origin":Vector3(-210,0,-290)},
+	{"name":"幽蓝灯园", "origin":Vector3(35,0,-420)},
+	{"name":"远航沉船", "origin":Vector3(310,0,-190)},
+	{"name":"琥珀珊瑚礁", "origin":Vector3(-180,0,75)},
+	{"name":"南潮石林", "origin":Vector3(-45,0,240)},
+	{"name":"月贝环礁", "origin":Vector3(245,0,180)},
+]
+
 static func terrain_vertex_height(x: float, z: float) -> float:
 	var r: float = Vector2(x,z).length()
 	var height: float = -25.0 - 43.0 * smoothstep(35.0,240.0,r)
@@ -88,7 +99,7 @@ static func fish_home(zone_index: int, fish_index: int) -> Vector3:
 	var center: Vector3 = ZONES[clampi(zone_index,0,ZONES.size()-1)].center
 	var column: int = posmod(fish_index,5)
 	var row: int = clampi(int(float(fish_index)/5.0),0,4)
-	var point: Vector3 = center+Vector3(float(column-2)*5.0,float(row-1)*3.0,25.0+float(row)*5.0)
+	var point: Vector3 = center+Vector3(float(column-2)*9.0,float(row-1)*4.0,25.0+float(row)*9.0)
 	point.y = maxf(point.y,seabed_height(point.x,point.z)+10.0)
 	return point
 

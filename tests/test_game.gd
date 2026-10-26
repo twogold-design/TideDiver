@@ -47,13 +47,13 @@ func _run() -> void:
 	_check(game.hud.buttons.size() == 7, "Dock has launch, three upgrades, restaurant, new game, and exit")
 	_test_water_entry()
 	game.state = "dock"
-	game.start_dive(false)
+	game.start_dive(false, false)
 	_check(game.state == "dive" and game.fish.size() == game.fish_population_count() and game.pickups.size() == 11 + game.Ocean.pickup_points().size(), "Starting a dive creates complete population")
 	await physics_frame
 	await process_frame
 	_test_3d_controls_and_geometry()
 	game.state = "dock"
-	game.start_dive(false)
+	game.start_dive(false, false)
 	_test_capacity_and_catching()
 	_test_pause()
 	_test_rescue()
@@ -149,7 +149,7 @@ func _test_rescue() -> void:
 	_check(memory.day == 2 and memory.coins == 63 and memory.saves == 1, "Duplicate settlement is ignored")
 
 func _test_return_and_upgrade() -> void:
-	game.start_dive(false)
+	game.start_dive(false, false)
 	game.cargo = [{"id": "chest", "name": "Treasure", "value": 90, "weight": 3, "kind": "chest"}]
 	game.player.position = Vector3(40, -4, 40)
 	_key(KEY_F)
@@ -168,7 +168,7 @@ func _test_return_and_upgrade() -> void:
 	_check(memory.spear_level == 0 and memory.coins == 73, "Unaffordable dock upgrade is rejected")
 
 func _test_restart() -> void:
-	game.start_dive(false)
+	game.start_dive(false, false)
 	_check(game.oxygen == 125.0 and game.cargo.is_empty() and game.depth_record == 0.0, "New dive uses upgraded oxygen and resets cargo/depth")
 	_check(game.player.position == Vector3(0, -6, 14) and game.player.visible, "New dive restores player spawn")
 	_check(game.catch_timer == 0 and game.hit_timer == 0, "New dive clears previous catch feedback")
@@ -278,6 +278,7 @@ func _test_rock_occlusion() -> void:
 
 func _test_water_entry() -> void:
 	game.start_dive()
+	var origin: Vector3 = game.dive_origin
 	_check(game.entry_active and game.player.position.y > 0.6, "Dive begins standing on the boat above water")
 	game.muted = false
 	game._play_splash()
@@ -288,7 +289,7 @@ func _test_water_entry() -> void:
 	game.interact()
 	_check(game.shot_cooldown == 0 and game.state == "dive", "Entry blocks shooting and early return")
 	game._physics_process(0.8)
-	_check(game.player.position.z > 17.5 and game.player.position.y > 0.6, "Diver jumps outward before reaching water")
+	_check(game.player.position.z > origin.z + 17.5 and game.player.position.y > 0.6, "Diver jumps outward before reaching water")
 	game.toggle_pause()
 	var entry_before: float = game.entry_time
 	game._physics_process(2.0)
@@ -297,6 +298,6 @@ func _test_water_entry() -> void:
 	game._physics_process(0.75)
 	_check(game.entry_splashed and game.effects.size() == 42, "Water crossing emits splash and bubbles once")
 	game._physics_process(1.65)
-	_check(not game.entry_active and game.player.position.y == -6.0, "Entry ends fully submerged and restores swimming")
+	_check(not game.entry_active and game.player.position.is_equal_approx(origin + Vector3(0, -6, 25)), "Entry ends fully submerged and restores swimming")
 	_check(game.camera.position.y < 0.6 and game.camera.fov == 66, "Camera follows underwater and settles to swimming view")
 	_check(game.oxygen == air_before and game.depth_record == 0, "Entry preserves air and does not award exploration depth")

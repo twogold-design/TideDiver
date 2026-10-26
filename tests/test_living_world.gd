@@ -49,7 +49,7 @@ func _run() -> void:
 func _inside_ocean(point: Vector3) -> bool:
 	return point.x >= Ocean.X_MIN and point.x <= Ocean.X_MAX and point.z >= Ocean.Z_MIN and point.z <= Ocean.Z_MAX and point.y >= Ocean.Y_MIN and point.y <= Ocean.Y_MAX
 func _test_outer_ocean() -> void:
-	game.start_dive(false)
+	game.start_dive(false, false)
 	_check(game.fish.size() == game.fish_population_count() and game.pickups.size() == 11 + Ocean.pickup_points().size() and game.hazards.size() == 7 + Ocean.ZONES.size(), "Expanded playable ocean contains complete fish, pickup and hazard populations")
 	for zone in Ocean.ZONES:
 		var center: Vector3 = zone.center
@@ -205,7 +205,7 @@ func _test_feedback_persistence() -> void:
 func _test_next_service_and_new_game() -> void:
 	game.summary_visible = false
 	game.return_to_dock()
-	game.start_dive(false)
+	game.start_dive(false, false)
 	game.finish_dive(false)
 	progress.inventory.orange = 2
 	game.open_restaurant()

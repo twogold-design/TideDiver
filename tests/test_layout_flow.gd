@@ -84,7 +84,7 @@ func _test_entry_and_cancel() -> void:
 	game.renovate_shop("sign")
 	game.change_menu("orange",1)
 	game.start_service()
-	game.start_dive(false)
+	game.start_dive(false, false)
 	_check(_snapshot() == before and progress.saves == saves_before and game.state == "restaurant", "Draft changes and blocked management actions leave player state and saves untouched")
 	game.cancel_layout()
 	_check(not game.layout_mode and game.layout_work == null and _snapshot() == before, "Cancel discards furniture, cost, styles and every draft mutation")

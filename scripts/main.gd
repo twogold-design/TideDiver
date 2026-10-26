@@ -9,13 +9,23 @@ const Restaurant = preload("res://scripts/restaurant_art.gd")
 const Layout = preload("res://scripts/layout_rules.gd")
 const FishData = preload("res://scripts/fish_catalog.gd")
 const FishBrain = preload("res://scripts/fish_brain.gd")
-const OUTER_FISH_PER_ZONE = 24
+const StormSchool = preload("res://scripts/storm_school.gd")
+const COASTAL_FISH_COUNT = 21
+const COASTAL_KINDS = [0,1,3,4,6,2]
+const ENTRY_SCHOOL_KINDS = [0,1,3,4,6]
+const ENTRY_FISH_PER_SCHOOL = 2
+const OUTER_FISH_PER_ZONE = 16
 const TRANSIT_SCHOOLS = 8
-const TRANSIT_FISH_PER_SCHOOL = 9
+const TRANSIT_FISH_PER_SCHOOL = 5
 const SPEAR_RANGE = 20.0
 const SPEAR_COOLDOWN = 0.95
 var progress = Progress.new()
 var state: String = "dock"
+var storm_school: Node3D
+var boat: Node3D
+var dive_origin: Vector3 = Vector3.ZERO
+var entry_site_index: int = -1
+var entry_rng = RandomNumberGenerator.new()
 var player: CharacterBody3D
 var camera: Camera3D
 var environment: Environment
@@ -83,6 +93,7 @@ const LAYOUT_AREA = Rect2(332,96,1100,708)
 
 func _ready() -> void:
 	rng.seed = 271828
+	entry_rng.randomize()
 	var args: PackedStringArray = OS.get_cmdline_user_args()
 	for arg in args:
 		if arg.begins_with("--capture") or arg == "--smoke":
@@ -106,7 +117,7 @@ func _ready() -> void:
 	capture_mode = "--capture" in OS.get_cmdline_user_args() or "--capture-dock" in OS.get_cmdline_user_args() or "--capture-deep" in OS.get_cmdline_user_args()
 	smoke_mode = "--smoke" in OS.get_cmdline_user_args()
 	if capture_mode and not "--capture-dock" in OS.get_cmdline_user_args():
-		start_dive(false)
+		start_dive(false, false)
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		player.position = Vector3(0, -17, 12)
 		pitch = -0.20
@@ -195,7 +206,7 @@ func _ready() -> void:
 				capture_name = "restaurant_service"
 	if "--capture-return" in args:
 		capture_mode = true
-		start_dive(false)
+		start_dive(false, false)
 		cargo = [{"id":"orange"},{"id":"blue"},{"id":"lantern"},{"id":"pearl"},{"id":"chest"}]
 		finish_dive()
 		capture_name = "return_inventory"
@@ -233,7 +244,7 @@ func _ready() -> void:
 	if "--capture-outer-ocean" in args:
 		capture_mode = true
 		capture_name = "outer_ocean"
-		start_dive(false)
+		start_dive(false, false)
 		player.position = Ocean.ZONES[0].center + Vector3(0,8,26)
 		pitch = -0.20
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -276,7 +287,10 @@ func _setup_world() -> void:
 	ocean_root = Node3D.new()
 	add_child(ocean_root)
 	Art.build_world(ocean_root)
-	var boat: Node3D = Art.create_boat()
+	storm_school = StormSchool.new()
+	storm_school.position = StormSchool.CENTER
+	ocean_root.add_child(storm_school)
+	boat = Art.create_boat()
 	boat.position = Vector3(0, 0.3, 14)
 	ocean_root.add_child(boat)
 	player = CharacterBody3D.new()
@@ -309,9 +323,10 @@ func _spawn_population() -> void:
 	fish.clear()
 	pickups.clear()
 	hazards.clear()
-	for i in range(33):
-		var kind: int = i % 3
-		var p = Vector3(rng.randf_range(-34, 34), -rng.randf_range(5 + kind * 12, 17 + kind * 15), rng.randf_range(-37, 27))
+	for i in range(COASTAL_FISH_COUNT):
+		var kind: int = COASTAL_KINDS[posmod(i - 5, COASTAL_KINDS.size())]
+		var depth: float = rng.randf_range(7, 15) if kind != 2 else rng.randf_range(17, 24)
+		var p = Vector3(rng.randf_range(-34, 34), -depth, rng.randf_range(-37, 27))
 		if i < 5:
 			kind = 0
 			p = Vector3((i - 2) * 3.0, -7 - i * 0.6, 1 - i * 2.0)
@@ -326,7 +341,7 @@ func _spawn_population() -> void:
 	for i in range(7):
 		var node = _jellyfish()
 		var pos = Vector3(rng.randf_range(-25,25),rng.randf_range(-45,-22),rng.randf_range(-28,14))
-		pos.y = maxf(pos.y,Ocean.seabed_height(pos.x,pos.z)+4.0)
+		pos = _safe_hazard_home(pos)
 		node.position = pos
 		ocean_root.add_child(node)
 		hazards.append({"node":node,"home":pos,"phase":float(i)})
@@ -342,22 +357,34 @@ func _spawn_population() -> void:
 		var center := Vector3(cos(angle)*radius,-20.0-float(school%3)*10.0,sin(angle)*radius)
 		for i in range(TRANSIT_FISH_PER_SCHOOL):
 			var kind: int = [3,1,4,6,3,5,1,6][school]
-			_add_fish(kind,center+Vector3(sin(float(i)*2.399)*10,float(i%3)*2,cos(float(i)*2.399)*9))
+			_add_fish(kind,center+Vector3(sin(float(i)*2.399)*16,float(i%3)*3,cos(float(i)*2.399)*14))
+	_spread_background_fish()
+	_spawn_entry_fish()
 	for point in Ocean.pickup_points():
 		_add_pickup(point.position,point.kind)
 	for zone in Ocean.ZONES:
 		var node: Node3D = _jellyfish()
 		var pos: Vector3 = Ocean.hazard_home(Ocean.ZONES.find(zone))
-		pos.y = maxf(pos.y,Ocean.seabed_height(pos.x,pos.z)+4.0)
+		pos = _safe_hazard_home(pos)
 		node.position = pos
 		ocean_root.add_child(node)
 		hazards.append({"node":node,"home":pos,"phase":rng.randf_range(0,TAU)})
 func fish_population_count() -> int:
-	return 33+OUTER_FISH_PER_ZONE*Ocean.ZONES.size()+TRANSIT_SCHOOLS*TRANSIT_FISH_PER_SCHOOL
+	return COASTAL_FISH_COUNT+OUTER_FISH_PER_ZONE*Ocean.ZONES.size()+TRANSIT_SCHOOLS*TRANSIT_FISH_PER_SCHOOL+ENTRY_SCHOOL_KINDS.size()*ENTRY_FISH_PER_SCHOOL
 
 func _add_fish(kind: int, point: Vector3) -> Dictionary:
 	var p := point
+	if FishData.SPECIES[kind].behavior in ["venom","ambush","predator"]:
+		var landing := dive_origin + Vector3(0,-6,25)
+		var away := Vector2(p.x-landing.x,p.z-landing.z)
+		if away.length() < 42.0:
+			away = away.normalized() * 45.0 if away.length_squared() > 0.01 else Vector2(45,0)
+			p.x = landing.x + away.x
+			p.z = landing.z + away.y
 	p.y = clampf(p.y,maxf(Ocean.Y_MIN+3,Ocean.seabed_height(p.x,p.z)+5),-6)
+	p = _clear_fish_home(p, kind)
+	if not p.is_finite():
+		return {}
 	var node: Node3D = Art.create_fish(kind)
 	node.position = p
 	ocean_root.add_child(node)
@@ -365,6 +392,112 @@ func _add_fish(kind: int, point: Vector3) -> Dictionary:
 	FishBrain.prepare(item)
 	fish.append(item)
 	return item
+func _open_water(point: Vector3, radius: float = 1.2) -> bool:
+	var sphere := SphereShape3D.new()
+	sphere.radius = radius
+	var query := PhysicsShapeQueryParameters3D.new()
+	query.shape = sphere
+	query.transform = Transform3D(Basis.IDENTITY, point)
+	query.collision_mask = 1
+	query.exclude = [player.get_rid()]
+	return get_world_3d().direct_space_state.intersect_shape(query, 1).is_empty()
+
+func _clear_fish_home(point: Vector3, kind: int) -> Vector3:
+	var radius: float = float(FishData.SPECIES[kind].radius)
+	var dangerous: bool = FishData.SPECIES[kind].behavior in ["venom","ambush","predator"]
+	var landing := dive_origin + Vector3(0,-6,25)
+	if _open_water(point, radius):
+		return point
+	for ring in range(1,13):
+		for direction in range(8):
+			var angle: float = float(direction) * TAU / 8.0
+			var candidate := point + Vector3(sin(angle)*ring*2.5,ring*0.5,cos(angle)*ring*2.5)
+			candidate.x = clampf(candidate.x,Ocean.X_MIN+5,Ocean.X_MAX-5)
+			candidate.z = clampf(candidate.z,Ocean.Z_MIN+5,Ocean.Z_MAX-5)
+			candidate.y = clampf(candidate.y,Ocean.seabed_height(candidate.x,candidate.z)+5,-6)
+			if dangerous and Vector2(candidate.x-landing.x,candidate.z-landing.z).length() < 42.0:
+				continue
+			if _open_water(candidate,radius):
+				return candidate
+	# If a landmark fills the local area, search verified open water across the map.
+	for x in range(-400,401,100):
+		for z in range(-400,401,100):
+			var candidate := Vector3(x,-6,z)
+			if dangerous and Vector2(candidate.x-landing.x,candidate.z-landing.z).length() < 42.0:
+				continue
+			if _open_water(candidate,radius):
+				return candidate
+	push_error("No open water available for fish spawn")
+	return Vector3.INF
+
+func _select_dive_site(random_entry: bool) -> void:
+	if not random_entry:
+		dive_origin = Vector3.ZERO
+		entry_site_index = 0
+		boat.position = dive_origin + Vector3(0,0.3,14)
+		return
+	var first: int = entry_rng.randi_range(0, Ocean.DIVE_SITES.size()-1)
+	if entry_site_index >= 0:
+		first = entry_rng.randi_range(0, Ocean.DIVE_SITES.size()-2)
+		if first >= entry_site_index:
+			first += 1
+	for offset in range(Ocean.DIVE_SITES.size()):
+		var index: int = (first + offset) % Ocean.DIVE_SITES.size()
+		if index == entry_site_index:
+			continue
+		for attempt in range(12):
+			var origin: Vector3 = Ocean.DIVE_SITES[index].origin + Vector3(entry_rng.randf_range(-8,8),0,entry_rng.randf_range(-8,8))
+			var clear: bool = true
+			for local_point: Vector3 in [Vector3(0,0.5,22.5),Vector3(0,-3,24),Vector3(0,-6,25),Vector3(0,-6,14),Vector3(0,-4,17.5)]:
+				if not _open_water(origin + local_point):
+					clear = false
+					break
+			if clear:
+				dive_origin = origin
+				entry_site_index = index
+				boat.position = origin + Vector3(0,0.3,14)
+				return
+	# The original cove remains a known clear fallback.
+	dive_origin = Vector3.ZERO
+	entry_site_index = 0
+	boat.position = Vector3(0,0.3,14)
+
+func _safe_hazard_home(point: Vector3) -> Vector3:
+	var p := point
+	var landing := dive_origin + Vector3(0,-6,25)
+	var away := Vector2(p.x-landing.x,p.z-landing.z)
+	if away.length() < 20.0:
+		away = away.normalized() * 23.0 if away.length_squared() > 0.01 else Vector2(23,0)
+		p.x = landing.x + away.x
+		p.z = landing.z + away.y
+	p.y = maxf(p.y,Ocean.seabed_height(p.x,p.z)+4.0)
+	return p
+
+func _spread_background_fish() -> void:
+	# Keep the landing open instead of stacking local and travelling populations.
+	var landing := dive_origin + Vector3(0,-6,25)
+	for item in fish.slice(5):
+		var offset := Vector2(item.home.x-landing.x,item.home.z-landing.z)
+		if offset.length() >= 35.0:
+			continue
+		offset = offset.normalized()*40.0 if offset.length_squared() > 0.01 else Vector2(40,0)
+		var point := Vector3(landing.x+offset.x,item.home.y,landing.z+offset.y)
+		point.y = clampf(point.y,Ocean.seabed_height(point.x,point.z)+5,-6)
+		point = _clear_fish_home(point,item.kind)
+		if point.is_finite():
+			item.home = point
+			item.node.position = point
+
+func _spawn_entry_fish() -> void:
+	# Small, separated pairs keep variety without filling the entire view.
+	var anchors: Array[Vector3] = [Vector3(-12,-8,38),Vector3(10,-11,43),Vector3(-3,-9,49),Vector3(-23,-13,63),Vector3(22,-12,76)]
+	for school in range(ENTRY_SCHOOL_KINDS.size()):
+		var kind: int = ENTRY_SCHOOL_KINDS[school]
+		for i in range(ENTRY_FISH_PER_SCHOOL):
+			var point: Vector3 = dive_origin + anchors[school] + Vector3((float(i)-0.5)*8,0,0)
+			point += Vector3(rng.randf_range(-1,1),rng.randf_range(-0.75,0.75),rng.randf_range(-1,1))
+			_add_fish(kind,point)
+
 func _add_pickup(pos: Vector3, kind: String) -> void:
 	pos.y = maxf(pos.y,Ocean.seabed_height(pos.x,pos.z)+1.0)
 	var node: Node3D = Art.create_pickup(kind)
@@ -465,6 +598,9 @@ func confirm_new_game() -> void:
 	ocean_root.visible = true
 	player.visible = false
 	player.velocity = Vector3.ZERO
+	dive_origin = Vector3.ZERO
+	entry_site_index = -1
+	boat.position = Vector3(0,0.3,14)
 	player.position = Vector3(0,-6,14)
 	oxygen = progress.oxygen_max()
 	depth_record = 0
@@ -486,13 +622,14 @@ func confirm_new_game() -> void:
 	tell("新的旅程开始了。从第一天出海，重新打造你的海岸小店。",9)
 	hud.rebuild()
 
-func start_dive(animate_entry: bool = true) -> void:
+func start_dive(animate_entry: bool = true, random_entry: bool = true) -> void:
 	if new_game_confirmation or state != "dock":
 		return
 	restaurant_node.visible = false
 	ocean_root.visible = true
 	environment.fog_enabled = true
 	camera.fov = 66
+	_select_dive_site(random_entry)
 	_spawn_population()
 	cargo.clear()
 	oxygen = progress.oxygen_max()
@@ -504,7 +641,7 @@ func start_dive(animate_entry: bool = true) -> void:
 	entry_splashed = false
 	player.velocity = Vector3.ZERO
 	player.rotation = Vector3.ZERO
-	player.position = Vector3(0,2.4,17.5) if animate_entry else Vector3(0,-6,14)
+	player.position = dive_origin + (Vector3(0,2.4,17.5) if animate_entry else Vector3(0,-6,14))
 	player.visible = true
 	yaw = 0
 	pitch = -0.12
@@ -518,7 +655,7 @@ func start_dive(animate_entry: bool = true) -> void:
 	tell("WASD 游泳 · Q 下潜 / E 上浮 · 鼠标瞄准 · 左键发射鱼叉", 9)
 	hud.rebuild()
 	if entry_active:
-		tell("跃入潮汐湾 · 让海水包围你", 3.2)
+		tell("本次入水 · %s" % Ocean.DIVE_SITES[entry_site_index].name, 3.2)
 		_update_entry(0.0)
 	_play_tone(480, 0.18)
 
@@ -649,15 +786,15 @@ func _update_entry(delta: float) -> void:
 	yaw = PI
 	pitch = -0.12
 	if t < 0.45:
-		player.position = Vector3(0, 2.4 - sin(t / 0.45 * PI) * 0.25, 17.5)
+		player.position = dive_origin + Vector3(0, 2.4 - sin(t / 0.45 * PI) * 0.25, 17.5)
 		player.rotation = Vector3(PI / 2, PI, 0)
 	elif t < 1.55:
 		var u: float = (t - 0.45) / 1.1
-		player.position = Vector3(0, 2.4 + 2.0 * u - 4.8 * u * u, 17.5 + 5.0 * u)
+		player.position = dive_origin + Vector3(0, 2.4 + 2.0 * u - 4.8 * u * u, 17.5 + 5.0 * u)
 		player.rotation = Vector3(lerpf(PI / 2, -0.65, smoothstep(0.0, 1.0, u)), PI, 0)
 	else:
 		var u: float = smoothstep(0.0, 1.0, (t - 1.55) / 1.65)
-		player.position = Vector3(0, lerpf(-0.4, -6.0, u), lerpf(22.5, 25.0, u))
+		player.position = dive_origin + Vector3(0, lerpf(-0.4, -6.0, u), lerpf(22.5, 25.0, u))
 		player.rotation = Vector3(lerpf(-0.65, 0, u), PI, 0)
 	if not entry_splashed and player.position.y <= 0.65:
 		entry_splashed = true
@@ -770,7 +907,7 @@ func _spawn_entry_water() -> void:
 		droplet.material_override = mat
 		var angle: float = float(i) * 2.399
 		var bubble: bool = i >= 24
-		droplet.position = Vector3(sin(angle) * 0.4, -0.8 if bubble else 0.65, player.position.z + cos(angle) * 0.4)
+		droplet.position = Vector3(player.position.x + sin(angle) * 0.4, -0.8 if bubble else 0.65, player.position.z + cos(angle) * 0.4)
 		ocean_root.add_child(droplet)
 		var velocity := Vector3(sin(angle) * 2.6, 3.2 + float(i % 5) * 0.5, cos(angle) * 2.6)
 		if bubble:
@@ -821,6 +958,7 @@ func _update_dive(delta: float) -> void:
 		finish_dive(true)
 
 func _animate_ocean(_delta: float) -> void:
+	storm_school.animate(clock,player.position)
 	for item in fish:
 		if item.alive:
 			_update_fish(item,_delta)
@@ -1016,12 +1154,17 @@ func ocean_zone_name() -> String:
 	var nearest: String = "蓝海航道"
 	if Vector2(player.position.x,player.position.z).length() < 42:
 		return "潮汐湾 · 近岸"
-	var best: float = 45.0
+	var best: float = INF
 	for zone in Ocean.ZONES:
 		var distance: float = Vector2(player.position.x,player.position.z).distance_to(Vector2(zone.center.x,zone.center.z))
-		if distance < best:
+		var reach: float = 60.0 if zone.id in ["southern_spires","amber_reef"] else 45.0
+		if distance < reach and distance < best:
 			best = distance
 			nearest = zone.name
+			if zone.id == "southern_spires":
+				nearest += " · 杰克风暴"
+			elif zone.id == "amber_reef":
+				nearest += " · 珊瑚花园"
 	return nearest
 func context_hint() -> String:
 	if entry_active:
@@ -1072,7 +1215,7 @@ func _capture() -> void:
 	get_tree().quit()
 
 func _run_smoke() -> void:
-	start_dive(false)
+	start_dive(false, false)
 	assert(state == "dive")
 	assert(fish.size() == fish_population_count())
 	assert(pickups.size() == 11+Ocean.pickup_points().size())
