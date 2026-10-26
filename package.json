@@ -1,0 +1,18 @@
+{
+  "name": "tide-diver-web",
+  "version": "1.0.0",
+  "private": true,
+  "description": "潮间潜客完整网页工程：Godot source, Web export and static browser entry",
+  "scripts": {
+    "start": "node tools/serve_web.cjs",
+    "build": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/build_web.ps1",
+    "package": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/package_web.ps1",
+    "test:web": "node src/tests/web_smoke.cjs",
+    "test:local": "node src/tests/web_smoke.cjs --file",
+    "test:resolution": "node src/tests/web_resolution.cjs",
+    "test:text": "node src/tests/web_text.cjs"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
+  }
+}

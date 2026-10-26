@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#092834">
+  <title>潮间潜客 · Tide Diver</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23092834'/%3E%3Cpath d='M10 34q11-18 22 0t22 0M10 45q11-18 22 0t22 0' fill='none' stroke='%239ebec8' stroke-width='4'/%3E%3C/svg%3E">
+  <style>
+    :root{color-scheme:dark;font-family:system-ui,"Microsoft YaHei",sans-serif;background:#071e28;color:#c6dedf}
+    *{box-sizing:border-box}body{margin:0;overflow:hidden}button{font:inherit;cursor:pointer;border:1px solid #547e86;border-radius:8px;color:inherit;background:#143b47;padding:9px 16px}button:hover{background:#215561}button:focus-visible{outline:3px solid #d7b67a;outline-offset:3px}button:disabled{opacity:.5;cursor:wait}
+    header{height:48px;display:flex;align-items:center;justify-content:space-between;padding:0 20px;border-bottom:1px solid #234550;font-size:13px}header strong{letter-spacing:.12em}nav{display:flex;gap:8px}nav button{padding:5px 12px;font-size:12px}
+    #stage{position:relative;width:100vw;height:calc(100dvh - 48px);display:flex;align-items:center;justify-content:center;background:#061922}#stage:fullscreen{height:100vh}
+    canvas{position:absolute;display:block;outline:none;touch-action:none}#cover{position:absolute;inset:0;display:grid;place-items:center;background:radial-gradient(ellipse at 70% 20%,#225968,transparent 62%),linear-gradient(155deg,#092834,#0b3641);z-index:5}
+    .card{width:min(640px,90vw);padding:48px 36px;border:1px solid #466a72;border-radius:20px;background:#0b2b35e8;box-shadow:0 28px 70px #03151a66}.eyebrow{color:#92babf;letter-spacing:.28em;font-size:12px}h1{font-size:clamp(32px,5vw,54px);letter-spacing:.12em;font-weight:500;margin:16px 0}p{line-height:1.85;color:#9fbec3;font-size:14px}.primary{background:#a5c6cd;border-color:#a5c6cd;color:#092834;font-weight:600;padding:14px 30px;margin-top:18px}.primary:hover{background:#bed8dd}#progress{width:100%;height:7px;accent-color:#92b9c4;margin-top:20px}#status{font-size:13px;min-height:24px;color:#d6bd8d}.footnote{font-size:12px;color:#7fa4af;margin-top:26px}kbd{border:1px solid #50717a;background:#153945;border-radius:4px;padding:1px 5px;font:inherit}dialog{max-width:640px;width:90vw;border:1px solid #53767d;border-radius:16px;background:#0d2d37;color:#c6dedf;padding:28px}dialog::backdrop{background:#03151bbd}dialog h2{font-weight:500}dialog p{font-size:14px}#storage-note{color:#d6bd8d}#cover[hidden],progress[hidden]{display:none}
+  </style>
+  $GODOT_HEAD_INCLUDE
+</head>
+<body>
+  <header><strong>潮间潜客 <span aria-hidden="true">/ TIDE DIVER</span></strong><nav aria-label="游戏工具"><button id="help">操作说明</button><button id="fullscreen">全屏</button></nav></header>
+  <main id="stage">
+    <canvas id="canvas" tabindex="0" aria-label="潮间潜客游戏画面">浏览器需要支持 WebGL 2 才能运行游戏。</canvas>
+    <section id="cover" aria-label="游戏启动">
+      <div class="card">
+        <div class="eyebrow">A LITTLE LIFE BY THE SEA</div>
+        <h1>潮间潜客</h1>
+        <p>潜入潮汐深处，带回今日渔获。<br>布置一间海边小店，让每一餐都有自己的故事。</p>
+        <button id="start" class="primary">启程 · 开始游戏</button>
+        <progress id="progress" hidden aria-label="游戏加载进度"></progress>
+        <p id="status" role="status" aria-live="polite">推荐电脑浏览器，使用键盘与鼠标游玩。</p>
+        <div class="footnote">进度保存在当前浏览器中。再次来访，继续你的海边生活。</div>
+      </div>
+    </section>
+  </main>
+  <dialog id="instructions">
+    <h2>海边生活 · 操作说明</h2>
+    <p><b>潜水：</b><kbd>W A S D</kbd> 游动，鼠标转向，<kbd>E</kbd> 上浮 / <kbd>Q</kbd> 下潜，<kbd>Shift</kbd> 加速，<kbd>Ctrl</kbd> 潜行。左键或空格发射鱼钩，<kbd>F</kbd> 交互、靠近水面返航。</p>
+    <p><b>布置：</b>左键选择和摆放，右键取消。<kbd>G</kbd> 移动，<kbd>R</kbd> 旋转，<kbd>Delete</kbd> 半价回收。中键平移，<kbd>Alt + 中键</kbd> 旋转视角，滚轮缩放，<kbd>F</kbd> 视角归中。</p>
+    <p><b>暂停：</b><kbd>P</kbd> 暂停 / 继续，<kbd>Esc</kbd> 释放鼠标并暂停潜水，点击“继续探索”重新控制视角。<kbd>M</kbd> 切换音效。</p>
+    <p id="storage-note">同一浏览器、同一网址会自动保留进度；清除网站数据会删除存档。隐私窗口或禁止网站存储时可能无法保留进度。</p>
+    <form method="dialog"><button class="primary">知道了</button></form>
+  </dialog>
+  <noscript>请允许 JavaScript 后重新打开游戏。</noscript>
+  <script src="local-loader.js"></script>
+  <script src="$GODOT_URL"></script>
+  <script>
+    const config = $GODOT_CONFIG;
+    const canvas = document.getElementById('canvas');
+    const stage = document.getElementById('stage');
+    const start = document.getElementById('start');
+    const cover = document.getElementById('cover');
+    const status = document.getElementById('status');
+    const progress = document.getElementById('progress');
+    const engine = new Engine(config);
+    let started = false;
+    let failed = false;
+    let renderedPixelRatio = 0;
+    function resize() {
+      const bounds = stage.getBoundingClientRect();
+      // Match physical display pixels; a fixed DPR cap makes high-DPI screens blurry.
+      const ratio = window.devicePixelRatio || 1;
+      renderedPixelRatio = ratio;
+      const pixelWidth = Math.max(1, Math.floor(Math.min(bounds.width, bounds.height * 1.6) * ratio));
+      const pixelHeight = Math.max(1, Math.floor(pixelWidth / 1.6));
+      const width = pixelWidth / ratio;
+      const height = pixelHeight / ratio;
+      // Fractional CSS centering resamples the entire canvas in Chrome, softening text.
+      // Align both its size and its page position to physical pixels, including at 125% DPI.
+      const left = Math.round((bounds.left + (bounds.width - width) / 2) * ratio) / ratio;
+      const top = Math.round((bounds.top + (bounds.height - height) / 2) * ratio) / ratio;
+      canvas.style.width = width + 'px'; canvas.style.height = height + 'px';
+      canvas.style.left = (left - bounds.left) + 'px';
+      canvas.style.top = (top - bounds.top) + 'px';
+      if (canvas.width !== pixelWidth) canvas.width = pixelWidth;
+      if (canvas.height !== pixelHeight) canvas.height = pixelHeight;
+    }
+    new ResizeObserver(resize).observe(stage); resize();
+    window.addEventListener('resize', resize);
+    document.addEventListener('fullscreenchange', resize);
+    // Moving between monitors can change DPR without changing the CSS viewport.
+    function watchResolution() {
+      if (renderedPixelRatio !== (window.devicePixelRatio || 1)) resize();
+      requestAnimationFrame(watchResolution);
+    }
+    watchResolution();
+    function fail(message) {
+      failed = true; cover.hidden = false; progress.hidden = true;
+      status.textContent = message; start.disabled = false; start.textContent = '重新加载';
+    }
+    document.addEventListener('tide-ready', () => {
+      resize(); cover.hidden = true; canvas.focus();
+    });
+    canvas.addEventListener('contextmenu', event => event.preventDefault());
+    canvas.addEventListener('webglcontextlost', event => {
+      event.preventDefault(); fail('图形连接已中断，请重新加载游戏。已保存的进度仍会保留。');
+    });
+    start.addEventListener('click', async () => {
+      if (failed) { location.reload(); return; }
+      if (started) return;
+      const missing = Engine.getMissingFeatures({threads: $GODOT_THREADS_ENABLED});
+      if (missing.length) { fail('当前浏览器无法运行游戏，请开启硬件加速并使用支持 WebGL 2 的浏览器。'); return; }
+      started = true; start.disabled = true; start.textContent = '正在准备海岸…';
+      progress.hidden = false; status.textContent = '首次加载需要一点时间，请稍候。';
+      try {
+        await window.tidePrepareLocal();
+        await engine.startGame({canvas, canvasResizePolicy: 0,
+          onProgress(current, total) {
+            if (total > 0) { progress.max = total; progress.value = current; status.textContent = '正在载入 ' + Math.round(current / total * 100) + '%'; }
+          },
+          onExit(code) { fail(code === 0 ? '游戏已结束，可以重新进入。' : '游戏运行中断，请重新加载。'); },
+        });
+        if (!window.tideGameReady) status.textContent = '正在铺开海岸与餐厅…';
+      } catch (error) { console.error(error); fail(location.protocol === 'file:' ? '本地加载失败，请完整解压工程，并使用新版 Edge / Chrome 打开。' : '加载失败，请检查网络后重新加载。'); }
+    });
+    document.getElementById('help').addEventListener('click', () => {
+      document.dispatchEvent(new Event('tide-pause'));
+      document.getElementById('instructions').showModal();
+    });
+    document.getElementById('instructions').addEventListener('close', () => canvas.focus());
+    document.getElementById('fullscreen').addEventListener('click', async () => {
+      try { if (document.fullscreenElement) await document.exitFullscreen(); else await stage.requestFullscreen(); }
+      catch { document.getElementById('fullscreen').textContent = '请用浏览器全屏'; }
+      canvas.focus();
+    });
+  </script>
+</body>
+</html>
