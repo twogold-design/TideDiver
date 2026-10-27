@@ -2,7 +2,7 @@ extends RefCounted
 ## Visible ballistic hook with swept collision against scenery and moving fish bodies.
 const SPEED := 24.0
 const GRAVITY := Vector3(0,-0.8,0)
-const BODIES := [Vector3(0.30,0.42,0.70),Vector3(0.34,0.42,0.95),Vector3(0.46,0.52,0.75),Vector3(0.16,0.20,0.65),Vector3(0.55,0.55,0.60),Vector3(0.34,0.42,0.70),Vector3(0.46,0.55,1.5),Vector3(0.30,0.32,1.85),Vector3(0.55,0.52,2.1)]
+const BODIES := [Vector3(0.30,0.42,0.70),Vector3(0.34,0.42,0.95),Vector3(0.46,0.52,0.75),Vector3(0.16,0.20,0.65),Vector3(0.55,0.55,0.60),Vector3(0.34,0.42,0.70),Vector3(0.46,0.55,1.5),Vector3(0.30,0.32,1.85),Vector3(0.55,0.52,2.1),Vector3(0.5,0.25,0.85)]
 
 static func material(color: Color) -> StandardMaterial3D:
 	var mat := StandardMaterial3D.new()
@@ -78,7 +78,8 @@ static func step(game: Node, shot: Dictionary, delta: float) -> bool:
 		if not item.alive:
 			continue
 		var inverse: Basis = item.node.global_basis.inverse()
-		var center := Vector3(0,0,0.65) if int(item.kind) == 7 else Vector3.ZERO
+		var default_center := Vector3(0,0,0.65) if int(item.kind) == 7 else Vector3.ZERO
+		var center: Vector3 = item.node.get_meta("harpoon_center",default_center)
 		var size: Vector3 = BODIES[item.kind]+Vector3.ONE*0.035
 		var previous: Vector3 = item.get("previous_position",item.node.position)
 		var a: Vector3 = (inverse*(start-previous)-center)/size

@@ -64,7 +64,7 @@ func _run() -> void:
 func _test_terrain() -> void:
 	var terrain_matches: bool = true
 	var deep_floor: bool = true
-	for z: float in [-260.0, -230.0, -200.0]:
+	for z: float in [-320.0, -280.0, -230.0, -180.0, -140.0]:
 		var x: float = Ocean.canyon_center_x(z)
 		var floor_hit: Dictionary = _terrain_hit(x, z)
 		var west_hit: Dictionary = _terrain_hit(x - 40, z)
@@ -76,11 +76,15 @@ func _test_terrain() -> void:
 			deep_floor = false
 			continue
 		var floor_y: float = floor_hit.position.y
-		_check(west_hit.position.y - floor_y >= 25 and east_hit.position.y - floor_y >= 25, "Actual canyon floor is at least twenty-five metres below both banks at z %.0f" % z)
-		deep_floor = deep_floor and floor_y < -90
+		_check(west_hit.position.y - floor_y >= 38 and east_hit.position.y - floor_y >= 38, "The enlarged canyon floor is at least thirty-eight metres below both banks at z %.0f" % z)
+		deep_floor = deep_floor and floor_y < -108
 		for hit in [floor_hit, west_hit, east_hit]:
 			terrain_matches = terrain_matches and absf(hit.position.y - Ocean.seabed_height(hit.position.x, hit.position.z)) < 0.03
 	_check(terrain_matches and deep_floor, "Deep canyon collision surfaces agree with the rendered terrain height contract")
+	var corridor_named: bool = true
+	for z: float in [-370.0, -90.0]:
+		corridor_named = corridor_named and Ocean.zone_for_position(Vector3(Ocean.canyon_center_x(z), -70, z)).get("id", "") == "twin_gates"
+	_check(corridor_named and Ocean.ZONES[0].radius == 70.0, "Both enlarged canyon mouths retain the site label without moving its circular side discoveries")
 
 func _terrain_hit(x: float, z: float) -> Dictionary:
 	var excluded: Array[RID] = [game.player.get_rid()]
@@ -97,7 +101,7 @@ func _test_current_field() -> void:
 	var z: float = Ocean.CANYON_CENTER.z
 	var x: float = Ocean.canyon_center_x(z)
 	var full: Vector3 = Ocean.current_velocity(Vector3(x, -50, z))
-	_check(full.z > 0.75 and full.y == 0 and full.length() <= Ocean.CANYON_CURRENT_SPEED + 0.001, "The deep canyon current flows downstream without a vertical force or excessive speed")
+	_check(full.z > 1.9 and full.y == 0 and absf(full.length() - 2.2) < 0.001, "The faster deep canyon current reaches 2.2 m/s downstream without a vertical force")
 	var middle: Vector3 = Ocean.current_velocity(Vector3(x, -35, z))
 	_check(middle.length() > 0 and middle.length() < full.length(), "Current strength increases gradually between twenty-five and forty-five metres deep")
 	var quiet: bool = true
@@ -126,11 +130,11 @@ func _test_swimming() -> void:
 	var upstream: Dictionary = await _measure_motion(flowing, "swim_forward")
 	var sideways: Dictionary = await _measure_motion(flowing, "swim_right")
 	var upward: Dictionary = await _measure_motion(flowing, "ascend")
-	_check(calm_idle.displacement.length() < 0.01 and drift.displacement.z > 0.25 and drift.displacement.z < 0.55, "An idle diver is carried downstream only inside the flowing canyon")
+	_check(calm_idle.displacement.length() < 0.01 and drift.displacement.z > 0.95 and drift.displacement.z < 1.20, "The stronger current carries an idle diver about a metre downstream in half a second")
 	var forward_ratio: float = downstream.displacement.z / calm_forward.displacement.z
 	var reverse_ratio: float = -upstream.displacement.z / calm_forward.displacement.z
-	_check(forward_ratio > 1.08 and forward_ratio < 1.22, "Actual downstream swimming is faster than still water (ratio %.3f)" % forward_ratio)
-	_check(reverse_ratio > 0.80 and reverse_ratio < 0.95 and upstream.displacement.z < -2, "Upstream swimming remains controllable with mild resistance (ratio %.3f)" % reverse_ratio)
+	_check(forward_ratio > 1.28 and forward_ratio < 1.42, "Actual downstream swimming is substantially faster than still water (ratio %.3f)" % forward_ratio)
+	_check(reverse_ratio > 0.58 and reverse_ratio < 0.72 and upstream.displacement.z < -1.8, "Upstream swimming remains controllable against the stronger current (ratio %.3f)" % reverse_ratio)
 	_check(sideways.displacement.x > calm_side.displacement.x * 0.9 and sideways.displacement.x < calm_side.displacement.x * 1.1 and sideways.displacement.z > 0.2, "Lateral steering remains effective while the current carries the diver downstream")
 	_check(absf(upward.displacement.y - calm_up.displacement.y) < 0.03 and upward.displacement.y > 3 and upward.displacement.z > 0.2, "The diver can ascend at normal speed while drifting")
 	var clear: bool = true
@@ -141,7 +145,7 @@ func _test_swimming() -> void:
 	for sample in [drift, downstream, upstream, sideways]:
 		equal_air = equal_air and absf(sample.air_used - calm_forward.air_used) < 0.002
 	_check(equal_air and absf(drift.air_used - 0.495) < 0.003, "The current adds no air cost beyond normal breathing at the same depth")
-	_check(drift.current.z > 0.75 and absf(drift.current.y) < 0.001 and calm_idle.current.is_zero_approx(), "The game's live drift value follows the local current field")
+	_check(drift.current.z > 1.9 and absf(drift.current.y) < 0.001 and calm_idle.current.is_zero_approx(), "The game's live drift value follows the faster local current field")
 
 func _measure_motion(start: Vector3, action: String) -> Dictionary:
 	await process_frame

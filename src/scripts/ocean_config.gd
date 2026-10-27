@@ -16,8 +16,10 @@ const SURFACE_SIZE := Vector2(1400.0,1400.0)
 const TERRAIN_EXTENT := 700.0
 const TERRAIN_STEP := 4.0
 const CANYON_CENTER := Vector3(-210,0,-230)
-const CANYON_CURRENT_SPEED := 0.9
-const CANYON_HALF_LENGTH := 85.0
+const CANYON_CURRENT_SPEED := 2.2
+const CANYON_HALF_LENGTH := 145.0
+const CANYON_FLOOR_HALF_WIDTH := 14.0
+const CANYON_BANK_HALF_WIDTH := 46.0
 const COASTAL_RADIUS := 68.0
 const EXPLORATION_NAMES := [
 	["海草沙坡", "浅礁贝床"], ["岩岸断层", "外围遗迹"],
@@ -80,8 +82,8 @@ static func canyon_center_x(z: float) -> float:
 static func current_velocity(point: Vector3) -> Vector3:
 	var along: float = absf(point.z-CANYON_CENTER.z)
 	var across: float = absf(point.x-canyon_center_x(point.z))
-	var longitudinal: float = 1.0-smoothstep(60.0,CANYON_HALF_LENGTH,along)
-	var lateral: float = 1.0-smoothstep(12.0,30.0,across)
+	var longitudinal: float = 1.0-smoothstep(100.0,CANYON_HALF_LENGTH,along)
+	var lateral: float = 1.0-smoothstep(16.0,44.0,across)
 	var depth: float = smoothstep(25.0,45.0,-point.y)
 	if longitudinal <= 0 or lateral <= 0 or depth <= 0:
 		return Vector3.ZERO
@@ -104,9 +106,9 @@ static func terrain_vertex_height(x: float, z: float) -> float:
 	# Low stone ridges around the southern gorge, never a perimeter cage.
 	height += 11.0*sin(x*0.075)*exp(-Vector2(x+45.0,z-300.0).length_squared()/4900.0)
 	# A deep, navigable gorge is local to the twin-gate dive site.
-	var canyon_along: float = 1.0-smoothstep(55.0,CANYON_HALF_LENGTH,absf(z-CANYON_CENTER.z))
-	var canyon_across: float = 1.0-smoothstep(9.0,28.0,absf(x-canyon_center_x(z)))
-	height -= 34.0*canyon_along*canyon_across
+	var canyon_along: float = 1.0-smoothstep(95.0,CANYON_HALF_LENGTH,absf(z-CANYON_CENTER.z))
+	var canyon_across: float = 1.0-smoothstep(CANYON_FLOOR_HALF_WIDTH,CANYON_BANK_HALF_WIDTH,absf(x-canyon_center_x(z)))
+	height -= 52.0*canyon_along*canyon_across
 	return clampf(height,-118.0,-17.0)
 
 ## Exact interpolation of the two triangles used in each terrain mesh cell.
@@ -126,9 +128,11 @@ static func seabed_height(x: float, z: float) -> float:
 
 static func pickup_points() -> Array:
 	var result: Array = []
-	for zone in ZONES:
+	for zone_index in range(ZONES.size()):
+		var zone: Dictionary = ZONES[zone_index]
 		var center: Vector3 = zone.center
-		for spec: Dictionary in [{"kind":"pearl","x":-9.0,"z":25.0},{"kind":"pearl","x":9.0,"z":29.0},{"kind":"chest","x":2.0,"z":35.0}]:
+		var relic: String = ["sea_glass","ancient_coin","amber_shard","conch","sea_glass","ancient_coin"][zone_index]
+		for spec: Dictionary in [{"kind":"pearl","x":-9.0,"z":25.0},{"kind":relic,"x":9.0,"z":29.0},{"kind":"chest","x":2.0,"z":35.0}]:
 			var x: float = center.x+float(spec.x)
 			var z: float = center.z+float(spec.z)
 			result.append({"kind":spec.kind,"position":Vector3(x,seabed_height(x,z)+1.0,z)})
@@ -148,13 +152,18 @@ static func pickup_points() -> Array:
 		var points: Array = exploration_points(site)
 		for branch in range(points.size()):
 			var point: Vector3 = points[branch].position + Vector3.UP
-			result.append({"kind":"pearl" if branch == 0 or site == 0 else "chest","position":point,"site_index":site,"exploration":true,"name":points[branch].name})
+			var kind: String = ["sea_glass","ancient_coin","amber_shard","conch","pearl","sea_glass","ancient_coin"][site] if branch == 0 else ("conch" if site == 0 else "chest")
+			result.append({"kind":kind,"position":point,"site_index":site,"exploration":true,"name":points[branch].name})
 		var station: Vector3 = area.center + Vector3(0,0,-float(area.radius)*0.72)
 		station.y = maxf(area.center.y,seabed_height(station.x,station.z)+8.0)
 		result.append({"kind":"oxygen","position":station,"site_index":site,"exploration":true,"name":"外围补气点"})
 	return result
 
 static func zone_for_position(point: Vector3) -> Dictionary:
+	# The enlarged gorge is a long corridor; its label follows both mouths without
+	# moving the circular side discoveries or changing other exploration areas.
+	if absf(point.z-CANYON_CENTER.z) <= CANYON_HALF_LENGTH and absf(point.x-canyon_center_x(point.z)) <= CANYON_BANK_HALF_WIDTH+12.0:
+		return ZONES[0]
 	var nearest: Dictionary = {}
 	var best: float = INF
 	for zone in ZONES:

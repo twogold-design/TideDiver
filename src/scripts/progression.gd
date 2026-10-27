@@ -4,6 +4,7 @@ class_name Progression
 
 const Layout = preload("res://scripts/layout_rules.gd")
 const FishCatalog = preload("res://scripts/fish_catalog.gd")
+const LootCatalog = preload("res://scripts/loot_catalog.gd")
 const SAVE_PATH := "res://saves/progress.json"
 const WEB_SAVE_PATH := "user://saves/progress.json"
 const MAX_UPGRADE_LEVEL := 3
@@ -25,6 +26,11 @@ const GOODS := {
 	"tuna": FishCatalog.SPECIES[6],
 	"moray": FishCatalog.SPECIES[7],
 	"reef_shark": FishCatalog.SPECIES[8],
+	"stonefish": FishCatalog.SPECIES[9],
+	"sea_glass": LootCatalog.ITEMS.sea_glass,
+	"ancient_coin": LootCatalog.ITEMS.ancient_coin,
+	"amber_shard": LootCatalog.ITEMS.amber_shard,
+	"conch": LootCatalog.ITEMS.conch,
 }
 const RECIPES := {
 	"orange": {"name": "香煎橘鳍鱼", "price": 42, "cook_time": 3.0},
@@ -49,7 +55,7 @@ var bag_level: int = 0
 var spear_level: int = 0
 var total_fish: int = 0
 var best_depth: float = 0.0
-var inventory: Dictionary = {"orange": 0, "blue": 0, "lantern": 0, "pearl": 0, "chest": 0, "sardine": 0, "puffer": 0, "lionfish": 0, "tuna": 0, "moray": 0, "reef_shark": 0}
+var inventory: Dictionary = {"orange": 0, "blue": 0, "lantern": 0, "pearl": 0, "chest": 0, "sardine": 0, "puffer": 0, "lionfish": 0, "tuna": 0, "moray": 0, "reef_shark": 0, "stonefish": 0, "sea_glass":0, "ancient_coin":0, "amber_shard":0, "conch":0}
 var renovation: Dictionary = {"clean": false, "kitchen": false, "tables": false, "sign": false, "expansion": false, "decor": false}
 var restaurant_runs: int = 0
 var total_served: int = 0

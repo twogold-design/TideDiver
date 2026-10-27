@@ -6,7 +6,7 @@ const Ocean = preload("res://scripts/ocean_config.gd")
 static func prepare(item: Dictionary) -> void:
 	if item.has("state"):
 		return
-	item.state = "patrol"
+	item.state = "camouflaged" if FishData.SPECIES[item.kind].behavior == "camouflage" else "patrol"
 	item.timer = 0.0
 	item.direction = Vector3.FORWARD.rotated(Vector3.UP,float(item.phase))
 	item.attack_cooldown = 0.0
@@ -22,7 +22,10 @@ static func alarm(game: Node, source: Dictionary) -> void:
 			continue
 		prepare(other)
 		var behavior: String = FishData.SPECIES[other.kind].behavior
-		if behavior in ["predator","ambush"]:
+		if behavior == "camouflage":
+			other.state = "exposed"
+			other.timer = 3.0
+		elif behavior in ["predator","ambush"]:
 			other.alerted = true
 		elif behavior == "armored" and other.state != "recover":
 			other.state = "inflate"
@@ -51,6 +54,9 @@ static func advance(game: Node, item: Dictionary, delta: float) -> void:
 		return
 	item.timer = maxf(0,float(item.timer)-delta)
 	item.attack_cooldown = maxf(0,float(item.attack_cooldown)-delta)
+	if data.behavior == "camouflage":
+		_advance_stonefish(game,item,delta)
+		return
 	var alert_range: float = float(data.alert)
 	if Input.is_action_pressed("stealth"):
 		alert_range *= 0.48
@@ -155,4 +161,32 @@ static func advance(game: Node, item: Dictionary, delta: float) -> void:
 static func _clear(game: Node, from: Vector3, to: Vector3) -> bool:
 	var query := PhysicsRayQueryParameters3D.create(from,to,1,[game.player.get_rid()])
 	return game.get_world_3d().direct_space_state.intersect_ray(query).is_empty()
+
+static func _advance_stonefish(game: Node, item: Dictionary, _delta: float) -> void:
+	var node: Node3D = item.node
+	# A bottom-dweller holds its authored home, including fixtures used by hunting.
+	node.position = item.home
+	if item.state not in ["camouflaged","exposed"]:
+		item.state = "camouflaged"
+	if item.state == "exposed" and item.timer <= 0.0:
+		item.state = "camouflaged"
+	var center: Vector3 = node.get_meta("contact_center",Vector3(0,0.25,0))
+	var radii: Vector3 = node.get_meta("contact_radii",Vector3(0.5,0.25,0.85))
+	var contact: Vector3 = (node.to_local(game.player.global_position)-center)/(radii+Vector3.ONE*0.65)
+	if game.state == "dive" and not game.entry_active and contact.length_squared() <= 1.0 and _clear(game,node.to_global(center),game.player.global_position):
+		item.state = "exposed"
+		item.timer = 3.0
+		if game.hurt_cooldown <= 0.0:
+			game.take_hunt_damage(12.0,true,"石头鱼")
+	var exposed: float = smoothstep(0.0,0.35,minf(item.timer,0.35)) if item.state == "exposed" else 0.0
+	var spines: Node3D = node.get_node_or_null("Spines")
+	if spines != null:
+		spines.rotation.x = -0.18*exposed
+	for side: int in [-1,1]:
+		var fin: Node3D = node.get_node_or_null("PectoralLeft" if side < 0 else "PectoralRight")
+		if fin != null:
+			fin.rotation.z = side*(exposed*0.18+sin(game.clock*1.7+item.phase)*0.008)
+	var tail: Node3D = node.get_node_or_null("Tail")
+	if tail != null:
+		tail.rotation.y = sin(game.clock*4.2+item.phase)*0.09*exposed
 

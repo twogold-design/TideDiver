@@ -1,6 +1,7 @@
 extends SceneTree
 ## Actual peripheral landmarks, usable resources and physical exploration routes.
 const Ocean = preload("res://scripts/ocean_config.gd")
+const Loot = preload("res://scripts/loot_catalog.gd")
 
 class MemoryProgression extends "res://scripts/progression.gd":
 	var saves: int = 0
@@ -61,13 +62,41 @@ func _run() -> void:
 		_check(ids.size() == 7, "Expanded areas preserve seven distinct destination identities")
 		_test_gm_and_random_departures()
 		await _test_air_cost()
-	_check(Ocean.current_velocity(Vector3(Ocean.canyon_center_x(-230) + 40, -50, -230)).is_zero_approx() and Ocean.current_velocity(Vector3(Ocean.canyon_center_x(-130), -50, -130)).is_zero_approx(), "Expanding the canyon destination does not spread its original current into surrounding water")
+	_test_current_isolation()
 	_check(memory._save_data() == progress_before and memory.saves == 0, "Exploration, collection, refills and GM inspection do not change or save durable progress")
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	game.free()
 	await process_frame
 	print("%s: Tide Diver expanded dive areas (%d checks)." % ["PASS" if failures == 0 else "FAIL", checks])
 	quit(0 if failures == 0 else 1)
+
+func _test_current_isolation() -> void:
+	var center_z: float = Ocean.CANYON_CENTER.z
+	var extended_flow := true
+	var quiet_banks := true
+	var quiet_mouths := true
+	for side: float in [-1.0, 1.0]:
+		var inside_z: float = center_z + side * (Ocean.CANYON_HALF_LENGTH - 10.0)
+		extended_flow = extended_flow and Ocean.current_velocity(Vector3(Ocean.canyon_center_x(inside_z), -50, inside_z)).length() > 0.1
+		extended_flow = extended_flow and Ocean.current_velocity(Vector3(Ocean.canyon_center_x(center_z) + side * (Ocean.CANYON_BANK_HALF_WIDTH - 8.0), -50, center_z)).length() > 0.1
+		for outside: float in [0.0, 0.5, 12.0]:
+			var outside_z: float = center_z + side * (Ocean.CANYON_HALF_LENGTH + outside)
+			quiet_mouths = quiet_mouths and Ocean.current_velocity(Vector3(Ocean.canyon_center_x(outside_z), -50, outside_z)).is_zero_approx()
+			quiet_banks = quiet_banks and Ocean.current_velocity(Vector3(Ocean.canyon_center_x(center_z) + side * (Ocean.CANYON_BANK_HALF_WIDTH + outside), -50, center_z)).is_zero_approx()
+	_check(extended_flow, "The enlarged current reaches both new channel ends and both wider inner banks")
+	_check(quiet_mouths and quiet_banks, "Both banks and both mouths become still at and beyond the enlarged canyon boundary")
+	var other_sites_quiet := true
+	for site in range(Ocean.DIVE_SITES.size()):
+		if site == 1:
+			continue
+		var area: Dictionary = Ocean.exploration_areas()[site]
+		var samples: Array[Vector3] = [area.center, Ocean.DIVE_SITES[site].origin + Vector3(0, -6, 25)]
+		for point: Dictionary in Ocean.exploration_points(site):
+			samples.append(point.position + Vector3.UP * 8)
+		for point: Vector3 in samples:
+			point.y = maxf(point.y, Ocean.seabed_height(point.x, point.z) + 3.0)
+			other_sites_quiet = other_sites_quiet and Ocean.current_velocity(point).is_zero_approx()
+	_check(other_sites_quiet, "Every other dive site's center, actual entry landing and peripheral discoveries remain free of canyon current")
 
 func _test_fish_coverage(area: Dictionary) -> void:
 	var center: Vector3 = area.center
@@ -145,9 +174,28 @@ func _test_peripheral_resources(site: int, area: Dictionary) -> void:
 	for item in collectibles.slice(0, 2):
 		var count: int = game.cargo.size()
 		game.player.position = item.node.position
-		game.interact()
-		collected = collected and game.cargo.size() == count + 1 and game.cargo[-1].id == item.kind and not item.active and not item.node.visible
-	_check(collected, "New peripheral rewards can actually be collected once into the existing cargo system: " + str(area.name))
+		if item.kind == "chest":
+			var contents: Array = item.loot_remaining.duplicate(true)
+			var expected_cargo: Array = []
+			var expected_air := 0.0
+			for reward: Dictionary in contents:
+				if reward.id == "oxygen":
+					expected_air += float(reward.air)
+				else:
+					expected_cargo.append(Loot.cargo_entry(reward.id))
+			game.oxygen = 5.0
+			game.interact()
+			var claimed_air: float = game.oxygen - 5.0
+			if item.active:
+				# Three bottle rewards can exceed a basic tank; the unclaimed air waits.
+				game.oxygen = 0.0
+				game.interact()
+				claimed_air += game.oxygen
+			collected = collected and game.cargo.slice(count) == expected_cargo and is_equal_approx(claimed_air,expected_air) and not item.active and item.node.visible and item.node.get_node("Lid").rotation.x > 1.0 and item.loot_remaining.is_empty()
+		else:
+			game.interact()
+			collected = collected and game.cargo.size() == count + 1 and game.cargo[-1] == Loot.cargo_entry(item.kind) and not item.active and not item.node.visible
+	_check(collected, "Peripheral finds and the chest's cached random rewards are collected exactly once through the actual cargo and air systems: " + str(area.name))
 	var refilled: bool = not refills.is_empty()
 	if refilled:
 		var item: Dictionary = refills[0]

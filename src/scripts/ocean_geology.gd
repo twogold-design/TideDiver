@@ -190,6 +190,7 @@ static func decorate(parent: Node3D) -> void:
 	var random := RandomNumberGenerator.new()
 	random.seed = 641390
 	var roots := PackedVector3Array()
+	var stonefish_rocks: Array[Dictionary] = []
 	var areas: Array = Ocean.exploration_areas()
 	for site in range(areas.size()):
 		var area: Dictionary = areas[site]
@@ -223,6 +224,8 @@ static func decorate(parent: Node3D) -> void:
 				multi.set_instance_transform(index, Transform3D(basis, position))
 				multi.set_instance_color(index, Color("b7b4a0").lerp(Color("d9d2b8"), random.randf()))
 				roots.append(root)
+				var world_pose := Transform3D(basis,position+parent_origin+local_center)
+				stonefish_rocks.append({"bounds":world_pose*multi.mesh.get_aabb(),"position":root,"site":site})
 			var batch := MultiMeshInstance3D.new()
 			batch.name = "Site%dPebbles%d" % [site, form]
 			batch.position = local_center
@@ -235,6 +238,7 @@ static func decorate(parent: Node3D) -> void:
 	geology.set_meta("detail_count", roots.size())
 	geology.set_meta("draw_batches", Ocean.DIVE_SITES.size() * DETAIL_FORMS)
 	geology.set_meta("ground_roots", roots)
+	geology.set_meta("stonefish_rocks",stonefish_rocks)
 	geology.set_meta("collision_unchanged", true)
 	geology.set_meta("distribution", "10 core / 14 outer ring per form")
 

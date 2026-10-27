@@ -168,6 +168,8 @@ func _draw() -> void:
 	if game.state == "dock":
 		_draw_dock()
 	else:
+		if game.hurt_flash > 0:
+			screen_overlay(Color(0.65,0.04,0.035,0.16*game.hurt_flash/0.45))
 		_draw_hud()
 	if game.rescue_result_visible:
 		_draw_rescue_result()
@@ -382,7 +384,18 @@ func _draw_hud() -> void:
 		var spread: float = 21 + (1.0 - game.hit_timer / 0.3) * 14
 		for diagonal in [Vector2(-1,-1), Vector2(1,-1), Vector2(-1,1), Vector2(1,1)]:
 			draw_line(center + diagonal * spread, center + diagonal * (spread + 9), Color(flash, minf(1, game.hit_timer * 6)), 3, true)
-	if game.catch_timer > 0:
+	if game.loot_feedback_timer > 0:
+		var alpha: float = minf(1.0,game.loot_feedback_timer/0.5)
+		var rows: int = mini(3,game.loot_feedback.size())
+		var has_note: bool = not game.loot_feedback_note.is_empty()
+		var card_height: float = 72+rows*24+(24 if has_note else 0)
+		_panel(Rect2(470,565,500,card_height),Color(0.025,0.12,0.16,0.94*alpha),Color(GOLD,0.55*alpha))
+		_center(Vector2(720,595),game.loot_feedback_title,23,Color(GOLD,alpha))
+		for row in range(rows):
+			_center(Vector2(720,627+row*24),game.loot_feedback[row],17,Color(LIGHT,alpha))
+		if has_note:
+			_center(Vector2(720,627+rows*24),game.loot_feedback_note,16,Color(MINT,alpha))
+	elif game.catch_timer > 0:
 		var caught: Dictionary = game.FishData.SPECIES[game.catch_kind]
 		var age: float = 2.4 - game.catch_timer
 		var slide: float = (1.0 - smoothstep(0.0, 0.18, age)) * 20

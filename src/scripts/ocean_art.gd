@@ -54,6 +54,7 @@ static func _rock(parent: Node3D, pos: Vector3, size: Vector3, variant: int = 0)
 	var bounds: AABB = stone.mesh.get_aabb()
 	stone.scale = size * Vector3(2,2,2) / bounds.size
 	stone.position = pos - bounds.get_center() * stone.scale
+	stone.set_meta("stonefish_rock",true)
 	return stone
 
 static func _cylinder(parent: Node3D, pos: Vector3, radius: float, height: float, material: Material, top_radius: float = -1.0) -> MeshInstance3D:
@@ -139,6 +140,7 @@ static func _water_and_rays(parent: Node3D) -> void:
 	surface_shader.code = """
 shader_type spatial;
 render_mode blend_mix, depth_draw_never, cull_disabled, unshaded;
+uniform float viewer_depth = 0.0;
 varying vec3 world_pos;
 void vertex() {
 	VERTEX.y += sin(VERTEX.x * 0.24 + TIME * 0.65) * 0.07 + cos(VERTEX.z * 0.31 - TIME * 0.42) * 0.05;
@@ -150,11 +152,13 @@ void fragment() {
 	float glint = smoothstep(1.45, 1.9, wave_a + wave_b);
 	float broad = 0.5 + 0.5 * sin(world_pos.x * 0.09 + world_pos.z * 0.05 + TIME * 0.06);
 	ALBEDO = mix(vec3(0.11, 0.40, 0.46), vec3(0.31, 0.66, 0.64), broad) + vec3(0.35, 0.32, 0.20) * glint;
+	ALBEDO *= exp(-viewer_depth * 0.012);
 	ALPHA = 0.39 + glint * 0.18;
 }
 """
 	var surface_material: ShaderMaterial = ShaderMaterial.new()
 	surface_material.shader = surface_shader
+	parent.set_meta("water_surface_material",surface_material)
 	var surface_mesh: PlaneMesh = PlaneMesh.new()
 	surface_mesh.size = Ocean.SURFACE_SIZE
 	surface_mesh.subdivide_width = 48
@@ -166,16 +170,18 @@ void fragment() {
 	ray_shader.code = """
 shader_type spatial;
 render_mode blend_add, depth_draw_never, cull_disabled, unshaded;
+uniform float viewer_depth = 0.0;
 void fragment() {
 	float silhouette = pow(abs(dot(normalize(NORMAL), normalize(VIEW))), 2.5);
 	float fade = pow(sin(clamp(UV.y, 0.0, 1.0) * 3.14159), 1.5);
 	float shimmer = 0.88 + 0.12 * sin(TIME * 0.35 + UV.y * 9.0);
 	ALBEDO = vec3(0.52, 0.71, 0.60);
-	ALPHA = silhouette * fade * shimmer * 0.024;
+	ALPHA = silhouette * fade * shimmer * 0.024 * exp(-viewer_depth * 0.035);
 }
 """
 	var ray_material: ShaderMaterial = ShaderMaterial.new()
 	ray_material.shader = ray_shader
+	parent.set_meta("sunshaft_material",ray_material)
 	var ray_positions: Array[Vector3] = [Vector3(-20, -18, -10), Vector3(19, -21, -24), Vector3(-1, -19, -38), Vector3(29, -16, 10), Vector3(-35, -19, 25)]
 	for i: int in range(ray_positions.size()):
 		var cone: CylinderMesh = CylinderMesh.new()
@@ -292,6 +298,9 @@ static func create_fish(kind: int) -> Node3D:
 	return FishArt.build(kind)
 
 static func create_pickup(kind: String) -> Node3D:
+	var loot_art = preload("res://scripts/loot_art.gd")
+	if loot_art.supports(kind):
+		return loot_art.build(kind)
 	var root: Node3D = Node3D.new()
 	root.name = "PickupArt"
 	var gold: StandardMaterial3D = _mat(Color("edc77e"))
@@ -319,6 +328,9 @@ static func create_pickup(kind: String) -> Node3D:
 		lid.rotation.x = -0.85
 		_sphere(root, Vector3(0, 0.30, 0.16), Vector3.ONE * 0.24, _mat(Color("f2ead0"), 0.40), 20)
 	return root
+
+static func set_chest_open(node: Node3D, opened: bool = true) -> void:
+	preload("res://scripts/loot_art.gd").set_chest_open(node,opened)
 
 static func create_boat() -> Node3D:
 	var root: Node3D = Node3D.new()
@@ -435,7 +447,7 @@ static func _outer_atoll(parent: Node3D) -> void:
 static func _set_outer_visibility(root: Node) -> void:
 	for child in root.get_children():
 		if child is MeshInstance3D:
-			child.visibility_range_end = 145.0
+			child.visibility_range_end = maxf(child.visibility_range_end,145.0)
 			child.visibility_range_end_margin = 15.0
 			child.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		_set_outer_visibility(child)
@@ -463,7 +475,7 @@ static func _build_outer_ocean(parent: Node3D) -> void:
 			"lantern_garden":
 				_outer_garden(region)
 			"merchant_wreck":
-				_outer_wreck(region)
+				preload("res://scripts/explorable_wreck.gd").build(region)
 				for i: int in range(7):
 					var p: Vector3 = _region_ground(region,-19+float(i)*6,-20,0.3)
 					var plank: MeshInstance3D = _box(region,p,Vector3(1.0,0.3,4.5),_mat(Color("80624c")))

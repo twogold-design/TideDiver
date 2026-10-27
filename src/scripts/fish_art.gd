@@ -1,5 +1,6 @@
 extends RefCounted
 ## Original low-poly fish, facing local -Z. Tail and eel joints animate in FishBrain.
+const StonefishArt = preload("res://scripts/stonefish_art.gd")
 
 static func _material(color: String, glow: float = 0.0) -> StandardMaterial3D:
 	var result := StandardMaterial3D.new()
@@ -72,6 +73,8 @@ static func _tail(root: Node3D, z: float, span: float, length: float, mat: Mater
 	return tail
 
 static func build(kind: int) -> Node3D:
+	if kind == 9:
+		return StonefishArt.build()
 	var root := Node3D.new()
 	root.name = "FishArt"
 	if kind == 7:

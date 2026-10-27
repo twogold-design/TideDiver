@@ -3,6 +3,7 @@ extends SceneTree
 const P = preload("res://scripts/progression.gd")
 const FishData = preload("res://scripts/fish_catalog.gd")
 const Ocean = preload("res://scripts/ocean_config.gd")
+const Loot = preload("res://scripts/loot_catalog.gd")
 const TEST_PATH := "res://tests/temp/hunting.json"
 class MemoryProgression extends "res://scripts/progression.gd":
 	var saves: int = 0
@@ -59,13 +60,18 @@ func _clear_fixture() -> void:
 		if FileAccess.file_exists(path):
 			DirAccess.remove_absolute(path)
 func _test_catalog_and_persistence() -> void:
-	_check(FishData.SPECIES.size() == 9, "Hunting provides nine catalogued species")
+	var species_count: int = FishData.SPECIES.size()
+	var actual_ids: Array[String] = []
+	for species in FishData.SPECIES:
+		actual_ids.append(species.id)
+	_check(actual_ids == ["orange","blue","lantern","sardine","puffer","lionfish","tuna","moray","reef_shark","stonefish"], "Hunting preserves every original species index and adds stonefish as the tenth catch")
 	var ids: Dictionary = {}
 	var cargo: Array = []
 	var total_value: int = 0
 	for species in FishData.SPECIES:
 		_check(not ids.has(species.id) and P.GOODS.has(species.id) and P.GOODS[species.id].value == species.value, "Species is unique and has one canonical sale value: " + species.id)
-		_check(species.hp > 0 and species.weight > 0 and species.speed > 0 and species.radius > 0, "Species combat and catch data are positive: " + species.id)
+		var valid_speed: bool = species.speed == 0 if species.behavior == "camouflage" else species.speed > 0
+		_check(species.hp > 0 and species.weight > 0 and valid_speed and species.radius > 0, "Species have valid combat, weight and movement data, including stationary camouflage: " + species.id)
 		ids[species.id] = true
 		cargo.append({"id":species.id,"value":999999})
 		total_value += int(species.value)
@@ -73,7 +79,7 @@ func _test_catalog_and_persistence() -> void:
 	memory.persistence_enabled = false
 	memory.inventory = {"orange":0,"blue":0,"lantern":0,"pearl":0,"chest":0}
 	var result: Dictionary = memory.complete_dive(cargo,false,115.0)
-	_check(cargo.is_empty() and result.count == 9 and result.earned == 0 and memory.inventory_total() == 9 and memory.total_fish == 9, "All nine fish store once and count as fish even with legacy sparse inventory")
+	_check(cargo.is_empty() and result.count == species_count and result.earned == 0 and memory.inventory_total() == species_count and memory.total_fish == species_count, "Every catalogued fish stores once and counts as fish even with legacy sparse inventory")
 	for species in FishData.SPECIES:
 		_check(memory.inventory.get(species.id,0) == 1, "Safe return stores actual species identity: " + species.id)
 	_clear_fixture()
@@ -86,18 +92,21 @@ func _test_catalog_and_persistence() -> void:
 	var loaded = P.new()
 	loaded.save_path = TEST_PATH
 	loaded.load_game()
-	_check(loaded.inventory == memory.inventory and loaded.total_fish == 9 and loaded.best_depth == 115.0, "Actual isolated JSON reload retains every new fish and its catch statistics")
+	var inventory_preserved: bool = loaded.inventory.size() == P.GOODS.size()
+	for id in P.GOODS:
+		inventory_preserved = inventory_preserved and loaded.inventory.get(id,-1) == memory.inventory.get(id,0)
+	_check(inventory_preserved and loaded.inventory_total() == species_count and loaded.total_fish == species_count and loaded.best_depth == 115.0, "Actual isolated JSON reload retains every new fish and its catch statistics, normalizing missing collectible stocks to zero")
 	var earned: int = 0
 	for species in FishData.SPECIES:
 		earned += memory.sell(species.id,1)
-	_check(earned == total_value and memory.coins == total_value and memory.inventory_total() == 0, "Selling all nine kinds uses canonical prices rather than untrusted cargo values")
+	_check(earned == total_value and memory.coins == total_value and memory.inventory_total() == 0, "Selling every catalogued kind uses canonical prices rather than untrusted cargo values")
 	for species in FishData.SPECIES:
 		_check(memory.sell(species.id,1) == 0, "Sold fish cannot be sold twice: " + species.id)
 	cargo.clear()
 	for species in FishData.SPECIES:
 		cargo.append({"id":species.id,"value":999999})
 	result = memory.complete_dive(cargo,true,119.0)
-	_check(result.earned == int(float(total_value*35)/100.0) and result.stored.is_empty() and memory.inventory_total() == 0 and memory.total_fish == 18, "Rescue settles all nine species at 35 percent and never duplicates warehouse stock")
+	_check(result.earned == int(float(total_value*35)/100.0) and result.stored.is_empty() and memory.inventory_total() == 0 and memory.total_fish == species_count * 2, "Rescue settles every species at 35 percent and never duplicates warehouse stock")
 	var legacy = P.new()
 	legacy.persistence_enabled = false
 	legacy._apply_save_data({"version":4,"coins":99,"day":7,"inventory":{"orange":2,"blue":1,"pearl":3},"last_service_result":{"served":1,"reviews":{"satisfied":1,"okay":0,"lost":0}}})
@@ -118,9 +127,11 @@ func _press_named(ui: Node, label: String) -> void:
 func _test_warehouse_pagination() -> void:
 	for species in FishData.SPECIES:
 		progress.inventory[species.id] = 1
+	for id in Loot.ITEMS:
+		progress.inventory[id] = 1
 	game.open_restaurant()
 	var ui: Node = game.hud.restaurant_ui
-	_check(ui._warehouse_page_count() == 3 and ui.warehouse_page == 0 and ui._warehouse_ids() == ["orange","blue","lantern","pearl","chest"], "Warehouse first page preserves original fish and valuables")
+	_check(ui._warehouse_page_count() == 4 and ui.warehouse_page == 0 and ui._warehouse_ids() == ["orange","blue","lantern","pearl","chest"], "Warehouse first page preserves original fish and valuables while new finds extend its pages")
 	_check(_button_named(ui,"上一页").disabled, "First page cannot navigate below zero")
 	_press_named(ui,"下一页")
 	_check(ui.warehouse_page == 1 and ui._warehouse_ids() == ["sardine","puffer","lionfish","tuna","moray"], "Real next-page callback exposes five new catches")
@@ -128,12 +139,28 @@ func _test_warehouse_pagination() -> void:
 	_press_named(ui,"卖 1 件")
 	_check(progress.inventory.sardine == 0 and progress.inventory.puffer == 1 and progress.inventory.orange == 1 and progress.coins == before + 24, "Second-page sale callback is bound to displayed sardine rather than an old row")
 	_press_named(ui,"下一页")
-	_check(ui.warehouse_page == 2 and ui._warehouse_ids() == ["reef_shark"] and _button_named(ui,"下一页").disabled, "Third page exposes reef shark and disables further navigation")
+	_check(ui.warehouse_page == 2 and ui._warehouse_ids() == ["reef_shark","stonefish","sea_glass","ancient_coin","amber_shard"] and not _button_named(ui,"下一页").disabled, "Third page exposes the remaining fish and three distinct seabed collectibles")
 	_press_named(ui,"全卖")
 	_check(progress.inventory.reef_shark == 0 and progress.coins == before + 204, "Last-page sale pays reef shark value exactly once")
 	_check(_button_named(ui,"全卖").disabled, "Sold-out last-page row cannot be sold again")
+	var stonefish_sale: Button = _warehouse_row_button(ui,"stonefish","全卖")
+	_check(stonefish_sale != null and progress.inventory.stonefish == 1, "The stonefish's separate warehouse row remains sellable after the shark row sells out")
+	if stonefish_sale != null:
+		stonefish_sale.pressed.emit()
+	_check(progress.inventory.stonefish == 0 and progress.coins == before + 204 + P.GOODS.stonefish.value, "The actual stonefish sale callback consumes its own stock at its canonical price")
+	var expected_coins: int = progress.coins
+	for id in Loot.ITEMS:
+		if id == "conch":
+			_press_named(ui,"下一页")
+			_check(ui.warehouse_page == 3 and ui._warehouse_ids() == ["conch"] and _button_named(ui,"下一页").disabled, "The final page exposes the collectible shell and has a real navigation boundary")
+		var sale: Button = _warehouse_row_button(ui,id,"全卖")
+		_check(sale != null and not sale.disabled and progress.inventory[id] == 1, "The actual warehouse has an enabled, distinct sale row for " + id)
+		if sale != null and not sale.disabled:
+			sale.pressed.emit()
+		expected_coins += int(P.GOODS[id].value)
+		_check(progress.inventory[id] == 0 and progress.coins == expected_coins and progress.inventory.orange == 1, "The collectible's own callback pays its exact canonical value and preserves other stock: " + id)
 	ui._change_warehouse_page(100)
-	_check(ui.warehouse_page == 2, "Page overflow clamps safely")
+	_check(ui.warehouse_page == 3, "Page overflow clamps safely")
 	ui._change_warehouse_page(-100)
 	_check(ui.warehouse_page == 0, "Page underflow clamps safely")
 	var seen: Dictionary = {}
@@ -152,6 +179,16 @@ func _test_warehouse_pagination() -> void:
 				rows_fit = rows_fit and is_finite(page_top) and button.position.y + button.size.y < page_top
 	_check(seen.size() == P.GOODS.size() and rows_fit, "Every warehouse good is reachable and sale rows fit above page controls")
 	game.return_to_dock()
+
+func _warehouse_row_button(ui: Node, id: String, label: String) -> Button:
+	var row: int = ui._warehouse_ids().find(id)
+	if row < 0:
+		return null
+	var matching: Array[Button] = []
+	for button: Button in ui.buttons:
+		if button.text == label:
+			matching.append(button)
+	return matching[row] if row < matching.size() else null
 
 func _disable_fish() -> void:
 	for item in game.fish:
@@ -178,7 +215,8 @@ func _fixture(kind: int, position: Vector3) -> Dictionary:
 	return {}
 func _aim_at(item: Dictionary) -> void:
 	game.camera.position = game.player.position + Vector3(0,0,7.5)
-	game.camera.look_at(item.node.position,Vector3.UP)
+	var body_center: Vector3 = item.node.to_global(item.node.get_meta("harpoon_center",Vector3.ZERO))
+	game.camera.look_at(body_center,Vector3.UP)
 	game.shot_cooldown = 0.0
 func _test_population_and_seabed() -> void:
 	game.start_dive(false, false)
@@ -191,7 +229,7 @@ func _test_population_and_seabed() -> void:
 		kinds[item.kind] = int(kinds.get(item.kind,0))+1
 		valid = valid and item.alive and item.hp == FishData.SPECIES[item.kind].hp and item.home.y > Ocean.seabed_height(item.home.x,item.home.z)
 		deepest = minf(deepest,item.home.y)
-	_check(kinds.size() == 9 and valid, "All nine species spawn alive with canonical health above natural seabed")
+	_check(kinds.size() == FishData.SPECIES.size() and kinds.has(9) and valid, "All catalogued species, including bottom-dwelling stonefish, spawn alive with canonical health above natural seabed")
 	_check(deepest < -65, "Deep-water fish occupy habitats far below the starter cove")
 	var heights: Array[float] = []
 	for point: Vector2 in [Vector2(-480,-480),Vector2(480,-480),Vector2(-480,480),Vector2(480,480),Vector2(0,100),Vector2(80,-320)]:

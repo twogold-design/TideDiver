@@ -11,6 +11,12 @@ const FishData = preload("res://scripts/fish_catalog.gd")
 const FishBrain = preload("res://scripts/fish_brain.gd")
 const StormSchool = preload("res://scripts/storm_school.gd")
 const DiverMotion = preload("res://scripts/diver_motion.gd")
+const SandRays = preload("res://scripts/ray_habitat.gd")
+const CanyonShark = preload("res://scripts/thresher_shark.gd")
+const StonefishHabitat = preload("res://scripts/stonefish_habitat.gd")
+const DepthLighting = preload("res://scripts/depth_lighting.gd")
+const Loot = preload("res://scripts/loot_catalog.gd")
+const SWIMMING_SPECIES := 9
 const COASTAL_FISH_COUNT = 21
 const COASTAL_KINDS = [0,1,3,4,6,2]
 const ENTRY_SCHOOL_KINDS = [0,1,3,4,6]
@@ -28,10 +34,16 @@ var canyon_root: Node3D
 var drift_current: Vector3 = Vector3.ZERO
 var current_hint: String = ""
 var storm_school: Node3D
+var ray_habitat: Node3D
+var explorable_wreck: Node3D
+var canyon_shark: Node3D
+var stonefish_count: int = 0
+var _camera_probe: SphereShape3D
 var boat: Node3D
 var dive_origin: Vector3 = Vector3.ZERO
 var entry_site_index: int = -1
 var entry_rng = RandomNumberGenerator.new()
+var wildlife_rng = RandomNumberGenerator.new()
 var gm_menu_open: bool = false
 var gm_return_state: String = "dock"
 var gm_test_active: bool = false
@@ -39,6 +51,8 @@ var player: CharacterBody3D
 var diver_motion = DiverMotion.new()
 var camera: Camera3D
 var environment: Environment
+var ocean_sun: DirectionalLight3D
+var diver_light: OmniLight3D
 var hud: Node2D
 var fish: Array = []
 var pickups: Array = []
@@ -48,6 +62,10 @@ var projectiles: Array = []
 var cargo: Array = []
 var oxygen: float = 100.0
 var catch_timer: float = 0.0
+var loot_feedback: Array[String] = []
+var loot_feedback_title: String = ""
+var loot_feedback_note: String = ""
+var loot_feedback_timer: float = 0.0
 var catch_kind: int = 0
 var hit_timer: float = 0.0
 var entry_active: bool = false
@@ -60,6 +78,7 @@ var pitch: float = -0.12
 var clock: float = 0.0
 var shot_cooldown: float = 0.0
 var hurt_cooldown: float = 0.0
+var hurt_flash: float = 0.0
 var poison_timer: float = 0.0
 var hunt_warning: String = ""
 var hunt_warning_timer: float = 0.0
@@ -118,6 +137,7 @@ const LAYOUT_AREA = Rect2(332,96,1100,708)
 func _ready() -> void:
 	rng.seed = 271828
 	entry_rng.randomize()
+	wildlife_rng.randomize()
 	var args: PackedStringArray = OS.get_cmdline_user_args()
 	for arg in args:
 		if arg.begins_with("--capture") or arg == "--smoke":
@@ -306,16 +326,20 @@ func _setup_world() -> void:
 	environment.fog_density = 0.0065
 	world_env.environment = environment
 	add_child(world_env)
-	var sun = DirectionalLight3D.new()
-	sun.rotation_degrees = Vector3(-55, -28, 0)
-	sun.light_color = Color("fff1d4")
-	sun.light_energy = 0.65
-	sun.shadow_enabled = true
-	add_child(sun)
+	ocean_sun = DirectionalLight3D.new()
+	ocean_sun.rotation_degrees = Vector3(-55, -28, 0)
+	ocean_sun.light_color = Color("fff1d4")
+	ocean_sun.light_energy = 0.65
+	ocean_sun.shadow_enabled = true
+	add_child(ocean_sun)
 	ocean_root = Node3D.new()
 	add_child(ocean_root)
 	Art.build_world(ocean_root)
 	canyon_root = ocean_root.get_node("OuterOcean/twin_gates/TidalCanyon")
+	explorable_wreck = ocean_root.get_node("OuterOcean/merchant_wreck/ExplorableWreck")
+	ray_habitat = SandRays.new()
+	ocean_root.add_child(ray_habitat)
+	canyon_shark = CanyonShark.build(ocean_root)
 	storm_school = StormSchool.new()
 	storm_school.position = StormSchool.CENTER
 	ocean_root.add_child(storm_school)
@@ -332,18 +356,24 @@ func _setup_world() -> void:
 	player.add_child(collider)
 	player.position = Vector3(0, -6, 14)
 	add_child(player)
+	ray_habitat.ignored_bodies.append(player.get_rid())
+	_camera_probe = SphereShape3D.new()
+	_camera_probe.radius = 0.28
 	camera = Camera3D.new()
 	camera.fov = 66
 	camera.far = 1100
 	camera.current = true
 	add_child(camera)
-	var lamp = OmniLight3D.new()
-	lamp.light_color = Color("a2ffe4")
-	lamp.light_energy = 0.35
-	lamp.omni_range = 12
-	player.add_child(lamp)
+	diver_light = OmniLight3D.new()
+	diver_light.light_color = Color("a2ffe4")
+	diver_light.light_energy = 0.35
+	diver_light.omni_range = 12
+	player.add_child(diver_light)
+	_reset_shore_lighting()
 
 func _spawn_population() -> void:
+	ray_habitat.reset()
+	canyon_shark.begin_dive(wildlife_rng.randi())
 	for item in fish:
 		item.node.queue_free()
 	for item in pickups:
@@ -367,8 +397,8 @@ func _spawn_population() -> void:
 			p = Vector3((i - 2) * 3.0, -7 - i * 0.6, 1 - i * 2.0)
 		_add_fish(kind,p)
 	var places: Array = [Vector3(3,-8,8),Vector3(-8,-16,0),Vector3(13,-22,-8),Vector3(-14,-29,-14),Vector3(7,-38,-22),Vector3(-5,-46,-29),Vector3(24,-48,7)]
-	for p in places:
-		_add_pickup(p, "pearl")
+	for index in range(places.size()):
+		_add_pickup(places[index], Loot.COASTAL_KINDS[index])
 	_add_pickup(Vector3(1,-49,-25), "chest")
 	_add_pickup(Vector3(-22,-34,-6), "chest")
 	_add_pickup(Vector3(-5,-18,3), "oxygen")
@@ -383,7 +413,7 @@ func _spawn_population() -> void:
 
 	for zone_index in range(Ocean.ZONES.size()):
 		for i in range(OUTER_FISH_PER_ZONE):
-			var kind: int = (i+zone_index*2) % FishData.SPECIES.size()
+			var kind: int = (i+zone_index*2) % SWIMMING_SPECIES
 			_add_fish(kind,Ocean.fish_home(zone_index,i))
 	# Scattered travelling schools connect the bay to distant habitats.
 	for school in range(TRANSIT_SCHOOLS):
@@ -407,6 +437,7 @@ func _spawn_population() -> void:
 		node.position = pos
 		ocean_root.add_child(node)
 		hazards.append({"node":node,"home":pos,"phase":rng.randf_range(0,TAU)})
+	stonefish_count = StonefishHabitat.populate(self)
 func fish_population_count() -> int:
 	return COASTAL_FISH_COUNT+OUTER_FISH_PER_ZONE*Ocean.ZONES.size()+TRANSIT_SCHOOLS*TRANSIT_FISH_PER_SCHOOL+ENTRY_SCHOOL_KINDS.size()*ENTRY_FISH_PER_SCHOOL
 
@@ -546,7 +577,10 @@ func _add_pickup(pos: Vector3, kind: String) -> void:
 	var node: Node3D = Art.create_pickup(kind)
 	node.position = pos
 	ocean_root.add_child(node)
-	pickups.append({"node":node,"kind":kind,"home":pos,"active":true})
+	var item: Dictionary = {"node":node,"kind":kind,"home":pos,"active":true}
+	if kind == "chest":
+		Loot.prepare_chest(item,wildlife_rng.randi())
+	pickups.append(item)
 
 func _jellyfish() -> Node3D:
 	var root = Node3D.new()
@@ -609,6 +643,7 @@ func confirm_new_game() -> void:
 	entry_time = 0.0
 	entry_splashed = false
 	catch_timer = 0.0
+	_clear_loot_feedback()
 	hit_timer = 0.0
 	cargo.clear()
 	orders.clear()
@@ -670,6 +705,7 @@ func confirm_new_game() -> void:
 	clock = 0
 	shot_cooldown = 0
 	hurt_cooldown = 0
+	hurt_flash = 0
 	poison_timer = 0
 	hunt_warning_timer = 0
 	hunt_warning = ""
@@ -677,8 +713,7 @@ func confirm_new_game() -> void:
 	camera.projection = Camera3D.PROJECTION_PERSPECTIVE
 	camera.fov = 66
 	environment.fog_enabled = true
-	environment.fog_light_color = Color("136675")
-	environment.background_color = Color("126879")
+	_reset_shore_lighting()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	tell("新的旅程开始了。从第一天出海，重新打造你的海岸小店。",9)
 	hud.rebuild()
@@ -702,6 +737,7 @@ func start_dive(animate_entry: bool = true, random_entry: bool = true, site_over
 	oxygen = progress.oxygen_max()
 	depth_record = 0
 	catch_timer = 0.0
+	_clear_loot_feedback()
 	hit_timer = 0.0
 	drift_current = Vector3.ZERO
 	current_hint = ""
@@ -713,10 +749,12 @@ func start_dive(animate_entry: bool = true, random_entry: bool = true, site_over
 	player.position = dive_origin + (Vector3(0,2.4,17.5) if animate_entry else Vector3(0,-6,14))
 	diver_motion.reset()
 	player.visible = true
+	player.get_child(0).visible = true
 	yaw = 0
 	pitch = -0.12
 	shot_cooldown = 0
 	hurt_cooldown = 0
+	hurt_flash = 0
 	poison_timer = 0
 	hunt_warning_timer = 0
 	hunt_warning = ""
@@ -727,6 +765,8 @@ func start_dive(animate_entry: bool = true, random_entry: bool = true, site_over
 	if entry_active:
 		tell("本次入水 · %s" % Ocean.DIVE_SITES[entry_site_index].name, 3.2)
 		_update_entry(0.0)
+	else:
+		_update_swim_camera()
 	_play_tone(480, 0.18)
 
 func open_gm_menu() -> void:
@@ -768,11 +808,14 @@ func gm_select_dive_site(index: int, direct: bool = false) -> void:
 	player.rotation = Vector3.ZERO
 	drift_current = Vector3.ZERO
 	diver_motion.reset()
+	player.get_child(0).visible = true
 	current_hint = ""
 	catch_timer = 0.0
+	_clear_loot_feedback()
 	hit_timer = 0.0
 	shot_cooldown = 0.0
 	hurt_cooldown = 0.0
+	hurt_flash = 0.0
 	poison_timer = 0.0
 	hunt_warning_timer = 0.0
 	hunt_warning = ""
@@ -784,16 +827,7 @@ func gm_select_dive_site(index: int, direct: bool = false) -> void:
 		yaw = pose.yaw
 		pitch = pose.pitch
 		player.rotation.y = yaw
-		var forward := Vector3(-sin(yaw)*cos(pitch),sin(pitch),-cos(yaw)*cos(pitch))
-		var desired_camera: Vector3 = player.position - forward*7.5 + Vector3.UP*1.7
-		var ray := PhysicsRayQueryParameters3D.create(player.position+Vector3.UP*0.8,desired_camera,1,[player.get_rid()])
-		var obstruction: Dictionary = get_world_3d().direct_space_state.intersect_ray(ray)
-		camera.position = desired_camera if obstruction.is_empty() else obstruction.position+obstruction.normal*0.4
-		camera.look_at(player.position+forward*3+Vector3.UP*0.6)
-		var deep: float = clampf((-player.position.y-12)/110,0,1)
-		environment.fog_light_color = Color("14596b").lerp(Color("061c30"),deep)
-		environment.background_color = environment.fog_light_color
-		environment.fog_density = 0.024
+		_update_swim_camera()
 	else:
 		_update_entry(0.0)
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -806,12 +840,14 @@ func _gm_test_pose(index: int) -> Dictionary:
 	var tilt: float = -0.12
 	match index:
 		1:
-			point = Vector3(Ocean.canyon_center_x(-270),-76,-270)
+			point = Vector3(Ocean.canyon_center_x(-325),-78,-325)
 			heading = PI
+			tilt = -0.20
 		2:
 			point = Vector3(35,Ocean.seabed_height(35,-325)+14,-325)
 		3:
-			point = Vector3(310,Ocean.seabed_height(310,-92)+14,-92)
+			point = explorable_wreck.to_global(Vector3(0,4.7,23))
+			heading = explorable_wreck.rotation.y
 		4:
 			point = Vector3(-180,-11,180)
 			tilt = -0.25
@@ -840,6 +876,7 @@ func _gm_test_pose(index: int) -> Dictionary:
 func finish_dive(rescued: bool = false) -> void:
 	if state != "dive":
 		return
+	_clear_loot_feedback()
 	var depleted: bool = rescued and oxygen <= 0.0
 	gm_test_active = false
 	diver_motion.reset()
@@ -851,8 +888,8 @@ func finish_dive(rescued: bool = false) -> void:
 	last_result = progress.complete_dive(cargo, rescued, depth_record)
 	last_result["depleted"] = depleted
 	rescue_result_visible = rescued
-	environment.fog_light_color = Color("136675")
-	environment.background_color = Color("126879")
+	if not depleted:
+		_reset_shore_lighting()
 	cargo.clear()
 	state = "rescuing" if depleted else "dock"
 	rescue_time = 2.8 if depleted else 0.0
@@ -875,6 +912,7 @@ func _update_rescue(delta: float) -> void:
 	rescue_time = maxf(0.0, rescue_time - delta)
 	if rescue_time <= 0.0:
 		state = "dock"
+		_reset_shore_lighting()
 		hud.rebuild()
 
 func upgrade(kind: String) -> void:
@@ -1002,7 +1040,9 @@ func _physics_process(delta: float) -> void:
 		player.visible = false
 	if state not in ["paused","service_paused"]:
 		catch_timer = maxf(0, catch_timer - delta)
+		loot_feedback_timer = maxf(0, loot_feedback_timer - delta)
 		hit_timer = maxf(0, hit_timer - delta)
+		hurt_flash = maxf(0, hurt_flash - delta)
 		_update_effects(delta)
 	if is_instance_valid(hud):
 		hud.queue_redraw()
@@ -1039,7 +1079,8 @@ func _update_entry(delta: float) -> void:
 	camera.look_at((player.position + Vector3.UP * 0.3).lerp(player.position + forward * 3 + Vector3.UP * 0.6, follow))
 	camera.fov = 66 + sin(follow * PI) * 6
 	var submerged: float = 1.0 - smoothstep(-1.2, 0.7, camera.position.y)
-	environment.background_color = Color("89c6cd").lerp(Color("14596b"), submerged)
+	var light_profile: Dictionary = _apply_underwater_lighting(maxf(0.0,-camera.position.y),submerged)
+	environment.background_color = Color("89c6cd").lerp(light_profile.water_color, submerged)
 	environment.fog_light_color = environment.background_color
 	environment.fog_density = lerpf(0.004, 0.024, submerged)
 	if t >= ENTRY_DURATION:
@@ -1084,6 +1125,7 @@ func _play_splash() -> void:
 	sound_player.play()
 
 func _capture_feedback(kind: int, location: Vector3) -> void:
+	_clear_loot_feedback()
 	catch_timer = 2.4
 	catch_kind = kind
 	hit_timer = 0.3
@@ -1165,7 +1207,7 @@ func _update_dive(delta: float) -> void:
 		elif alignment > 0.25:
 			current_hint = "顺流 · 水流助推"
 		elif alignment < -0.25:
-			current_hint = "逆流 · 轻微阻力"
+			current_hint = "逆流 · 水流阻力"
 		else:
 			current_hint = "横向游动 · 水流侧推"
 	player.velocity = move * speed + drift_current
@@ -1179,15 +1221,7 @@ func _update_dive(delta: float) -> void:
 	depth_record = maxf(depth_record,-player.position.y)
 	var use_rate: float = (0.72 + maxf(0,-player.position.y-20)*0.009) * (1.8 if boosting else 1.0)
 	oxygen = maxf(0, oxygen-use_rate*delta)
-	var forward = Vector3(-sin(yaw)*cos(pitch),sin(pitch),-cos(yaw)*cos(pitch))
-	var desired_camera: Vector3 = player.position - forward*7.5 + Vector3.UP*1.7
-	var camera_ray = PhysicsRayQueryParameters3D.create(player.position + Vector3.UP*0.8, desired_camera, 1, [player.get_rid()])
-	var obstruction: Dictionary = get_world_3d().direct_space_state.intersect_ray(camera_ray)
-	camera.position = desired_camera if obstruction.is_empty() else obstruction.position + obstruction.normal*0.4
-	camera.look_at(player.position + forward*3 + Vector3.UP*0.6)
-	var deep: float = clampf((-player.position.y-12)/110,0,1)
-	environment.fog_light_color = Color("14596b").lerp(Color("061c30"),deep)
-	environment.background_color = environment.fog_light_color
+	_update_swim_camera()
 	for hazard in hazards:
 		if player.position.distance_to(hazard.node.position) < 2.0 and hurt_cooldown <= 0:
 			oxygen = maxf(0,oxygen-12)
@@ -1197,12 +1231,61 @@ func _update_dive(delta: float) -> void:
 	if oxygen <= 0:
 		finish_dive(true)
 
+func _update_swim_camera() -> void:
+	var inside_wreck: bool = explorable_wreck.contains_point(player.position)
+	var forward := Vector3(-sin(yaw)*cos(pitch),sin(pitch),-cos(yaw)*cos(pitch))
+	var anchor: Vector3 = player.position+Vector3.UP*0.25
+	var desired: Vector3 = player.position-forward*(3.8 if inside_wreck else 7.5)+Vector3.UP*(1.15 if inside_wreck else 1.7)
+	# Sweep a volume so the near plane fits through real openings and stays off walls.
+	var query := PhysicsShapeQueryParameters3D.new()
+	query.shape = _camera_probe
+	query.transform = Transform3D(Basis.IDENTITY,anchor)
+	query.motion = desired-anchor
+	query.collision_mask = 1
+	query.exclude = [player.get_rid()]
+	var travel: PackedFloat32Array = get_world_3d().direct_space_state.cast_motion(query)
+	var fraction: float = travel[0] if travel.size() > 0 else 1.0
+	if fraction < 1.0:
+		fraction = maxf(0.0,fraction-0.06/maxf(query.motion.length(),0.01))
+	camera.position = anchor+query.motion*fraction
+	camera.fov = 76.0 if inside_wreck else 66.0
+	# When a doorway squeezes the camera against the diver, expose the view ahead.
+	player.get_child(0).visible = camera.position.distance_to(player.position) >= 2.6
+	camera.look_at(player.position+forward*3.0+Vector3.UP*0.6)
+	_apply_underwater_lighting(maxf(0.0,-camera.position.y))
+	var canyon_along: float = absf(player.position.z-Ocean.CANYON_CENTER.z)
+	var canyon_across: float = absf(player.position.x-Ocean.canyon_center_x(player.position.z))
+	var canyon_view: float = smoothstep(30.0,55.0,-player.position.y)*(1.0-smoothstep(44.0,64.0,canyon_across))*(1.0-smoothstep(135.0,175.0,canyon_along))
+	environment.fog_density = 0.011 if inside_wreck else lerpf(0.024,0.010,canyon_view)
+
+func _apply_underwater_lighting(depth: float, immersion: float = 1.0) -> Dictionary:
+	var values: Dictionary = DepthLighting.profile(depth)
+	DepthLighting.apply(environment,ocean_sun,diver_light,values,immersion)
+	environment.fog_light_color = values.water_color
+	environment.background_color = values.water_color
+	_set_water_view_depth(depth*clampf(immersion,0.0,1.0))
+	return values
+
+func _reset_shore_lighting() -> void:
+	DepthLighting.reset(environment,ocean_sun,diver_light)
+	_set_water_view_depth(0.0)
+
+func _set_water_view_depth(depth: float) -> void:
+	for key: String in ["water_surface_material","sunshaft_material"]:
+		var material: ShaderMaterial = ocean_root.get_meta(key,null)
+		if material != null:
+			material.set_shader_parameter("viewer_depth",depth)
+
 func _animate_ocean(_delta: float) -> void:
 	# The restaurant hides the entire ocean; do not simulate invisible fish there.
 	if not ocean_root.visible:
 		return
 	canyon_root.animate(clock,player.position)
 	storm_school.animate(clock,player.position)
+	explorable_wreck.get_node("WreckFishSchool").animate(clock,player.position)
+	canyon_shark.animate(clock,player.position)
+	var ray_sensitivity: float = 0.55 if Input.is_action_pressed("stealth") else (1.35 if Input.is_action_pressed("boost") else 1.0)
+	ray_habitat.advance(_delta,player.position,state == "dive" and not entry_active,ray_sensitivity)
 	for item in fish:
 		if item.alive:
 			item.previous_position = item.node.position
@@ -1227,9 +1310,12 @@ func take_hunt_damage(amount: float, poison: bool, source: String) -> void:
 		return
 	oxygen = maxf(0,oxygen-amount)
 	hurt_cooldown = 2.5
+	hurt_flash = 0.45
 	if poison:
 		poison_timer = 6.0
 	hunt_warning = "%s · 气瓶量 -%d%s" % [source,int(amount),"，中毒6秒，保持距离" if poison else "，侧游避开下一次冲刺"]
+	if source == "石头鱼":
+		hunt_warning = "石头鱼毒棘刺伤 · 气瓶量 -%d · 中毒6秒，请远离岩石边缘" % int(amount)
 	hunt_warning_timer = 3.0
 	_play_tone(120,0.12)
 
@@ -1260,16 +1346,17 @@ func target_fish() -> Dictionary:
 	for item in fish:
 		if not item.alive:
 			continue
-		var offset: Vector3 = item.node.position-origin
+		var aim_point: Vector3 = item.node.to_global(item.node.get_meta("harpoon_center",Vector3.ZERO))
+		var offset: Vector3 = aim_point-origin
 		var along: float = offset.dot(direction)
 		if player.position.distance_to(item.node.position) > SPEAR_RANGE:
 			continue
 		var radius: float = float(FishData.SPECIES[item.kind].radius)*item.node.scale.x
 		if along > 0 and along < best_dist and (offset-direction*along).length() < radius:
-			var sight_ray = PhysicsRayQueryParameters3D.create(origin, item.node.position, 1, [player.get_rid()])
+			var sight_ray = PhysicsRayQueryParameters3D.create(origin, aim_point, 1, [player.get_rid()])
 			if not get_world_3d().direct_space_state.intersect_ray(sight_ray).is_empty():
 				continue
-			var spear_ray := PhysicsRayQueryParameters3D.create(player.position,item.node.position,1,[player.get_rid()])
+			var spear_ray := PhysicsRayQueryParameters3D.create(player.position,aim_point,1,[player.get_rid()])
 			if not get_world_3d().direct_space_state.intersect_ray(spear_ray).is_empty():
 				continue
 			best = item
@@ -1287,7 +1374,8 @@ func shoot() -> void:
 	var distance: float = (player.position-origin).dot(direction)+SPEAR_RANGE
 	var target: Dictionary = target_fish()
 	if not target.is_empty():
-		distance = (target.node.position-origin).dot(direction)
+		var aim_point: Vector3 = target.node.to_global(target.node.get_meta("harpoon_center",Vector3.ZERO))
+		distance = (aim_point-origin).dot(direction)
 	var aim: Vector3 = origin+direction*distance
 	var start: Vector3 = player.position+Vector3(0.58,-0.15,-1.5).rotated(Vector3.UP,yaw)
 	var obstruction := get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(player.position,start,1,[player.get_rid()]))
@@ -1332,7 +1420,7 @@ func _hit_fish(target: Dictionary, launched_damage: int = -1) -> void:
 			_capture_feedback(target.kind, target.node.position)
 		else:
 			target.hp = 1
-			tell("背包空间不足，猎物仍在逃跑。上浮返航清空背包。",4)
+			tell("背包空间不足，石头鱼仍伏在岩边。先返航清空背包。" if data.behavior == "camouflage" else "背包空间不足，猎物仍在逃跑。上浮返航清空背包。",4)
 	elif not armored:
 		tell("命中 %s！剩余耐久 %d / %d" % [data.name,target.hp,data.hp],2)
 
@@ -1375,21 +1463,81 @@ func interact() -> void:
 		tell("靠近发光物品按 F 采集；上浮至 3 米内按 F 返航。", 4)
 		return
 	var kind: String = item.kind
+	if kind == "chest":
+		_open_chest(item)
+		return
+	var info: Dictionary = Loot.pickup_info(kind)
+	if info.is_empty():
+		return
 	if kind == "oxygen":
-		oxygen = minf(progress.oxygen_max(),oxygen+35)
-		tell("应急气瓶 · 气瓶量 +35", 3)
+		var restored: float = minf(35.0,maxf(0.0,progress.oxygen_max()-oxygen))
+		if restored <= 0.0:
+			tell("气瓶已满，可以在需要补气时再来。",3)
+			return
+		oxygen += restored
+		_show_loot_feedback("补给已拾取",[],restored)
 	else:
-		var w: int = 3 if kind == "chest" else 1
-		if weight()+w > progress.capacity():
+		if weight()+int(info.weight) > progress.capacity():
 			tell("背包空间不足，先返航将收获入库吧。", 3)
 			return
-		var value: int = 90 if kind == "chest" else 28
-		var label: String = "沉船宝藏" if kind == "chest" else "月光珍珠"
-		cargo.append({"id":kind,"name":label,"value":value,"weight":w,"kind":kind})
-		tell("发现 %s  ·  +%d G" % [label,value], 3)
+		cargo.append(info)
+		_show_loot_feedback("采集成功",[info],0.0)
+	_pickup_feedback(kind,item.node.position)
 	item.active = false
 	item.node.visible = false
 	_play_tone(960,0.15)
+
+func _clear_loot_feedback() -> void:
+	loot_feedback.clear()
+	loot_feedback_title = ""
+	loot_feedback_note = ""
+	loot_feedback_timer = 0.0
+
+func _show_loot_feedback(title: String, claimed: Array, air: float, note: String = "") -> void:
+	_clear_loot_feedback()
+	catch_timer = 0.0
+	loot_feedback_title = title
+	loot_feedback_note = note
+	var counts: Dictionary = {}
+	for reward: Dictionary in claimed:
+		var id: String = reward.id
+		counts[id] = int(counts.get(id,0))+1
+	for id: String in counts:
+		var info: Dictionary = Loot.pickup_info(id)
+		var count: int = counts[id]
+		loot_feedback.append("%s ×%d  ·  %d kg  ·  价值 %d G" % [info.name,count,int(info.weight)*count,int(info.value)*count])
+	if air > 0.0:
+		loot_feedback.append("应急气瓶  ·  气瓶量 +%s" % String.num(air,1))
+	loot_feedback_timer = 4.5
+
+func _open_chest(item: Dictionary) -> void:
+	var was_opened: bool = item.get("loot_opened",false)
+	var claim: Dictionary = Loot.claim_chest(item,progress.capacity()-weight(),progress.oxygen_max()-oxygen)
+	for reward: Dictionary in claim.cargo:
+		cargo.append(reward)
+		_pickup_feedback(reward.id,item.node.position+Vector3.UP)
+	oxygen += float(claim.air)
+	if float(claim.air) > 0.0:
+		_pickup_feedback("oxygen",item.node.position+Vector3.UP)
+	Art.set_chest_open(item.node,true)
+	item.active = not claim.complete
+	var contents: Node3D = item.node.get_node_or_null("Contents")
+	if contents != null:
+		contents.visible = not claim.complete
+	var note := ""
+	if not claim.complete:
+		var cargo_left := false
+		for reward: Dictionary in claim.remaining:
+			cargo_left = cargo_left or reward.id != "oxygen"
+		note = "背包空间不足，剩余物品留在箱内" if cargo_left else "未用补气留在箱内，需要时可继续领取"
+	_show_loot_feedback("领取宝箱物品" if was_opened else "宝箱已打开",claim.cargo,claim.air,note)
+	_play_tone(960 if claim.complete else 760,0.2)
+
+func _pickup_feedback(kind: String, origin: Vector3) -> void:
+	var prop: Node3D = Art.create_pickup(kind)
+	prop.position = origin
+	ocean_root.add_child(prop)
+	effects.append({"node":prop,"life":0.7,"duration":0.7,"origin":origin,"collect":true})
 
 func ocean_edge_distance() -> float:
 	return minf(minf(player.position.x-Ocean.X_MIN,Ocean.X_MAX-player.position.x),minf(player.position.z-Ocean.Z_MIN,Ocean.Z_MAX-player.position.z))
@@ -1431,8 +1579,12 @@ func context_hint() -> String:
 		return "F  呼叫接驳船 · 返航入库"
 	var item: Dictionary = nearest_pickup()
 	if not item.is_empty():
-		var names: Dictionary = {"pearl":"采集月光珍珠","chest":"打开沉船宝藏","oxygen":"补充气瓶量"}
-		return "F  " + names[item.kind]
+		if item.kind == "chest":
+			return "F  领取宝箱剩余物品" if item.get("loot_opened",false) else "F  打开沉船宝箱"
+		if item.kind == "oxygen":
+			return "F  补充气瓶量"
+		var info: Dictionary = Loot.pickup_info(item.kind)
+		return "F  采集%s" % info.get("name","物品")
 	var target: Dictionary = target_fish()
 	if not target.is_empty():
 		var data: Dictionary = FishData.SPECIES[target.kind]
@@ -1520,6 +1672,7 @@ func open_restaurant() -> void:
 	player.visible = false
 	restaurant_node.visible = true
 	ocean_root.visible = false
+	_reset_shore_lighting()
 	_rebuild_restaurant()
 	environment.fog_enabled = false
 	environment.background_color = Color("7dafb8")
@@ -1536,6 +1689,7 @@ func return_to_dock() -> void:
 	restaurant_node.visible = false
 	ocean_root.visible = true
 	environment.fog_enabled = true
+	_reset_shore_lighting()
 	environment.background_color = Color("126879")
 	camera.fov = 66
 	hud.rebuild()

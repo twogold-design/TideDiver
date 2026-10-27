@@ -103,6 +103,10 @@ func _test_capacity_and_catching() -> void:
 	game.cargo.clear()
 	game.shot_cooldown = 0.0
 	game.muted = false
+	var previous_collecting: Array = []
+	for effect in game.effects:
+		if effect.has("collect"):
+			previous_collecting.append(effect.node)
 	_key(KEY_SPACE)
 	_check(target.alive and game.cargo.is_empty(), "Shooting creates flight without instant target damage")
 	for frame in range(50):
@@ -112,7 +116,7 @@ func _test_capacity_and_catching() -> void:
 	_check(game.catch_timer == 2.4 and game.catch_kind == 0 and game.hit_timer > 0, "Successful catch triggers named card and hit marker")
 	var collecting: int = 0
 	for effect in game.effects:
-		if effect.has("collect"):
+		if effect.has("collect") and not previous_collecting.has(effect.node):
 			collecting += 1
 	_check(collecting == 1, "Successful catch animates exactly one fish into bag")
 	_check(game.cargo.size() == 1 and game.weight() == 1 and game.cargo_value() == 18, "Fish capture adds correct weight and value")

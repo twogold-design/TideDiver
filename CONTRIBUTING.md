@@ -15,6 +15,7 @@
 | --- | --- |
 | 主流程、潜水、鼠标和自由镜头 | `src/scripts/main.gd` |
 | 鱼群、鱼钩、海底与地形 | `src/scripts/fish_*`、`harpoon.gd`、`ocean_*`、`canyon_art.gd` |
+| 埋沙鳐鱼、中空沉船与局部生态 | `src/scripts/ray_*`、`explorable_wreck.gd`、`wreck_fish_school.gd`、`thresher_shark.gd`、`stonefish_*` |
 | 餐厅经营和数据规则 | `src/scripts/progression.gd`、`cuisine.gd`、`customer_feedback.gd` |
 | 家具和角色模型 | `src/scripts/furniture_art.gd`、`restaurant_person.gd`、`diver_art.gd` |
 | 游戏内界面 | `src/scripts/hud.gd`、`restaurant_ui.gd`、`layout_ui.gd` |
@@ -28,7 +29,7 @@
 ## 提交前
 
 - `BuildWeb.cmd`：从源码重新生成根目录网页文件及双击资源。非 Windows 平台可在 Godot 编辑器中用已有的 Web 预设导出到根目录 `index.html`，然后执行 `node tools/prepare_local.cjs`。此步骤还处理引擎在本地文件模式下的 PWA 探测。
-- `Test.cmd`：运行 18 套逻辑和图形回归，包含潜水方向动作、海底细节与潜点扩展专项；脚本、着色器错误或缺少PASS均会使验证失败。
+- `Test.cmd`：运行 23 套逻辑和图形回归，包含潜水方向动作、海底细节、潜点扩展、埋沙鳐鱼、沉船实际通行、概率长尾鲨、石头鱼伪装/接触/捕获、深度光照实测与随机宝箱领取专项；脚本、着色器错误或缺少PASS均会使验证失败。
 - 保持预览服务器运行，执行 `npm run test:web`：使用独立浏览器环境验证潜水、暂停、持久化存档、布局操作及餐厅营业。默认使用已安装的 Edge；可设置 `TIDE_BROWSER_CHANNEL=chrome` 使用已安装的 Chrome。
 - `npm run test:local`：通过真实 `file://` 地址运行同一套浏览器流程，检查直接打开 HTML、存档重载、声音资源加载，以及没有服务器或网络请求。
 - `npm run test:resolution`：验证高分屏原生渲染分辨率、全屏、窗口大小变化和屏幕缩放倍率变化；截图保存在工程同级工作目录。

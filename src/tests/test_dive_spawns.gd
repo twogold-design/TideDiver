@@ -74,12 +74,17 @@ func _test_fixed_fixture() -> void:
 		beginner_fish_unchanged = beginner_fish_unchanged and game.fish[index].kind == 0 and game.fish[index].home.is_equal_approx(expected)
 	_check(beginner_fish_unchanged, "The five authored beginner fish keep their original species and positions")
 	var coastal_kinds: Dictionary = {}
+	var coastal_stonefish := 0
+	var stonefish_grounded := true
 	for item in game.fish.slice(0, game.COASTAL_FISH_COUNT):
 		coastal_kinds[item.kind] = true
-	var complete: bool = coastal_kinds.size() == 6
+		if item.kind == 9:
+			coastal_stonefish += 1
+			stonefish_grounded = stonefish_grounded and item.state == "camouflaged" and absf(item.home.y - Ocean.seabed_height(item.home.x, item.home.z) - 0.035) < 0.015
+	var complete: bool = coastal_kinds.size() == 7 and coastal_stonefish == 2 and stonefish_grounded
 	for kind in [0, 1, 2, 3, 4, 6]:
 		complete = complete and coastal_kinds.has(kind)
-	_check(complete, "Original coastal population now includes six distinct non-attacking species")
+	_check(complete, "The coast retains all six original swimming species and adds exactly two grounded, camouflaged stonefish")
 
 func _test_blocked_fish_fallback() -> void:
 	var candidate := Vector3(200, -8, 200)
@@ -144,9 +149,11 @@ func _test_spawn_population(origin: Vector3, context: String) -> void:
 			nearby_count += 1
 		if item.kind in [5, 7, 8]:
 			safe = safe and item.node.position.distance_to(landing) >= 30.0 and item.node.position.distance_to(immediate_spawn) >= 30.0
+		elif item.kind == 9:
+			safe = safe and item.node.position.distance_to(landing) >= 20.0 and item.node.position.distance_to(immediate_spawn) >= 20.0
 	for item in game.hazards:
 		safe = safe and item.node.position.distance_to(landing) >= 20.0
-	_check(safe, "Dangerous fish and jellyfish leave room to enter and begin swimming: " + context)
+	_check(safe, "Original dangerous fish stay thirty metres away while stonefish and jellyfish leave twenty metres of entry space: " + context)
 	_check(nearby_count <= 14, "All population sources together keep at most fourteen fish within thirty metres of the landing: " + context)
 	var entry_start: int = game.COASTAL_FISH_COUNT + game.OUTER_FISH_PER_ZONE * Ocean.ZONES.size() + game.TRANSIT_SCHOOLS * game.TRANSIT_FISH_PER_SCHOOL
 	var entry_fish: Array = game.fish.slice(entry_start)

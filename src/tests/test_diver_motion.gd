@@ -45,6 +45,9 @@ func _run() -> void:
 	game.smoke_mode = true
 	game.set_process(false)
 	game.set_physics_process(false)
+	# The fixture supplies Input actions and headings; captured desktop mouse events
+	# must not replace those headings while the real physics frames are measured.
+	game.set_process_unhandled_input(false)
 	await physics_frame
 	await process_frame
 	game.start_dive(false, false)
@@ -87,10 +90,15 @@ func _test_directional_poses() -> void:
 	_check(reverse_bend < forward_bend - 0.30 and backward.pose.leg_left.y < -0.08 and backward.pose.leg_right.y > 0.08, "Reverse swimming uses deeper synchronized knee bends and outward fin sweeps")
 	_check(forward.pose.leg_left.x * forward.pose.leg_right.x < 0 and backward.pose.leg_left.x * backward.pose.leg_right.x > 0, "Forward flutter alternates the fins while reverse strokes move them together")
 	var unchanged_speed: bool = true
+	var motion_diagnostics := PackedStringArray()
+	var samples: Dictionary = {"left":left,"right":right,"forward":forward,"backward":backward}
+	for direction: String in samples:
+		var sample: Dictionary = samples[direction]
+		motion_diagnostics.append("%s displacement=%s elapsed=%.6f yaw=%.6f collisions=%d" % [direction,sample.displacement,sample.elapsed,sample.yaw,sample.collisions])
 	for sample in [left, right, forward, backward]:
 		unchanged_speed = unchanged_speed and absf(sample.displacement.length() / sample.elapsed - 6.2) < 0.03 and sample.collisions == 0
-	_check(unchanged_speed and left.displacement.x < -3 and right.displacement.x > 3 and forward.displacement.z < -3 and backward.displacement.z > 3, "The new poses preserve the original four movement directions and 6.2 metre swimming speed")
-	_check(left_aim.length() > 0.9 and left_aim.distance_to(right_aim) < 0.001 and left.yaw == 0 and right.yaw == 0, "Body banking leaves actual launched-hook aim and the camera heading unchanged")
+	_check(unchanged_speed and left.displacement.x < -3 and right.displacement.x > 3 and forward.displacement.z < -3 and backward.displacement.z > 3, "The new poses preserve the original four movement directions and 6.2 metre swimming speed: " + "; ".join(motion_diagnostics))
+	_check(left_aim.length() > 0.9 and left_aim.distance_to(right_aim) < 0.001 and left.yaw == 0 and right.yaw == 0, "Body banking leaves actual launched-hook aim and the camera heading unchanged: left aim=%s yaw=%.6f; right aim=%s yaw=%.6f" % [left_aim,left.yaw,right_aim,right.yaw])
 
 func _test_smooth_release_and_diagonal() -> void:
 	var held: Dictionary = await _sample(["swim_left"])
