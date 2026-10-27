@@ -1,0 +1,41 @@
+const {chromium}=require('playwright');
+const fs=require('node:fs');
+const path=require('node:path');
+const {pathToFileURL}=require('node:url');
+const assert=require('node:assert/strict');
+const root=path.resolve(__dirname,'../..');
+const work=path.join(path.dirname(root),'.TideDiver-web-work');
+process.env.TEMP=path.join(work,'temp');process.env.TMP=process.env.TEMP;
+const output=path.join(work,'rescue-check');fs.mkdirSync(output,{recursive:true});
+(async()=>{
+ const browser=await chromium.launch({channel:'chrome',headless:true,downloadsPath:path.join(work,'downloads')});
+ try{
+  const context=await browser.newContext({viewport:{width:1366,height:800},deviceScaleFactor:1});
+  const page=await context.newPage();const errors=[];
+  page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
+  await page.goto(pathToFileURL(path.join(root,'index.html')).href);
+  await page.evaluate(()=>document.fonts.ready);
+  assert.ok(await page.evaluate(()=>document.fonts.check('16px "Tide Sans"')),'Landing font loads locally');
+  await page.getByRole('button',{name:'启程 · 开始游戏'}).click();
+  await page.waitForFunction(()=>window.tideGameReady===true,null,{timeout:120000});
+  await page.keyboard.press('F1');await page.waitForTimeout(500);
+  const box=await page.locator('#canvas').boundingBox();const scale=Math.min(box.width/1440,box.height/900);
+  await page.mouse.click(box.x+1060*scale+(box.width-1440*scale)/2,box.y+375*scale+(box.height-900*scale)/2);
+  await page.waitForFunction(()=>document.pointerLockElement!==null);
+  await page.keyboard.down('Shift');await page.keyboard.down('q');
+  await page.waitForFunction(()=>window.tideRenderStats?.state==='dive'&&window.tideRenderStats.oxygen<20,null,{timeout:120000});
+  await page.screenshot({path:path.join(output,'low-oxygen.png')});
+  await page.waitForFunction(()=>window.tideRenderStats?.state==='rescuing',null,{timeout:60000});
+  await page.keyboard.up('q');await page.keyboard.up('Shift');
+  await page.screenshot({path:path.join(output,'rescue-transit.png')});
+  assert.equal(await page.evaluate(()=>document.pointerLockElement),null,'Rescue releases mouse');
+  await page.waitForFunction(()=>window.tideRenderStats?.state==='dock'&&window.tideRenderStats.rescueResult);
+  await page.screenshot({path:path.join(output,'rescue-result.png')});
+  await page.waitForTimeout(16000);
+  assert.equal(await page.evaluate(()=>window.tideRenderStats.rescueResult),true,'Summary outlasts the old notification timeout');
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(()=>window.tideRenderStats?.rescueResult===false);
+  assert.deepEqual(errors,[]);
+  console.log('PASS: local homepage font, low oxygen warning, visible automatic rescue, mouse release, persistent return summary and acknowledgement.');
+ }finally{await browser.close();}
+})().catch(e=>{console.error(e);process.exitCode=1;});

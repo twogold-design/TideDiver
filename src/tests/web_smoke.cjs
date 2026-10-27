@@ -5,17 +5,21 @@ const assert = require('node:assert/strict');
 const { pathToFileURL } = require('node:url');
 const root = path.resolve(__dirname,'../..');
 const localFile = process.argv.includes('--file');
+const wide = process.argv.includes('--wide');
+const uiText = process.argv.includes('--ui-text');
+const summer = process.argv.includes('--summer');
+const layoutPerf = process.argv.includes('--layout-perf');
 const entryURL = localFile ? pathToFileURL(path.join(root,'index.html')).href : 'http://127.0.0.1:8060/';
 const work = path.join(path.dirname(root),'.'+path.basename(root)+'-web-work');
 fs.mkdirSync(path.join(work,'temp'),{recursive:true});
 process.env.TEMP = path.join(work,'temp'); process.env.TMP = process.env.TEMP;
-const output = path.join(work,localFile ? 'browser-file-check' : 'browser-check');
+const output = path.join(work,(localFile ? 'browser-file-check' : 'browser-check')+(wide?'-wide':''));
 fs.mkdirSync(output,{recursive:true});
 const errors = [];
 const messages = [];
 (async () => {
   const browser = await chromium.launch({channel:process.env.TIDE_BROWSER_CHANNEL || 'msedge',headless:true,args:['--enable-webgl','--ignore-gpu-blocklist'],downloadsPath:path.join(work,'downloads')});
-  const context = await browser.newContext({viewport:{width:1440,height:948},deviceScaleFactor:1});
+  const context = await browser.newContext({viewport:wide?{width:1920,height:900}:{width:1440,height:948},deviceScaleFactor:1});
   const page = await context.newPage();
   const requests = [];
   page.on('request', request => requests.push(request.url()));
@@ -30,12 +34,13 @@ const messages = [];
     await page.waitForFunction(() => window.tideGameReady === true, null, {timeout:120000});
     await page.waitForTimeout(5000);
     await page.screenshot({path:path.join(output,'web_dock.png')});
-    const clickGame = async (x,y) => {
+    const clickGame = async (x,y,anchor=[0.5,0.5]) => {
       const box = await page.locator('#canvas').boundingBox();
-      await page.mouse.click(box.x+x*box.width/1440, box.y+y*box.height/900);
+      const scale = Math.min(box.width/1440,box.height/900);
+      await page.mouse.click(box.x+x*scale+(box.width-1440*scale)*anchor[0], box.y+y*scale+(box.height-900*scale)*anchor[1]);
       await page.waitForTimeout(750);
     };
-    await clickGame(240,515);
+    await clickGame(240,515,[0,0.5]);
     await page.waitForFunction(()=>document.pointerLockElement!==null,null,{timeout:10000});
     await page.waitForTimeout(4500);
     await page.keyboard.down('w'); await page.waitForTimeout(1000); await page.keyboard.up('w');
@@ -51,6 +56,8 @@ const messages = [];
     await page.waitForFunction(()=>document.pointerLockElement===null);
     await clickGame(720,510); // Rescue returns to dock and saves day 2.
     await page.waitForTimeout(2000);
+    await page.screenshot({path:path.join(output,'web_rescue_result.png')});
+    await clickGame(720,639); // Acknowledge the persistent rescue summary.
     const databases = await page.evaluate(()=>indexedDB.databases());
     console.log('Persistent databases:', databases);
     const saves = await page.evaluate(async () => {
@@ -68,7 +75,7 @@ const messages = [];
     const save = JSON.parse(saves[0].value);
     assert.equal(save.day,2,'Rescue saved the next day in browser storage');
     fs.writeFileSync(path.join(output,'web-test-save.json'),JSON.stringify(save,null,2));
-    await clickGame(240,586);
+    await clickGame(240,586,[0,0.5]);
     await page.screenshot({path:path.join(output,'web_restaurant.png')});
     await page.reload();
     await page.getByRole('button',{name:'启程 · 开始游戏'}).click();
@@ -82,7 +89,8 @@ const messages = [];
     fixture.day=7; fixture.coins=6000;
     fixture.inventory.orange=8;
     for (const key of Object.keys(fixture.renovation)) fixture.renovation[key]=true;
-    fixture.furnishings=[{uid:1,kind:'table',variant:'comfort',x:-3.5,z:1,rotation:0,color:0,placed:true}];
+    fixture.furnishings=[{uid:1,kind:'table',variant:summer?'summer':'comfort',x:-3.5,z:1,rotation:0,color:0,placed:true}];
+    if(summer)fixture.furnishings.push({uid:100,kind:'soft',variant:'summer',x:0,z:8.5,rotation:0,color:2,placed:true});
     await page.evaluate(async ({key,fixture})=>{
       const db=await new Promise((resolve,reject)=>{const r=indexedDB.open('/userfs');r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
       await new Promise((resolve,reject)=>{
@@ -94,24 +102,125 @@ const messages = [];
     await page.goto(entryURL);
     await page.getByRole('button',{name:'启程 · 开始游戏'}).click();
     await page.waitForFunction(() => window.tideGameReady === true, null, {timeout:120000});
-    await clickGame(240,586); await clickGame(440,755);
+    await clickGame(240,586,[0,0.5]); await clickGame(440,755,[0.5,1]);
     await page.waitForTimeout(1500);
     await page.screenshot({path:path.join(output,'web_layout.png')});
+    if(layoutPerf){
+      await page.setViewportSize({width:1366,height:800});
+      await page.waitForTimeout(1000);
+      await clickGame(90,251,[0,0]); // Detailed soft-decoration models.
+      const samples=[];
+      const measure=async(name,move)=>{
+        await page.evaluate(()=>{
+          window.layoutFrames=[];window.layoutMeasuring=true;
+          let last=performance.now();
+          const frame=now=>{if(!window.layoutMeasuring)return;window.layoutFrames.push(now-last);last=now;requestAnimationFrame(frame);};
+          requestAnimationFrame(frame);
+        });
+        const box=await page.locator('#canvas').boundingBox();
+        const started=Date.now();let step=0;
+        while(Date.now()-started<6000){
+          if(move){await page.mouse.move(box.x+box.width*(.62+.16*Math.sin(step*.16)),box.y+box.height*(.56+.19*Math.cos(step*.23)));step++;}
+          await page.waitForTimeout(move?16:250);
+        }
+        const result=await page.evaluate(()=>{
+          window.layoutMeasuring=false;
+          const frames=window.layoutFrames.slice(1).sort((a,b)=>a-b);
+          return {fps:1000*frames.length/frames.reduce((a,b)=>a+b,0),p95ms:frames[Math.floor(frames.length*.95)],over50ms:frames.filter(v=>v>50).length,render:window.tideRenderStats};
+        });
+        samples.push({name,...result});console.log('LAYOUT_WEB_PROFILE',name,JSON.stringify(result));
+      };
+      await measure('idle',false);
+      await clickGame(220,770,[0,0]); // Rattan lantern string, the most detailed decoration.
+      await page.mouse.move(850,450);await page.waitForTimeout(750);
+      await measure('drag_preview',true);
+      await page.screenshot({path:path.join(output,'layout-performance-preview.png')});
+      await page.keyboard.press('Escape');
+      assert.deepEqual(errors,[]);
+      const name=process.argv.includes('--baseline')?'layout-browser-before.json':'layout-browser-after.json';
+      fs.writeFileSync(path.join(work,name),JSON.stringify(samples,null,2));
+      if(process.argv.includes('--baseline'))return;
+      await clickGame(205,175,[0,0]);
+      await page.setViewportSize(wide?{width:1920,height:900}:{width:1440,height:948});
+      await page.waitForTimeout(750);
+    }
+    if(summer){
+      await page.setViewportSize({width:1100,height:750});
+      await page.waitForTimeout(1000); // Allow Godot's canvas layout to catch up with the resize.
+      for(let index=0;index<9;index++){
+        await clickGame(55+(index%4)*75,175+Math.floor(index/4)*38,[0,0]);
+        if(index===4 || index===6 || index===8)await page.screenshot({path:path.join(output,`summer-shop-${index}.png`)});
+        await clickGame(220,642,[0,0]); // Third card: colorful furniture sorted by price.
+        await page.keyboard.press('Escape'); // Cancels the pending purchase without spending.
+        await page.waitForTimeout(150);
+      }
+      await clickGame(205,175,[0,0]);
+      await page.setViewportSize(wide?{width:1920,height:900}:{width:1440,height:948});
+    }
+    if(uiText){
+      const cdp=await context.newCDPSession(page);
+      for(const [width,height,dpr] of [[1100,750,1],[1366,800,1.25]]){
+        await page.setViewportSize({width,height});
+        await cdp.send('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:dpr,mobile:false});
+        await page.waitForTimeout(1000);
+        const shot=await cdp.send('Page.captureScreenshot',{format:'png',fromSurface:true});
+        fs.writeFileSync(path.join(output,`layout-text-${width}-${dpr}.png`),Buffer.from(shot.data,'base64'));
+      }
+      await clickGame(240,130,[0,0]); // Native-pixel owned list retains selection hitboxes.
+      await clickGame(100,210,[0,0]);
+      await clickGame(1180,860,[1,1]); // Change selected table color; verify in the saved fixture below.
+      const shot=await cdp.send('Page.captureScreenshot',{format:'png',fromSurface:true});
+      fs.writeFileSync(path.join(output,'owned-text-125.png'),Buffer.from(shot.data,'base64'));
+      await clickGame(90,130,[0,0]);
+      await cdp.send('Emulation.clearDeviceMetricsOverride');
+      await page.setViewportSize(wide?{width:1920,height:900}:{width:1440,height:948});
+      await page.waitForTimeout(750);
+    }
     await page.keyboard.down('Alt'); await page.mouse.move(900,470); await page.mouse.down({button:'middle'});
     await page.mouse.move(1090,430,{steps:8});await page.mouse.up({button:'middle'});await page.keyboard.up('Alt');
     await page.mouse.wheel(0,-200);await page.waitForTimeout(500);
     await page.screenshot({path:path.join(output,'web_layout_orbit.png')});
     await page.keyboard.press('f');
-    await clickGame(220,370); // Select rug, then cancel without spending.
+    await clickGame(220,386,[0,0]); // Select rug, then cancel without spending.
     await page.mouse.click(850,450,{button:'right'});
-    await clickGame(1130,46); // Save layout.
-    await clickGame(1310,130); // Menu.
-    await clickGame(1330,285); await clickGame(1330,285);
-    await clickGame(1300,327); // Prep.
+    await clickGame(1130,46,[1,0]); // Save layout.
+    await clickGame(1310,130,[1,0.5]); // Menu.
+    await clickGame(1330,285,[1,0.5]); await clickGame(1330,285,[1,0.5]);
+    await clickGame(1300,327,[1,0.5]); // Prep.
     await page.waitForTimeout(4500);
-    await clickGame(700,752); // Open service.
+    if(uiText){
+      await page.setViewportSize({width:1100,height:750});
+      await page.waitForTimeout(750);
+      await page.screenshot({path:path.join(output,'web_open_service.png')});
+      await page.setViewportSize(wide?{width:1920,height:900}:{width:1440,height:948});
+      await page.waitForTimeout(750);
+    }
+    await clickGame(700,752,[0.5,1]); // Open service.
     await page.waitForTimeout(2500);
     await page.screenshot({path:path.join(output,'web_service.png')});
+    if(uiText){
+      const cdp=await context.newCDPSession(page);
+      const capture=async name=>{
+        const shot=await cdp.send('Page.captureScreenshot',{format:'png',fromSurface:true});
+        fs.writeFileSync(path.join(output,name+'.png'),Buffer.from(shot.data,'base64'));
+      };
+      for(const [width,height,dpr] of [[1366,800,1.25],[1100,750,1]]){
+        await page.setViewportSize({width,height});
+        await cdp.send('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:dpr,mobile:false});
+        await page.waitForTimeout(750);
+        const canvas=await page.locator('#canvas').evaluate(c=>({width:c.width,height:c.height,box:c.getBoundingClientRect().toJSON()}));
+        assert.ok(Math.abs(canvas.width-canvas.box.width*dpr)<0.025,'Service UI has no horizontal resampling');
+        assert.ok(Math.abs(canvas.height-canvas.box.height*dpr)<0.025,'Service UI has no vertical resampling');
+        await capture(`service-text-${width}-${dpr}`);
+      }
+      await clickGame(196,767,[0.5,1]); // Actual cooking state and its longer action label.
+      await capture('service-text-cooking');
+      await page.waitForTimeout(3000);
+      await capture('service-text-ready'); // Split plating/serving buttons.
+      await cdp.send('Emulation.clearDeviceMetricsOverride');
+      await page.setViewportSize(wide?{width:1920,height:900}:{width:1440,height:948});
+      await page.waitForTimeout(750);
+    }
     await page.keyboard.press('p');
     await page.screenshot({path:path.join(output,'web_service_paused.png')});
     await clickGame(700,510); // End service and settle.
@@ -124,6 +233,9 @@ const messages = [];
     assert.equal(finalSave.day,7,'Reload loaded the browser save');
     assert.equal(finalSave.restaurant_runs,1,'Browser restaurant service completed');
     assert.equal(finalSave.service_active,false,'Restaurant settled before returning');
+    if(uiText)assert.equal(finalSave.furnishings.find(item=>item.uid===1).color,1,'Owned-list selection and furniture button hitboxes survive fractional DPI');
+    if(summer)assert.equal(finalSave.furnishings.find(item=>item.uid===1).variant,'summer','Summer furniture survives layout saving and restaurant service');
+    if(summer)assert.equal(finalSave.furnishings.find(item=>item.uid===100).color,2,'Soft decoration keeps its palette after layout saving and service');
     await page.setViewportSize({width:1100,height:750});
     await page.screenshot({path:path.join(output,'web_resized.png')});
     assert.equal(errors.length,0,'No browser, script, or resource errors');

@@ -25,6 +25,10 @@ var _furniture_nodes: Dictionary = {}
 var _ready_plates: Dictionary = {}
 var _preview: Node3D
 var _preview_key: String = ""
+var _preview_valid: bool = true
+var _preview_ghost: StandardMaterial3D
+var _preview_border: StandardMaterial3D
+var _preview_fill: StandardMaterial3D
 var _grid: Node3D
 var _selection: Node3D
 var _selected_uid: int = -1
@@ -131,7 +135,10 @@ func _palm(parent: Node3D, pos: Vector3, size: float) -> void:
 	for i: int in range(3):
 		_sphere(parent, crown + Vector3(float(i - 1) * 0.25, -0.18, 0.16), Vector3.ONE * 0.23, Color("8c7553"))
 
-func rebuild(renovation: Dictionary, furnishings: Variant = null, styles: Dictionary = {}) -> void:
+func rebuild(renovation: Dictionary, furnishings: Variant = null, styles: Dictionary = {}, furniture_only: bool = false) -> void:
+	if furniture_only and is_instance_valid(_room) and _renovation == renovation and _styles == styles and furnishings is Array:
+		_sync_layout_furniture(furnishings)
+		return
 	clear_reactions()
 	_chef = null
 	_styles = styles.duplicate(true)
@@ -185,6 +192,40 @@ func rebuild(renovation: Dictionary, furnishings: Variant = null, styles: Dictio
 	warm_light.omni_range = 16
 	warm_light.shadow_enabled = false
 	_room.add_child(warm_light)
+	var selected: int = _selected_uid
+	_selected_uid = -1
+	highlight_furniture(selected)
+
+func _sync_layout_furniture(items: Array) -> void:
+	clear_layout_preview()
+	_placed_tables.clear()
+	var present: Dictionary = {}
+	for item: Dictionary in items:
+		if not item.get("placed",false):
+			continue
+		var uid: int = int(item.uid)
+		present[uid] = true
+		var seat: int = -1
+		if item.kind == "table" and _placed_tables.size() < (4 if _renovation.get("expansion",false) else 2):
+			seat = _placed_tables.size()
+			_placed_tables.append(item.duplicate(true))
+		var model: Node3D = _furniture_nodes.get(uid)
+		if is_instance_valid(model) and (model.get_meta("kind","") != item.kind or model.get_meta("variant","basic") != item.get("variant","basic") or int(model.get_meta("color",0)) != int(item.color) or int(model.get_meta("seat",-1)) != seat):
+			model.get_parent().remove_child(model)
+			model.queue_free()
+			model = null
+		if not is_instance_valid(model):
+			model = _furniture_model(_room,item,seat)
+			_furniture_nodes[uid] = model
+		else:
+			model.position = Vector3(float(item.x),0,float(item.z))
+			model.rotation.y = int(item.rotation)*PI/2.0
+	for uid in _furniture_nodes.keys():
+		if not present.has(uid):
+			var model: Node3D = _furniture_nodes[uid]
+			model.get_parent().remove_child(model)
+			model.queue_free()
+			_furniture_nodes.erase(uid)
 	var selected: int = _selected_uid
 	_selected_uid = -1
 	highlight_furniture(selected)
@@ -519,8 +560,8 @@ func animate(delta: float) -> void:
 		person.advance(delta)
 		var travel: float = smoothstep(display_time, float(item.duration), float(item.age))
 		person.position = (item.origin as Vector3) + Vector3(0, 0, travel * 2.0)
-func _footprint(kind: String) -> Vector2:
-	return Layout.footprint(kind, 0)
+func _footprint(kind: String, variant: String = "basic") -> Vector2:
+	return Layout.footprint(kind, 0, variant)
 
 func _overlay_material(color: Color, alpha: float) -> StandardMaterial3D:
 	var material: StandardMaterial3D = StandardMaterial3D.new()
@@ -557,11 +598,21 @@ func _ghost(node: Node, material: Material) -> void:
 		_ghost(child, material)
 
 func set_layout_preview(kind: String, pos: Vector3, rotation: int, color: int, valid: bool, variant: String = "basic") -> void:
-	var key: String = "%s|%.4f|%.4f|%d|%d|%s|%s" % [kind, pos.x, pos.z, posmod(rotation, 4), color, str(valid), variant]
+	var key: String = "%s|%d|%s" % [kind,color,variant]
 	if key == _preview_key and is_instance_valid(_preview):
+		_preview.position = Vector3(pos.x,0,pos.z)
+		_preview.rotation.y = float(posmod(rotation,4))*PI/2.0
+		if valid != _preview_valid:
+			_preview_valid = valid
+			var tint: Color = Color("6ce7b1") if valid else Color("ff776f")
+			_preview_ghost.albedo_color = Color(tint,0.27)
+			_preview_border.albedo_color = Color(tint,0.95)
+			_preview_fill.albedo_color = Color(tint,0.12)
+		_preview.visible = true
 		return
 	clear_layout_preview()
 	_preview_key = key
+	_preview_valid = valid
 	_preview = Node3D.new()
 	_preview.name = "LayoutPreview"
 	_preview.position = Vector3(pos.x, 0, pos.z)
@@ -569,8 +620,15 @@ func set_layout_preview(kind: String, pos: Vector3, rotation: int, color: int, v
 	add_child(_preview)
 	var tint: Color = Color("6ce7b1") if valid else Color("ff776f")
 	var model: Node3D = _furniture_model(_preview, {"uid":-999,"kind":kind,"x":0,"z":0,"rotation":0,"color":color,"variant":variant})
-	_ghost(model, _overlay_material(tint, 0.27))
-	_outline(_preview, _footprint(kind), tint)
+	_preview_ghost = _overlay_material(tint,0.27)
+	_ghost(model, _preview_ghost)
+	_outline(_preview, _footprint(kind,variant), tint)
+	_preview_fill = (_preview.get_child(1) as MeshInstance3D).material_override
+	_preview_border = (_preview.get_child(2) as MeshInstance3D).material_override
+
+func hide_layout_preview() -> void:
+	if is_instance_valid(_preview):
+		_preview.visible = false
 
 func clear_layout_preview() -> void:
 	_preview_key = ""
@@ -603,16 +661,6 @@ func set_layout_grid(enabled: bool) -> void:
 		bounds.position = Vector3(center_x, 0, center_z)
 		_grid.add_child(bounds)
 		_outline(bounds, Vector2(width, depth), Color("d8e7c5"), false)
-		var corridor: MeshInstance3D = _box(_grid, Vector3(0, 0.083, center_z), Vector3(Layout.AISLE_HALF_WIDTH * 2.0, 0.008, depth), Color("e8bf73"))
-		corridor.name = "ClearCentralAisle"
-		corridor.material_override = _overlay_material(Color("e8bf73"), 0.14)
-		corridor.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		var dash_mat: StandardMaterial3D = _overlay_material(Color("e8bf73"), 0.58)
-		for side: float in [-1.0, 1.0]:
-			for i: int in range(floori(depth / 0.76)):
-				var dash: MeshInstance3D = _box(_grid, Vector3(side * Layout.AISLE_HALF_WIDTH, 0.095, Layout.MIN_Z + 0.3 + float(i) * 0.76), Vector3(0.025, 0.008, 0.38), Color("e8bf73"))
-				dash.material_override = dash_mat
-				dash.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_grid.visible = enabled
 	if not enabled:
 		clear_layout_preview()
@@ -635,4 +683,4 @@ func highlight_furniture(uid: int) -> void:
 	_selection.position = model.position
 	_selection.rotation = model.rotation
 	add_child(_selection)
-	_outline(_selection, _footprint(str(model.get_meta("kind", ""))), Color("ffe08b"), false)
+	_outline(_selection, _footprint(str(model.get_meta("kind", "")),str(model.get_meta("variant","basic"))), Color("ffe08b"), false)

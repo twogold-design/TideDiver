@@ -1,4 +1,4 @@
-extends Node2D
+extends "res://scripts/responsive_ui.gd"
 const LayoutUI = preload("res://scripts/layout_ui.gd")
 var layout_ui: Node2D
 
@@ -13,6 +13,7 @@ var latin: Font
 var buttons: Array[Button] = []
 const WAREHOUSE_PAGE_SIZE := 5
 var warehouse_page: int = 0
+var button_anchor := CENTER
 
 func _warehouse_page_count() -> int:
 	return maxi(1, ceili(float(P.GOODS.size()) / WAREHOUSE_PAGE_SIZE))
@@ -27,6 +28,7 @@ func _change_warehouse_page(delta: int) -> void:
 	rebuild()
 
 func _ready() -> void:
+	super._ready()
 	font = preload("res://assets/fonts/ui_font.tres")
 	latin = preload("res://assets/fonts/ui_font.tres")
 	layout_ui = LayoutUI.new()
@@ -34,7 +36,7 @@ func _ready() -> void:
 	add_child(layout_ui)
 
 func _process(_delta: float) -> void:
-	if visible:
+	if visible and not game.layout_mode:
 		queue_redraw()
 
 func _style(color: Color, border: Color = Color(0.7,0.85,0.8,0.15)) -> StyleBoxFlat:
@@ -46,27 +48,48 @@ func _style(color: Color, border: Color = Color(0.7,0.85,0.8,0.15)) -> StyleBoxF
 	return s
 
 func _button(text: String, rect: Rect2, action: Callable, primary: bool = false, disabled: bool = false) -> void:
+	var open_service: bool = text == "开门营业   →"
+	var main_action: bool = text == "自由布置" or text == "开门营业   →"
+	var service_action: bool = game.state in ["service", "service_paused"]
+	var label_size: int = 18 if main_action or service_action else 16
+	var disabled_ink := Color("9cb5b6") if main_action else Color("778e94")
+	var normal_ink: Color = Color("e5f1ed") if open_service else (Color("14343a") if primary else CREAM)
+	var hover_ink: Color = Color("e5f1ed") if open_service else (Color("14343a") if primary else Color.WHITE)
 	var b = Button.new()
 	b.text = text
-	b.position = rect.position
-	b.size = rect.size
+	place_control(b, rect, button_anchor)
 	b.disabled = disabled
 	b.focus_mode = Control.FOCUS_NONE
 	b.add_theme_font_override("font",font)
-	b.add_theme_font_size_override("font_size",16)
-	b.add_theme_color_override("font_color",Color("14343a") if primary else CREAM)
-	b.add_theme_color_override("font_hover_color",Color("14343a") if primary else Color.WHITE)
-	b.add_theme_color_override("font_disabled_color",Color("778e94"))
+	b.add_theme_font_size_override("font_size",label_size)
+	b.add_theme_color_override("font_color",normal_ink)
+	b.add_theme_color_override("font_hover_color",hover_ink)
+	b.add_theme_color_override("font_disabled_color",disabled_ink)
 	b.add_theme_stylebox_override("normal",_style(GOLD if primary else Color("254952")))
 	b.add_theme_stylebox_override("hover",_style(Color("ffe2ae") if primary else Color("3a636b"),MINT))
 	b.add_theme_stylebox_override("pressed",_style(Color("699d94")))
 	b.add_theme_stylebox_override("disabled",_style(Color("1d353d")))
+	if open_service:
+		var fills: Dictionary = {"normal":Color("197549"),"hover":Color("238b57"),"pressed":Color("125a37"),"disabled":Color("244653")}
+		for state: String in fills:
+			var style: StyleBoxFlat = _style(fills[state],Color("5b7d88") if state == "disabled" else Color("a4e5ae"))
+			style.set_border_width_all(2)
+			style.shadow_color = Color(0.02,0.10,0.14,0.30)
+			style.shadow_size = 4
+			style.shadow_offset = Vector2(0,3)
+			b.add_theme_stylebox_override(state,style)
 	b.pressed.connect(action)
 	add_child(b)
+	native_button_label(b,font,label_size,normal_ink,hover_ink,disabled_ink,16 if main_action or service_action else 1)
 	buttons.append(b)
 
 func rebuild() -> void:
+	# A mode change must clear retained CanvasItem draw commands even when the
+	# layout screen stops this panel's continuous redraws.
+	queue_redraw()
+	button_anchor = CENTER
 	for b in buttons:
+		remove_child(b)
 		b.queue_free()
 	buttons.clear()
 	visible = game.state in ["restaurant","service","service_paused"]
@@ -84,9 +107,12 @@ func rebuild() -> void:
 		_button("收好账单 · 继续整备",Rect2(540,611,360,54),func(): game.summary_visible = false; rebuild(),true)
 		return
 	if game.state == "restaurant":
+		button_anchor = TOP_LEFT
 		_button("← 返回码头",Rect2(32,30,150,43),game.return_to_dock)
+		button_anchor = CENTER_RIGHT
 		_button("店面装修",Rect2(1050,110,166,42),func(): game.restaurant_tab = "renovation"; rebuild(),game.restaurant_tab == "renovation")
 		_button("备菜菜单",Rect2(1226,110,180,42),func(): game.restaurant_tab = "menu"; rebuild(),game.restaurant_tab == "menu")
+		button_anchor = CENTER_LEFT
 		var i: int = 0
 		for id in _warehouse_ids():
 			var amount: int = int(game.progress.inventory.get(id,0))
@@ -97,6 +123,7 @@ func rebuild() -> void:
 		_button("上一页",Rect2(54,625,78,32),func(): _change_warehouse_page(-1),false,warehouse_page == 0)
 		_button("下一页",Rect2(206,625,78,32),func(): _change_warehouse_page(1),false,warehouse_page >= _warehouse_page_count() - 1)
 		_button("仅出售珍珠与宝藏",Rect2(54,701,230,44),game.sell_valuables,false,int(game.progress.inventory.get("pearl",0))+int(game.progress.inventory.get("chest",0)) == 0)
+		button_anchor = CENTER_RIGHT
 		if game.restaurant_tab == "renovation":
 			i = 0
 			for id in P.RENOVATIONS:
@@ -113,14 +140,18 @@ func rebuild() -> void:
 				_button("口味 · "+game.Cuisine.SEASONINGS[int(game.menu_seasoning.get(id,0))],Rect2(1080,y+44,136,31),func(): game.change_seasoning(id))
 				_button("备料中" if game.preparation.has(id) and game.preparation[id].left > 0 else ("备料完成" if game.preparation.has(id) else "精细备料"),Rect2(1224,y+44,150,31),func(): game.prepare_dish(id),false,game.preparation.has(id) or int(game.menu_plan.get(id,0)) <= 0 or not game.progress.renovation.kitchen)
 				i += 1
+		button_anchor = BOTTOM_CENTER
 		_button("自由布置",Rect2(357,726,173,58),game.enter_layout,false,not game.progress.renovation.clean)
 		var reason: String = game.service_block_reason()
 		_button("开门营业   →",Rect2(545,726,350,58),game.start_service,true,not reason.is_empty())
 		if not game.service_summary.is_empty():
 			_button("查看上次账单",Rect2(558,789,324,33),func(): game.summary_visible = true; rebuild())
 	else:
+		button_anchor = TOP_RIGHT
 		_button("提前打烊",Rect2(1238,31,168,42),game.finish_service)
+		button_anchor = TOP_CENTER
 		_button("全店视角" if game.service_close_view else "近看人物",Rect2(750,31,170,42),func(): game.service_close_view = not game.service_close_view; rebuild())
+		button_anchor = BOTTOM_CENTER
 		for order in game.orders:
 			var x: float = 32 + order.seat*352
 			var label: String = "开始制作"
@@ -133,17 +164,30 @@ func rebuild() -> void:
 				_button("已摆盘" if order.get("plated",false) else "精致摆盘",Rect2(x+18,747,122,40),func(): game.tend_order(order_id),false,order.get("plated",false))
 				_button(label,Rect2(x+148,747,162,40),func(): game.serve_order(order_id),true)
 			elif order.state == "cooking":
-				_button("已掌勺" if order.get("heat_result","") != "" else "翻面 · 在绿色火候区点击",Rect2(x+18,747,292,40),func(): game.tend_order(order_id),true,order.get("heat_result","") != "")
+				_button("已掌勺" if order.get("heat_result","") != "" else "绿色区点击 · 翻面",Rect2(x+18,747,292,40),func(): game.tend_order(order_id),true,order.get("heat_result","") != "")
 			else:
 				_button(label,Rect2(x+18,747,292,40),func(): game.cook_order(order_id),false,order.state == "cooking")
 	queue_redraw()
 
 func _text(pos: Vector2, text: String, size: int = 18, color: Color = CREAM, english: bool = false) -> void:
-	draw_string(latin if english else font,pos,text,HORIZONTAL_ALIGNMENT_LEFT,-1,size,color)
+	native_text(latin if english else font,pos,text,size,color,false,14 if game.state in ["service", "service_paused"] else 1)
 
 func _center(pos: Vector2, text: String, size: int = 18, color: Color = CREAM) -> void:
-	var w: float = font.get_string_size(text,HORIZONTAL_ALIGNMENT_LEFT,-1,size).x
-	_text(pos-Vector2(w/2,0),text,size,color)
+	native_text(font,pos,text,size,color,true,14 if game.state in ["service", "service_paused"] else 1)
+
+func _service_feedback_lines(value: String) -> Array[String]:
+	# Fit full customer comments to the card using the actual rendered font size.
+	var pixels: int = NativeText.font_size_for(self,16,14) if OS.has_feature("web") else 16
+	var width: float = 282.0 * NativeText.transform_for(self).get_scale().x if OS.has_feature("web") else 282.0
+	var lines: Array[String] = []
+	var line := ""
+	for character in value:
+		if not line.is_empty() and font.get_string_size(line+character,HORIZONTAL_ALIGNMENT_LEFT,-1,pixels).x > width:
+			lines.append(line)
+			line = ""
+		line += character
+	lines.append(line)
+	return lines
 
 func _panel(rect: Rect2, color: Color = Color(0.025,0.12,0.15,0.95)) -> void:
 	draw_style_box(_style(color),rect)
@@ -151,9 +195,11 @@ func _panel(rect: Rect2, color: Color = Color(0.025,0.12,0.15,0.95)) -> void:
 func _draw() -> void:
 	if not visible or font == null or game.layout_mode:
 		return
-	draw_rect(Rect2(0,0,1440,94),Color(0.025,0.10,0.13,0.96))
+	region(TOP_LEFT)
+	screen_bar(94,Color(0.025,0.10,0.13,0.96))
 	_text(Vector2(207,52),"潮间食堂",27,CREAM)
 	_text(Vector2(363,52),"TIDE TABLE",17,MINT,true)
+	region(TOP_RIGHT)
 	_text(Vector2(970,49),"DAY %02d" % game.progress.day,21,MINT,true)
 	_text(Vector2(1100,49),"%d G" % game.progress.coins,25,GOLD,true)
 	if game.state == "restaurant":
@@ -161,18 +207,24 @@ func _draw() -> void:
 	else:
 		_draw_service()
 	if game.notice_timer > 0 and game.state != "service_paused":
+		region(BOTTOM_CENTER)
 		var w: float = font.get_string_size(game.notice,HORIZONTAL_ALIGNMENT_LEFT,-1,16).x+40
+		if OS.has_feature("web") and game.state == "service":
+			var pixels: int = NativeText.font_size_for(self,16,14)
+			w = font.get_string_size(game.notice,HORIZONTAL_ALIGNMENT_LEFT,-1,pixels).x / NativeText.transform_for(self).get_scale().x + 40
 		_panel(Rect2(720-w/2,844,w,39))
 		_center(Vector2(720,870),game.notice,16,MINT)
 	if game.summary_visible and game.state == "restaurant":
 		_draw_bill()
 	if game.state == "service_paused":
-		draw_rect(Rect2(0,0,1440,900),Color(0.01,0.05,0.07,0.75))
+		region(CENTER)
+		screen_overlay(Color(0.01,0.05,0.07,0.75))
 		_panel(Rect2(495,270,450,320))
 		_center(Vector2(720,330),"休息片刻",30)
 		_center(Vector2(720,370),"料理与顾客耐心已暂停",17,MUTED)
 
 func _draw_management() -> void:
+	region(CENTER_LEFT)
 	_panel(Rect2(32,110,276,660))
 	_text(Vector2(54,144),"岸上仓库",23)
 	_text(Vector2(54,169),"前三种鱼可烹饪，其余仅售卖",14,MUTED)
@@ -187,6 +239,7 @@ func _draw_management() -> void:
 	var completed: int = game.progress.total_served + game.progress.total_lost
 	var satisfaction: String = "尚未营业" if completed == 0 else "出餐率 %d%%" % int(float(game.progress.total_served)/completed*100)
 	_text(Vector2(54,678),"营业 %d 场 · %s" % [game.progress.restaurant_runs,satisfaction],13,MINT)
+	region(CENTER_RIGHT)
 	_panel(Rect2(1050,164,356,606))
 	if game.restaurant_tab == "renovation":
 		i = 0
@@ -215,34 +268,43 @@ func _draw_management() -> void:
 		stage = "海岸小餐厅 · 可以备菜开业"
 	elif game.progress.renovation.get("clean",false):
 		stage = "施工中 · 为第一位客人做准备"
+	region(TOP_CENTER)
 	_panel(Rect2(350,110,656,63),Color(0.025,0.12,0.15,0.84))
 	_center(Vector2(678,140),stage,23)
 	_center(Vector2(678,161),"从一间旧店，到你自己的海岸餐厅",13,MINT)
+	region(BOTTOM_CENTER)
 	_panel(Rect2(350,612,656,103),Color(0.025,0.12,0.15,0.91))
 	_text(Vector2(371,642),"下一步",14,MINT)
 	_text(Vector2(371,671),game.progress.next_goal(),19)
 	var reason: String = game.service_block_reason()
 	_text(Vector2(371,699),reason if not reason.is_empty() else "准备就绪。开门后点击订单制作，再点击上菜。",14,GOLD)
+	region(CENTER_LEFT)
 	_panel(Rect2(32,786,276,43))
 	_text(Vector2(48,813),"累计营收 %d G · 服务 %d 位" % [game.progress.restaurant_income,game.progress.total_served],14,MINT)
 
 func _draw_service() -> void:
+	region(TOP_LEFT)
 	_text(Vector2(34,51),"营业中",24,GOLD)
 	_panel(Rect2(32,110,295,126))
 	_text(Vector2(52,143),"本场收入",16,MUTED)
 	_text(Vector2(52,185),"%d G" % int(game.progress.service_stats.get("earned",0)),36,GOLD,true)
 	_text(Vector2(52,216),"已服务 %d · 流失 %d" % [int(game.progress.service_stats.get("served",0)),int(game.progress.service_stats.get("lost",0))],16)
+	region(TOP_RIGHT)
 	_panel(Rect2(1110,110,296,126))
 	_text(Vector2(1130,144),"到店 %d / %d 位" % [game.service_arrived,game.progress.guest_limit()],21)
 	_text(Vector2(1130,180),"剩余备料 %d 份" % game.service_remaining(),18,MINT)
-	_text(Vector2(1130,214),"Esc 暂停 · 完成料理后记得上菜",13,MUTED)
-	_panel(Rect2(32,250,322,154),Color(0.025,0.12,0.15,0.89))
+	_text(Vector2(1130,214),"Esc 暂停 · 做好后及时上菜",16,MUTED)
+	region(TOP_LEFT)
+	_panel(Rect2(32,250,322,226),Color(0.025,0.12,0.15,0.95))
 	_text(Vector2(52,278),"顾客留言",18,MINT)
 	if game.service_feedback.is_empty():
-		_text(Vector2(52,311),"留意桌边气泡，先照顾着急的客人。",14,MUTED)
+		_text(Vector2(52,311),"留意气泡，先照顾着急的客人",16,MUTED)
 	for i in range(game.service_feedback.size()):
 		var feedback: Dictionary = game.service_feedback[i]
-		_text(Vector2(52,309+i*32),"%02d 桌 · %s" % [feedback.seat+1,feedback.text],13,_mood_color(feedback.mood))
+		var lines := _service_feedback_lines("%02d 桌 · %s" % [feedback.seat+1,feedback.text])
+		for row in range(lines.size()):
+			_text(Vector2(52,309+i*56+row*24),lines[row],16,_mood_color(feedback.mood))
+	region(BOTTOM_CENTER)
 	for seat in range(game.progress.seats()):
 		var x: float = 32+seat*352
 		_panel(Rect2(x,568,328,236))
@@ -252,30 +314,31 @@ func _draw_service() -> void:
 				current = order
 		if current.is_empty():
 			_center(Vector2(x+164,681),"等待下一位客人",19,MUTED)
-			_center(Vector2(x+164,714),"TABLE %02d" % (seat+1),13,MINT)
+			_center(Vector2(x+164,714),"TABLE %02d" % (seat+1),16,MINT)
 			continue
-		_text(Vector2(x+18,598),"%02d 号桌 · 偏好%s" % [seat+1,game.Cuisine.SEASONINGS[int(current.get("preference",0))]],14,MUTED)
+		_text(Vector2(x+18,598),"%02d 号桌 · 偏好%s" % [seat+1,game.Cuisine.SEASONINGS[int(current.get("preference",0))]],17,MUTED)
 		_text(Vector2(x+18,629),P.RECIPES[current.dish].name,21)
 		var fraction: float = clampf(current.patience/float(current.get("max_patience",game.progress.patience())),0,1)
 		draw_style_box(_style(Color("31515a")),Rect2(x+18,643,292,7))
 		draw_style_box(_style(MINT if fraction > 0.3 else Color("ed8e78")),Rect2(x+18,643,maxf(1,292*fraction),7))
-		var label: String = "顾客等待中 · 耐心 %.0f 秒" % current.patience
+		var label: String = "等待中 · 耐心 %.0f 秒" % current.patience
 		if current.state == "cooking":
 			label = "制作中 · 还需 %.1f 秒" % current.cook_left
 		elif current.state == "ready":
-			label = "%s · 趁热 %.1fs" % [game.Cuisine.quality_label(current),maxf(0,game.Cuisine.HOT_WINDOW-float(current.get("ready_age",0)))]
-		_text(Vector2(x+18,676),label,14,GOLD if current.state == "ready" else MUTED)
+			label = "已凉 · 无品质加成" if float(current.get("ready_age",0)) > game.Cuisine.HOT_WINDOW else "%s · 趁热 %.1fs" % [game.Cuisine.quality_label(current),maxf(0,game.Cuisine.HOT_WINDOW-float(current.get("ready_age",0)))]
+		_text(Vector2(x+18,676),label,17,GOLD if current.state == "ready" else MUTED)
 		if current.state == "cooking":
 			draw_rect(Rect2(x+18,689,292,10),Color("31515a"))
 			draw_rect(Rect2(x+18+292*0.4,689,292*0.35,10),Color("559b70"))
 			var marker: float = x+18+292*game.Cuisine.heat_fraction(current)
 			draw_line(Vector2(marker,685),Vector2(marker,703),GOLD,3)
-		_text(Vector2(x+18,718),"%s口味 · %s · 品质+%d%%" % [game.Cuisine.SEASONINGS[int(current.get("seasoning",0))],"精细备料" if current.get("prepped",false) else "普通备料",game.Cuisine.bonus_percent(current)],13,MINT)
+		_text(Vector2(x+18,717),"%s · %s · 品质+%d%%" % [game.Cuisine.SEASONINGS[int(current.get("seasoning",0))],"精细备料" if current.get("prepped",false) else "普通备料",game.Cuisine.bonus_percent(current)],16,MINT)
 		var mood: Dictionary = game.customer_mood(current)
-		_text(Vector2(x+18,738),"“%s”" % mood.text,13,_mood_color(mood.mood))
+		_text(Vector2(x+18,740),"“%s”" % mood.text,16,_mood_color(mood.mood))
 
 func _draw_bill() -> void:
-	draw_rect(Rect2(0,0,1440,900),Color(0.01,0.05,0.07,0.76))
+	region(CENTER)
+	screen_overlay(Color(0.01,0.05,0.07,0.76))
 	_panel(Rect2(460,213,520,486),Color("12343e"))
 	_center(Vector2(720,263),"潮汐落幕，烟火未散",28)
 	_center(Vector2(720,296),"今日营业账单  /  TIDE TABLE",14,MINT)

@@ -10,6 +10,8 @@ class MemoryProgression extends "res://scripts/progression.gd":
 
 var font := SystemFont.new()
 var failed: bool = false
+var summer: bool = "--summer" in OS.get_cmdline_user_args()
+var soft: bool = "--soft" in OS.get_cmdline_user_args()
 
 func _init() -> void:
 	call_deferred("_run")
@@ -27,7 +29,11 @@ func _save(filename: String) -> void:
 	await process_frame
 	await process_frame
 	await RenderingServer.frame_post_draw
-	var error: Error = root.get_texture().get_image().save_png("res://artifacts/" + filename + ".png")
+	var directory: String = "res://artifacts/"
+	if summer or soft:
+		directory = ProjectSettings.globalize_path("res://../../.TideDiver-web-work/soft-gallery/" if soft else "res://../../.TideDiver-web-work/summer-gallery/")
+		DirAccess.make_dir_recursive_absolute(directory)
+	var error: Error = root.get_texture().get_image().save_png(directory + filename + ".png")
 	failed = failed or error != OK
 	print("Captured " + filename if error == OK else "FAIL: " + filename)
 
@@ -36,6 +42,8 @@ func _run() -> void:
 	root.size = Vector2i(1600, 1000)
 	root.content_scale_size = Vector2i(1600, 1000)
 	var groups: Array = [["table", "plant"], ["rug", "lamp"], ["shelf", "bench"], ["parasol", "coastal"]]
+	if soft:
+		groups = [["soft","soft"],["soft","soft"]]
 	for i: int in range(groups.size()):
 		await _gallery(groups[i], i + 1)
 	await _game()
@@ -48,12 +56,14 @@ func _gallery(kinds: Array, page: int) -> void:
 	background.color = Color("12343c")
 	background.size = Vector2(1600, 1000)
 	ui.add_child(background)
-	_label(ui, "潮间食堂 · 渔港家具", Vector2(48, 30), 34)
-	_label(ui, "实际游戏模型  /  浅木 · 藤编 · 哑光灰蓝 · 编织细节  /  %02d" % page, Vector2(50, 83), 20, Color("9db9b8"))
+	_label(ui, "潮间食堂 · 海风软装" if soft else ("潮间食堂 · 夏日彩集" if summer else "潮间食堂 · 渔港家具"), Vector2(48, 30), 34)
+	_label(ui, ("实际游戏模型  /  薄荷 · 蜜桃 · 柠檬  /  三套配色  /  %02d" if summer or soft else "实际游戏模型  /  浅木 · 藤编 · 哑光灰蓝 · 编织细节  /  %02d") % page, Vector2(50, 83), 20, Color("9db9b8"))
 	for row: int in range(2):
 		var kind: String = kinds[row]
 		for column: int in range(3):
-			var variant: String = ["basic", "comfort", "premium"][column]
+			var variant: String = "summer" if summer else ["basic", "comfort", "premium"][column]
+			if soft:
+				variant = ["basic","comfort","summer","premium"][(page-1)*2+row]
 			var origin := Vector2(42 + column * 510, 140 + row * 420)
 			var panel := ColorRect.new()
 			panel.color = Color("1b424a")
@@ -71,7 +81,7 @@ func _gallery(kinds: Array, page: int) -> void:
 			viewport.msaa_3d = Viewport.MSAA_2X
 			viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 			container.add_child(viewport)
-			var model: Node3D = Art.build({"kind":kind, "variant":variant, "uid":100, "color":0})
+			var model: Node3D = Art.build({"kind":kind, "variant":variant, "uid":100, "color":column if summer or soft else 0})
 			viewport.add_child(model)
 			var environment := WorldEnvironment.new()
 			environment.environment = Environment.new()
@@ -86,13 +96,15 @@ func _gallery(kinds: Array, page: int) -> void:
 			viewport.add_child(sun)
 			var camera := Camera3D.new()
 			camera.projection = Camera3D.PROJECTION_ORTHOGONAL
-			camera.size = 4.0 if kind in ["table", "parasol", "rug"] else (2.6 if kind in ["shelf", "lamp"] else 2.0)
+			camera.size = 4.0 if kind in ["table", "parasol", "rug"] else (3.0 if kind in ["shelf", "lamp", "bench"] else (2.6 if summer and kind == "coastal" else 2.0))
+			if soft:
+				camera.size = 4.2
 			camera.position = Vector3(3, 4.8 if kind == "rug" else 2.7, 5)
 			viewport.add_child(camera)
-			camera.look_at(Vector3(0, 0.1 if kind == "rug" else (1.30 if kind == "parasol" else (0.96 if kind in ["shelf", "lamp"] else 0.7)), 0))
+			camera.look_at(Vector3(0, 1.5 if soft else (0.1 if kind == "rug" else (1.30 if kind == "parasol" else (0.96 if kind in ["shelf", "lamp"] else 0.7))), 0))
 			var data: Dictionary = Rules.variant_data(kind, variant)
 			_label(ui, data.name, origin + Vector2(22, 311), 25)
-			_label(ui, "%s · %d G" % [["基础款", "舒适款", "精品款"][column], data.cost], origin + Vector2(23, 354), 19, Color("d9b57c"))
+			_label(ui, "%s · %d G" % [(["薄荷柠檬", "海蓝莓果", "蜜桃青柠"] if summer or soft else ["基础款", "舒适款", "精品款"])[column], data.cost], origin + Vector2(23, 354), 19, Color("d9b57c"))
 	await _save("harbor_furniture_%d" % page)
 	ui.free()
 
@@ -115,7 +127,11 @@ func _game() -> void:
 	for item: Dictionary in game.layout_work.furniture_items():
 		item.placed = false
 	var placements: Array = [["table","basic",-3.5,0.0],["table","comfort",3.5,0.0],["table","premium",3.5,4.5],["shelf","premium",8,1.0],["bench","premium",-7,5.5],["parasol","premium",-7,8.0],["plant","premium",-8.5,2],["lamp","premium",7,5.5],["coastal","basic",-2,7],["coastal","comfort",7,7],["coastal","premium",4,8],["rug","premium",3.5,4.5]]
+	if soft:
+		placements.append_array([["soft","basic",-7,3.5],["soft","comfort",7,3],["soft","summer",-3,8.5],["soft","premium",1,8.5]])
 	for placement: Array in placements:
+		if summer:
+			placement[1] = "summer"
 		game.buy_layout_furniture(placement[0], placement[1])
 		if not game.place_layout_at(placement[2], placement[3]):
 			printerr("FAIL: gallery placement " + str(placement))

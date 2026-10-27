@@ -28,7 +28,8 @@ const measurements = [];
       const result = await page.locator('#canvas').evaluate(canvas => {
         const box = canvas.getBoundingClientRect();
         const gl = canvas.getContext('webgl2');
-        return {css:[box.width,box.height], pixels:[canvas.width,canvas.height], buffer:[gl.drawingBufferWidth,gl.drawingBufferHeight], dpr:devicePixelRatio};
+        const stage = document.getElementById('stage').getBoundingClientRect();
+        return {css:[box.width,box.height], origin:[box.x,box.y], stage:[stage.x,stage.y,stage.width,stage.height], pixels:[canvas.width,canvas.height], buffer:[gl.drawingBufferWidth,gl.drawingBufferHeight], dpr:devicePixelRatio};
       });
       measurements.push({name,...result});
       console.log(name, JSON.stringify(result));
@@ -36,12 +37,23 @@ const measurements = [];
         assert.equal(result.pixels[0],Math.round(result.css[0]*result.dpr),name+' native width');
         assert.equal(result.pixels[1],Math.round(result.css[1]*result.dpr),name+' native height');
         assert.deepEqual(result.buffer,result.pixels,name+' WebGL buffer matches canvas');
+        for (let i=0;i<2;i++) {
+          assert.ok(Math.abs(result.css[i]-result.stage[i+2])*result.dpr<=1,name+' fills stage');
+          assert.ok(Math.abs(result.origin[i]-result.stage[i])*result.dpr<=1,name+' no letterbox offset');
+        }
       }
       return result;
     }
     await measure('high-dpi-start');
     await page.screenshot({path:path.join(output,baseline?'before.png':'after.png')});
     if (!baseline) {
+      for (const [name,width,height] of [['wide-dock',1920,900],['tall-dock',1000,1000],['compact-dock',1100,750]]) {
+        await page.setViewportSize({width,height});
+        await measure(name);
+        await page.screenshot({path:path.join(output,name+'.png')});
+      }
+      await page.setViewportSize({width:1440,height:948});
+      await measure('restore-design-size');
       const box = await page.locator('#canvas').boundingBox();
       await page.mouse.click(box.x+240*box.width/1440,box.y+586*box.height/900);
       await page.waitForTimeout(1500);
@@ -59,6 +71,8 @@ const measurements = [];
       await measure('screen-scale-change');
       await cdp.send('Emulation.setDeviceMetricsOverride',{width:2560,height:1440,deviceScaleFactor:1,mobile:false});
       await measure('large-desktop');
+      const shot = await cdp.send('Page.captureScreenshot',{format:'png',fromSurface:true});
+      fs.writeFileSync(path.join(output,'wide-restaurant.png'),Buffer.from(shot.data,'base64'));
     }
     assert.deepEqual(errors,[],'No rendering errors');
     fs.writeFileSync(path.join(output,baseline?'before.json':'after.json'),JSON.stringify(measurements,null,2));

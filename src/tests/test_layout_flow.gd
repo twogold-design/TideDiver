@@ -54,6 +54,8 @@ func _run() -> void:
 	_test_drag_tracks_pointer()
 	_test_orbit_camera()
 	_test_edge_rotation()
+	_test_parasol_outline()
+	_test_layout_reuse()
 	await _test_shop_buttons()
 	_test_purchase_cancellation()
 	_test_recycling_flow()
@@ -118,7 +120,7 @@ func _test_commit_and_undo() -> void:
 	game.select_furniture(1)
 	game.begin_move_furniture()
 	var original: Dictionary = game.layout_work.furniture_by_uid(1).duplicate(true)
-	_check(not game.place_layout_at(0,1) and not game.layout_reason.is_empty(), "Main blocks placement in central entrance and explains why")
+	_check(not game.place_layout_at(3.5,-0.5) and not game.layout_reason.is_empty(), "Main still blocks placement overlapping another table and explains why")
 	_check(game.layout_work.furniture_by_uid(1) == original, "Rejected move keeps original table transform")
 	_key(KEY_R)
 	_check(game.layout_rotation == 1 and game.layout_work.furniture_by_uid(1).rotation == 0, "Rotating a pending move changes preview without committing original table")
@@ -379,7 +381,8 @@ func _test_viewport_and_camera() -> void:
 	var before := _snapshot()
 	game.enter_layout()
 	game._physics_process(0.0)
-	_check(game.layout_panel_visible and game.layout_view_rect() == Rect2(332,96,1100,708), "Expanded left panel uses the agreed large single-panel viewport")
+	var view_size: Vector2 = game.get_viewport().get_visible_rect().size
+	_check(game.layout_panel_visible and game.layout_view_rect() == Rect2(332,96,view_size.x-340,view_size.y-192), "Expanded panel reserves its width while the editable viewport fills the window")
 	_check(not game.layout_view_rect().has_point(Vector2(100,300)) and game.layout_view_rect().has_point(Vector2(1300,400)), "Left controls are excluded while former right-panel space is now editable")
 	var draft_before := JSON.stringify(game.layout_work._save_data())
 	_mouse_button(MOUSE_BUTTON_WHEEL_UP,Vector2(100,300))
@@ -388,8 +391,8 @@ func _test_viewport_and_camera() -> void:
 	_mouse_motion(Vector2(100,50))
 	_check(not game.layout_panning and game.layout_pan == Vector3.ZERO, "Middle drag cannot start on control panel")
 	_key(KEY_TAB)
-	_check(not game.layout_panel_visible and game.layout_view_rect() == Rect2(8,96,1424,708), "Tab collapses controls to agreed full-width viewport")
-	_check(game.layout_view_rect().has_point(Vector2(100,300)) and not game.layout_view_rect().has_point(Vector2(700,50)) and not game.layout_view_rect().has_point(Vector2(700,850)), "Collapsed viewport gains side space but excludes header and footer")
+	_check(not game.layout_panel_visible and game.layout_view_rect() == Rect2(8,96,view_size.x-16,view_size.y-192), "Tab collapses controls to the full responsive viewport")
+	_check(game.layout_view_rect().has_point(Vector2(100,300)) and not game.layout_view_rect().has_point(Vector2(700,50)) and not game.layout_view_rect().has_point(Vector2(700,view_size.y-50)), "Collapsed viewport gains side space but excludes header and footer")
 	game._physics_process(0.0)
 	var original_camera: Vector3 = game.camera.position
 	_mouse_button(MOUSE_BUTTON_MIDDLE,Vector2(100,300))
@@ -499,6 +502,48 @@ func _test_recycling_flow() -> void:
 	game.hud.rebuild()
 	_check(progress.furniture_by_uid(purchased_uid) == item,"Test fixture restores earlier ownership for subsequent regression checks")
 
+func _test_parasol_outline() -> void:
+	var coins_before: int = progress.coins
+	progress.coins = 10000
+	game.enter_layout()
+	for variant: String in ["basic","comfort","summer","premium"]:
+		game.buy_layout_furniture("parasol",variant)
+		var expected: Vector2 = game.Layout.footprint("parasol",0,variant)
+		game.restaurant_node.set_layout_preview("parasol",Vector3.ZERO,1,0,true,variant)
+		var fill: MeshInstance3D = game.restaurant_node._preview.get_child(1)
+		_check(is_equal_approx(fill.mesh.get_aabb().size.x,expected.x) and is_equal_approx(fill.mesh.get_aabb().size.z,expected.y),"Preview uses the correct base size for " + variant)
+		game.restaurant_node.highlight_furniture(-1)
+		game.restaurant_node._add_furniture({"uid":-888,"kind":"parasol","variant":variant,"x":0,"z":0,"rotation":1,"color":0,"placed":true})
+		game.restaurant_node.highlight_furniture(-888)
+		var edge: MeshInstance3D = game.restaurant_node._selection.get_child(0)
+		_check(is_equal_approx(edge.mesh.get_aabb().size.z,expected.y+0.045),"Selected outline uses the same base size for " + variant)
+		game.cancel_layout_placement()
+	game.cancel_layout()
+	progress.coins = coins_before
+
+func _test_layout_reuse() -> void:
+	game.enter_layout()
+	var room_id: int = game.restaurant_node._room.get_instance_id()
+	game._rebuild_restaurant()
+	_check(game.restaurant_node._room.get_instance_id() == room_id,"Furniture-only updates preserve the beach and kitchen scene")
+	game.restaurant_node.set_layout_preview("soft",Vector3.ZERO,0,0,true,"premium")
+	var ghost_id: int = game.restaurant_node._preview.get_instance_id()
+	game.restaurant_node.set_layout_preview("soft",Vector3(2,0,3),1,0,false,"premium")
+	_check(game.restaurant_node._preview.get_instance_id() == ghost_id and game.restaurant_node._preview.position == Vector3(2,0,3),"Moving and rotating a preview reuses its model")
+	_check(game.restaurant_node._preview_ghost.albedo_color.r > game.restaurant_node._preview_ghost.albedo_color.g,"Reused ghost switches to invalid-placement red")
+	game.restaurant_node.hide_layout_preview()
+	game.restaurant_node.set_layout_preview("soft",Vector3.ZERO,0,0,true,"premium")
+	_check(game.restaurant_node._preview.visible and game.restaurant_node._preview.get_instance_id() == ghost_id,"Moving across the shop panel hides and restores the same preview")
+	_check(game.restaurant_node._preview_ghost.albedo_color.g > game.restaurant_node._preview_ghost.albedo_color.r,"Reused ghost returns to valid-placement green")
+	var ui: Node = game.hud.restaurant_ui.layout_ui
+	ui.set_page("shop")
+	ui.set_category("soft")
+	var preview_id: int = ui._preview_views["soft/premium"].get_instance_id()
+	ui.rebuild()
+	_check(ui._preview_views["soft/premium"].get_instance_id() == preview_id,"Selection refreshes preserve the shop preview viewport")
+	_check(ui._preview_views.size() <= ui.PREVIEW_CACHE_LIMIT,"Shop preview cache remains bounded")
+	game.cancel_layout()
+
 func _test_shop_buttons() -> void:
 	var starting_money: int = progress.coins
 	progress.coins = 10000
@@ -510,6 +555,14 @@ func _test_shop_buttons() -> void:
 			game.enter_layout()
 			ui.set_page("shop")
 			ui.set_category(kind)
+			var displayed: Array = ui.shop_variants()
+			var all_present: bool = displayed.size() == game.Layout.variant_ids(kind).size()
+			var previous_cost: int = -1
+			for id in displayed:
+				var cost: int = game.Layout.variant_data(kind,id).cost
+				all_present = all_present and id in game.Layout.variant_ids(kind) and cost >= previous_cost
+				previous_cost = cost
+			_check(all_present, "All category variants appear together in ascending price order")
 			var product: Dictionary = game.Layout.variant_data(kind,variant)
 			var purchase_button: Button = null
 			for control in ui.controls:
@@ -542,6 +595,7 @@ func _test_shop_buttons() -> void:
 			if owned != null and item_index >= 0:
 				game.layout_selected = -1
 				owned.item_selected.emit(item_index)
+				await process_frame # Selection rebuilds after the ItemList click handler finishes.
 				_check(game.layout_selected == uid and game.layout_placing, "Owned list item-selected callback restores exact stored UID for " + kind + "/" + variant)
 			game.cancel_layout()
 			_check(_snapshot() == before and progress.saves == saves_before, "Cancelling actual shop selection preserves original progress for " + kind + "/" + variant)
@@ -571,7 +625,7 @@ func _test_purchase_cancellation() -> void:
 	_check(progress.coins == money and progress.furniture_items().size() == count, "Saving a preview that was never placed cannot buy invisible storage furniture")
 	game.enter_layout()
 	game.buy_layout_furniture("plant")
-	_check(not game.place_layout_at(0,0), "Invalid purchase placement is still rejected by aisle rules")
+	_check(not game.place_layout_at(100,100), "Out-of-bounds purchase placement is still rejected")
 	_key(KEY_ESCAPE)
 	game.save_layout()
 	_check(progress.coins == money and progress.furniture_items().size() == count, "Cancelling a failed placement refunds the pending purchase")
@@ -641,7 +695,7 @@ func _test_renovation_gifts_and_return() -> void:
 	_check(progress.furniture_by_uid(1) == original_tables[0] and progress.furniture_by_uid(2) == original_tables[1], "Finding gift-table space never moves existing tables")
 	for uid in [3,4]:
 		var item: Dictionary = progress.furniture_by_uid(uid)
-		_check(progress.placement_reason(uid,item.x,item.z,item.rotation).is_empty(), "Auto-placed gift table obeys the same geometry and aisle rules as manual placement")
+		_check(progress.placement_reason(uid,item.x,item.z,item.rotation).is_empty(), "Auto-placed gift table obeys the same boundary and overlap rules as manual placement")
 	game.renovate_shop("sign")
 	game.renovate_shop("decor")
 	_check(_visible_kind_count("plant") == 2 and not progress.furniture_by_uid(5).placed and not progress.furniture_by_uid(6).placed, "Decor grants two plants to storage without unexpectedly changing the two-plant layout")

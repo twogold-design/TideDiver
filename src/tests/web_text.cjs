@@ -40,7 +40,8 @@ const baseline = process.argv.includes('--baseline');
       // Capture directly so Playwright does not restore the context's original DPR.
       const full = await cdp.send('Page.captureScreenshot',{format:'png',fromSurface:true});
       fs.writeFileSync(path.join(output,name+'.png'),Buffer.from(full.data,'base64'));
-      const text = await cdp.send('Page.captureScreenshot',{format:'png',fromSurface:true,clip:{x:box.x+60*box.width/1440,y:box.y+620*box.height/900,width:380*box.width/1440,height:150*box.height/900,scale:1}});
+      const scale = Math.min(box.width/1440,box.height/900);
+      const text = await cdp.send('Page.captureScreenshot',{format:'png',fromSurface:true,clip:{x:box.x+156*scale,y:box.y+(box.height-900*scale)/2+620*scale,width:380*scale,height:150*scale,scale:1}});
       fs.writeFileSync(path.join(output,name+'-text.png'),Buffer.from(text.data,'base64'));
       if (baseline) break;
     }

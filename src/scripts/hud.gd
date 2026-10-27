@@ -1,5 +1,7 @@
-extends Node2D
+extends "res://scripts/responsive_ui.gd"
 const RestaurantUI = preload("res://scripts/restaurant_ui.gd")
+const PixelText = preload("res://scripts/pixel_text.gd")
+const PixelButtonLabel = preload("res://scripts/pixel_button_label.gd")
 var restaurant_ui: Node2D
 
 var game: Node
@@ -12,8 +14,10 @@ const LIGHT = Color("e9f5ec")
 const MINT = Color("a9ead2")
 const GOLD = Color("f5c779")
 const MUTED = Color("8bb2b5")
+const DOCK_LEFT_INSET := 96.0
 
 func _ready() -> void:
+	super._ready()
 	font = preload("res://assets/fonts/ui_font.tres")
 	latin = preload("res://assets/fonts/ui_font.tres")
 	var gradient = Gradient.new()
@@ -41,11 +45,10 @@ func _style(color: Color, border: Color = Color.TRANSPARENT) -> StyleBoxFlat:
 	style.set_border_width_all(1)
 	return style
 
-func _button(label: String, rect: Rect2, callback: Callable, primary: bool = false, disabled: bool = false) -> void:
+func _button(label: String, rect: Rect2, callback: Callable, primary: bool = false, disabled: bool = false, anchor: Vector2 = CENTER) -> void:
 	var button = Button.new()
 	button.text = label
-	button.position = rect.position
-	button.size = rect.size
+	place_control(button, rect, anchor)
 	button.add_theme_font_override("font",font)
 	button.add_theme_font_size_override("font_size",18)
 	button.add_theme_color_override("font_color",INK if primary else LIGHT)
@@ -58,6 +61,15 @@ func _button(label: String, rect: Rect2, callback: Callable, primary: bool = fal
 	button.pressed.connect(callback)
 	button.focus_mode = Control.FOCUS_NONE
 	add_child(button)
+	if _use_pixel_text():
+		var label_node = PixelButtonLabel.new()
+		label_node.button = button
+		label_node.font = font
+		label_node.normal_color = INK if primary else LIGHT
+		label_node.hover_color = INK if primary else Color.WHITE
+		for key in ["font_color", "font_hover_color", "font_pressed_color", "font_hover_pressed_color", "font_focus_color", "font_disabled_color"]:
+			button.add_theme_color_override(key, Color.TRANSPARENT)
+		button.add_child(label_node)
 	buttons.append(button)
 
 func rebuild() -> void:
@@ -67,6 +79,13 @@ func rebuild() -> void:
 	buttons.clear()
 	if is_instance_valid(restaurant_ui):
 		restaurant_ui.rebuild()
+	if game.state == "rescuing":
+		queue_redraw()
+		return
+	if game.rescue_result_visible:
+		_button("知道了，继续整备",Rect2(520,610,400,58),game.dismiss_rescue_result,true)
+		queue_redraw()
+		return
 	if game.new_game_confirmation:
 		_button("保留进度 / 取消",Rect2(451,511,256,53),game.cancel_new_game,true)
 		_button("确认重新开始",Rect2(733,511,256,53),game.confirm_new_game)
@@ -81,18 +100,18 @@ func rebuild() -> void:
 		queue_redraw()
 		return
 	if game.state == "dock":
-		_button("出发潜水    →",Rect2(64,486,370,64),game.start_dive,true)
+		_button("出发潜水    →",_dock_left_rect(Rect2(64,486,370,64)),game.start_dive,true,false,CENTER_LEFT)
 		var kinds = ["tank","bag","spear"]
 		for i in range(3):
 			var kind: String = kinds[i]
 			var cost: int = game.progress.upgrade_cost(kind)
 			var label: String = "%d G   升级" % cost if cost >= 0 else "已满级"
-			_button(label,Rect2(1045,530+i*77,180,43),func(): game.upgrade(kind),false,cost < 0 or game.progress.coins < cost)
-		_button("我的餐厅  ·  仓库 / 装修 / 营业",Rect2(64,561,370,49),game.open_restaurant)
+			_button(label,Rect2(1045,530+i*77,180,43),func(): game.upgrade(kind),false,cost < 0 or game.progress.coins < cost,CENTER_RIGHT)
+		_button("我的餐厅  ·  仓库 / 装修 / 营业",_dock_left_rect(Rect2(64,561,370,49)),game.open_restaurant,false,false,CENTER_LEFT)
 		if not OS.has_feature("web"):
-			_button("退出游戏",Rect2(64,782,150,43),func(): get_tree().quit())
-		_button("重新开始游戏",Rect2(230,782,204,43),game.request_new_game)
-		_button("GM 自选潜点 · F1",Rect2(545,782,260,43),game.open_gm_menu)
+			_button("退出游戏",_dock_left_rect(Rect2(64,782,150,43)),func(): get_tree().quit(),false,false,BOTTOM_LEFT)
+		_button("重新开始游戏",_dock_left_rect(Rect2(230,782,204,43)),game.request_new_game,false,false,BOTTOM_LEFT)
+		_button("GM 自选潜点 · F1",Rect2(545,782,260,43),game.open_gm_menu,false,false,BOTTOM_CENTER)
 	elif game.state == "paused":
 		_button("重新开始游戏",Rect2(545,558,350,48),game.request_new_game)
 		_button("继续探索",Rect2(545,410,350,58),game.toggle_pause,true)
@@ -106,12 +125,31 @@ func _rescue() -> void:
 	game.state = "dive"
 	game.finish_dive(true)
 
+func _dock_left_rect(rect: Rect2) -> Rect2:
+	return Rect2(rect.position + Vector2(DOCK_LEFT_INSET,0),rect.size)
+
+func _dock_left_region(anchor: Vector2) -> void:
+	region(anchor)
+	draw_offset.x += DOCK_LEFT_INSET
+	draw_set_transform(draw_offset)
+
 func _text(pos: Vector2, text: String, size: int, color: Color = LIGHT, english: bool = false) -> void:
+	if _use_pixel_text():
+		PixelText.draw(self, latin if english else font, pos + draw_offset, text, size, color)
+		draw_set_transform(draw_offset)
+		return
 	draw_string(latin if english else font,pos,text,HORIZONTAL_ALIGNMENT_LEFT,-1,size,color)
 
 func _center(pos: Vector2, text: String, size: int, color: Color = LIGHT) -> void:
+	if _use_pixel_text():
+		PixelText.draw(self, font, pos + draw_offset, text, size, color, true)
+		draw_set_transform(draw_offset)
+		return
 	var width: float = font.get_string_size(text,HORIZONTAL_ALIGNMENT_LEFT,-1,size).x
 	_text(pos-Vector2(width*0.5,0),text,size,color)
+
+func _use_pixel_text() -> bool:
+	return OS.has_feature("web") and is_instance_valid(game) and game.state == "dock" and not game.rescue_result_visible and not game.new_game_confirmation and not game.gm_menu_open
 
 func _panel(rect: Rect2, color: Color = Color(0.025,0.12,0.16,0.88), border: Color = Color(0.4,0.8,0.75,0.18)) -> void:
 	draw_style_box(_style(color,border),rect)
@@ -119,37 +157,87 @@ func _panel(rect: Rect2, color: Color = Color(0.025,0.12,0.16,0.88), border: Col
 func _draw() -> void:
 	if not is_instance_valid(game) or font == null:
 		return
+	if OS.has_feature("web"):
+		PixelText.pixel_ratio = float(JavaScriptBridge.get_interface("window").devicePixelRatio)
 	if game.state in ["restaurant","service","service_paused"]:
+		return
+	region(CENTER)
+	if game.state == "rescuing":
+		_draw_rescue_transit()
 		return
 	if game.state == "dock":
 		_draw_dock()
 	else:
 		_draw_hud()
+	if game.rescue_result_visible:
+		_draw_rescue_result()
+		return
 	if game.state == "paused":
-		draw_rect(Rect2(0,0,1440,900),Color(0.01,0.05,0.08,0.75))
+		region(CENTER)
+		screen_overlay(Color(0.01,0.05,0.08,0.75))
 		_panel(Rect2(495,260,450,510),Color("0d303d"))
 		_center(Vector2(720,317),"静候下一次呼吸",29)
 		_center(Vector2(720,351),"PAUSED / 潜水已暂停",14,MUTED)
-	if game.notice_timer > 0 and game.state != "paused":
+	if game.harvest_result_visible and game.notice_timer > 0 and game.state == "dock" and not game.new_game_confirmation and not game.gm_menu_open:
+		_draw_harvest_result()
+	elif game.notice_timer > 0 and game.state != "paused":
+		region(BOTTOM_CENTER)
 		var w: float = font.get_string_size(game.notice,HORIZONTAL_ALIGNMENT_LEFT,-1,17).x + 50
 		_panel(Rect2(720-w/2,824,w,43),Color(0.025,0.12,0.16,0.94))
 		_center(Vector2(720,852),game.notice,17,MINT)
 
 	if game.new_game_confirmation:
-		draw_rect(Rect2(0,0,1440,900),Color(0.01,0.04,0.07,0.88))
+		region(CENTER)
+		screen_overlay(Color(0.01,0.04,0.07,0.88))
 		_panel(Rect2(410,283,620,324),Color("0d303d"))
 		_center(Vector2(720,337),"重新开始一段旅程？",29)
 		_center(Vector2(720,387),"金币、装备、仓库、店面和家具将全部重置。",19,LIGHT)
 		_center(Vector2(720,423),"从第 1 天重新开始，并覆盖当前自动存档。",18,GOLD)
 		_center(Vector2(720,467),game.new_game_error if not game.new_game_error.is_empty() else "取消或按 Esc 可保留当前进度。",16,GOLD if not game.new_game_error.is_empty() else MUTED)
 	if game.gm_test_active and game.state == "dive":
+		region(CENTER_LEFT)
 		_panel(Rect2(30,414,220,44),Color(0.08,0.17,0.20,0.94),Color(GOLD,0.65))
 		_text(Vector2(44,442),"GM 试游 · F1 切换潜点",14,GOLD)
 	if game.gm_menu_open and not game.new_game_confirmation:
 		_draw_gm_menu()
 
+func _draw_harvest_result() -> void:
+	region(CENTER)
+	# A brief centered notification leaves the dock controls immediately usable.
+	_panel(Rect2(440,294,560,174),Color(0.07,0.20,0.24,0.96),MINT)
+	_center(Vector2(720,331),"平安返航",19,GOLD)
+	var count: int = int(game.last_result.count)
+	_center(Vector2(720,378),"收获 %d 件 · 已存入仓库" % count if count > 0 else "本次没有带回物资",28,LIGHT)
+	_center(Vector2(720,418),"可去餐厅售卖筹资，或留下海鱼备菜。" if count > 0 else "岸上物资与装备保留，可以继续整备。",17,MINT)
+	_center(Vector2(720,447),"进度已自动保存",14,MUTED)
+
+func _draw_rescue_transit() -> void:
+	region(CENTER)
+	screen_overlay(Color(0.03,0.07,0.10,0.84))
+	_panel(Rect2(350,278,740,320),Color("26343b"),Color("ef9e72"))
+	_center(Vector2(720,345),"气瓶耗尽",42,Color("ffb190"))
+	_center(Vector2(720,405),"救援艇正在接你返航",30,LIGHT)
+	_center(Vector2(720,453),"本次潜水已结束，请等待返航。",20,MUTED)
+	_center(Vector2(720,503),"本次携带物资按 35% 价值折价结算",20,GOLD)
+	var fraction: float = clampf(1.0 - game.rescue_time / 2.8,0,1)
+	draw_style_box(_style(Color("38535a")),Rect2(450,546,540,8))
+	draw_style_box(_style(GOLD),Rect2(450,546,maxf(1,540*fraction),8))
+
+func _draw_rescue_result() -> void:
+	region(CENTER)
+	screen_overlay(Color(0.01,0.05,0.08,0.86))
+	_panel(Rect2(330,218,780,490),Color("12333e"),GOLD)
+	_center(Vector2(720,285),"救援返航 · 已安全抵达码头",32,GOLD)
+	_center(Vector2(720,330),"气瓶耗尽，本次潜水由救援艇接回。" if game.last_result.get("depleted",false) else "你呼叫了救援艇，本次潜水已结束。",21,LIGHT)
+	_center(Vector2(720,392),"本次折价结算  +%d G" % int(game.last_result.earned),36,MINT)
+	_center(Vector2(720,438),"携带 %d 件物资，按总价值的 35%% 兑换金币，未入仓库。" % int(game.last_result.count),19,LIGHT)
+	_center(Vector2(720,480),"原有金币、岸上仓库与家具均保留。进度已保存。",18,MUTED)
+	_center(Vector2(720,535),"下次留意氧气余量，提前上浮至 3 米内，按 F 安全返航。",18,GOLD)
+	_center(Vector2(720,572),"也可以升级潜水气瓶，让每次探索更从容。",17,MUTED)
+
 func _draw_gm_menu() -> void:
-	draw_rect(Rect2(0,0,1440,900),Color(0.01,0.04,0.07,0.87))
+	region(CENTER)
+	screen_overlay(Color(0.01,0.04,0.07,0.87))
 	_panel(Rect2(245,102,950,696),Color("0d303d"),Color(MINT,0.42))
 	_text(Vector2(286,151),"GM · 自选潜点",30,LIGHT)
 	_text(Vector2(1010,148),"F1 / Esc 关闭",15,MUTED)
@@ -175,15 +263,18 @@ func _draw_gm_menu() -> void:
 
 func _draw_dock() -> void:
 	# An editorial split layout keeps the underwater vista visible.
-	draw_texture_rect(fade_texture,Rect2(0,0,1080,900),false)
+	region(TOP_LEFT)
+	draw_texture_rect(fade_texture,Rect2(0,0,1080,ui_size().y),false)
 
-	draw_rect(Rect2(0,0,1440,90),Color(0.02,0.09,0.12,0.50))
+	screen_bar(90,Color(0.02,0.09,0.12,0.50))
 	draw_circle(Vector2(73,46),12,MINT)
 	draw_arc(Vector2(73,46),18,0,TAU,40,Color(MINT,0.3),1.5,true)
 	_text(Vector2(106,53),"TIDE DIVER",21,LIGHT,true)
 	_text(Vector2(286,51),"潮间潜客",18,MUTED)
+	region(TOP_RIGHT)
 	_text(Vector2(1010,51),"DAY %02d" % game.progress.day,19,MINT,true)
 	_text(Vector2(1165,51),"%04d  G" % game.progress.coins,23,GOLD,true)
+	_dock_left_region(CENTER_LEFT)
 	_text(Vector2(67,151),"A LITTLE FURTHER, A LITTLE DEEPER.",14,MINT,true)
 	_text(Vector2(58,250),"TIDE",98,LIGHT,true)
 	_text(Vector2(58,339),"DIVER",98,LIGHT,true)
@@ -209,6 +300,7 @@ func _draw_dock() -> void:
 			_text(Vector2(85,716),"  ".join(entries.slice(0,3)) if not entries.is_empty() else "这次没有带回物资，再试一次吧。",13,MUTED)
 			if entries.size() > 3:
 				_text(Vector2(85,742),"  ".join(entries.slice(3)),13,MUTED)
+	region(CENTER_RIGHT)
 	_panel(Rect2(895,422,365,347),Color(0.025,0.12,0.16,0.92))
 	_text(Vector2(923,459),"下一次，潜得更远",24,LIGHT)
 	_text(Vector2(923,490),"EQUIPMENT / 出航整备",13,MINT,true)
@@ -221,9 +313,12 @@ func _draw_dock() -> void:
 		_text(Vector2(923,y+26),values[i],13,MUTED)
 		for j in range(3):
 			draw_rect(Rect2(923+j*24,y+37,18,3),MINT if j < levels[i] else Color("34535b"))
-	_text(Vector2(906,811),"3D OCEAN EXPLORATION  /  PROTOTYPE 01",13,MUTED,true)
+	region(BOTTOM_RIGHT)
+	_text(Vector2(906,811),"OCEAN EXPLORATION",13,MUTED,true)
+	_dock_left_region(BOTTOM_LEFT)
 	_text(Vector2(65,886),"WASD 移动 · 鼠标转向 · Q / E 下潜上浮",13,MUTED)
 	# A discreet vista locator.
+	region(CENTER_RIGHT)
 	draw_arc(Vector2(1032,247),38,0,TAU,60,Color(MINT,0.45),1.0,true)
 	draw_circle(Vector2(1032,247),4,MINT)
 	draw_line(Vector2(1070,247),Vector2(1134,247),Color(MINT,0.45),1)
@@ -231,9 +326,10 @@ func _draw_dock() -> void:
 	_text(Vector2(1144,277),"REEF 01",12,MINT,true)
 
 func _draw_hud() -> void:
+	region(CENTER)
 	if game.entry_active:
 		var immersion: float = 1.0 - smoothstep(-1.5, 0.6, game.camera.position.y)
-		draw_rect(Rect2(0,0,1440,900), Color(0.02,0.28,0.34,immersion * 0.12))
+		screen_overlay(Color(0.02,0.28,0.34,immersion * 0.12))
 		_center(Vector2(720,710), ("跃入%s" % game.Ocean.DIVE_SITES[game.entry_site_index].name) if not game.entry_splashed else "沉入蔚蓝", 28, LIGHT)
 		if game.entry_splashed:
 			for i in range(16):
@@ -241,6 +337,7 @@ func _draw_hud() -> void:
 				var pos := Vector2(180 + fposmod(float(i) * 173,1080), 900 - fposmod(age * (170 + i * 9) + i * 83, 1000))
 				draw_arc(pos, 4 + i % 5 * 2, 0, TAU, 20, Color(0.7,0.94,0.95,0.22 * maxf(0, 1.0 - age / 2.0)), 1.5, true)
 		return
+	region(TOP_LEFT)
 	_panel(Rect2(30,28,345,116))
 	_text(Vector2(52,59),"TIDE DIVER",19,LIGHT,true)
 	_text(Vector2(230,57),"潮间潜客",15,MUTED)
@@ -252,6 +349,7 @@ func _draw_hud() -> void:
 	_text(Vector2(316,88),str(int(game.oxygen)),17,oxygen_color,true)
 	_text(Vector2(52,123),"气瓶量",13,MUTED)
 	_text(Vector2(214,123),"DAY %02d  ·  潮汐湾" % game.progress.day,13,MUTED)
+	region(TOP_RIGHT)
 	_panel(Rect2(1135,28,275,116))
 	_text(Vector2(1157,60),"深度",14,MUTED)
 	_text(Vector2(1220,66),"%04.1f" % -game.player.position.y,36,LIGHT,true)
@@ -259,6 +357,7 @@ func _draw_hud() -> void:
 	_text(Vector2(1157,105),"载重 %02d / %02d kg" % [game.weight(),game.progress.capacity()],16,LIGHT)
 	_text(Vector2(1157,130),"收获价值  %d G" % game.cargo_value(),14,GOLD)
 	# Compass and heading markers.
+	region(TOP_CENTER)
 	var heading: float = fposmod(-rad_to_deg(game.yaw),360)
 	_text(Vector2(644,48),"N   ·   %03d°   ·   S" % int(heading),17,MINT,true)
 	draw_line(Vector2(720,61),Vector2(720,72),GOLD,2)
@@ -269,6 +368,7 @@ func _draw_hud() -> void:
 		_center(Vector2(720,137),"前方洋流增强 · 请转向海域内部",18,GOLD)
 	_draw_ocean_map()
 	# Center reticle turns gold when a fish is in range.
+	region(CENTER)
 	var target: Dictionary = game.target_fish()
 	var reticle: Color = GOLD if not target.is_empty() else Color(0.88,1,0.94,0.7)
 	var center = Vector2(720,450)
@@ -300,25 +400,35 @@ func _draw_hud() -> void:
 		_panel(Rect2(720-w/2,504,w,42))
 		_center(Vector2(720,532),hint,18,GOLD)
 	if fraction < 0.25:
-		_center(Vector2(720,174),"气瓶量不足 · 按住 E 上浮至 3 米内，F 返航",21,Color("ffb190"))
+		region(TOP_CENTER)
+		_panel(Rect2(350,154,740,78),Color(0.27,0.10,0.08,0.96),Color("ef9e72"))
+		_center(Vector2(720,185),"氧气不足 · 剩余 %d%%" % maxi(0,ceili(fraction*100)),25,Color("ffb190"))
+		_center(Vector2(720,216),"立即按住 E 上浮，抵达 3 米内按 F 返航；耗尽将触发救援折价结算。",17,LIGHT)
 	if game.hunt_warning_timer > 0:
-		_panel(Rect2(370,193,700,42),Color(0.24,0.08,0.10,0.92))
-		_center(Vector2(720,220),game.hunt_warning,18,Color("ffb190"))
+		region(TOP_CENTER)
+		_panel(Rect2(370,244,700,42),Color(0.24,0.08,0.10,0.92))
+		_center(Vector2(720,271),game.hunt_warning,18,Color("ffb190"))
 	if game.poison_timer > 0:
-		_center(Vector2(720,265),"中毒 %.1f 秒 · 每秒额外消耗 1.5 气瓶量" % game.poison_timer,17,Color("d5c0f2"))
+		region(TOP_CENTER)
+		_center(Vector2(720,316),"中毒 %.1f 秒 · 每秒额外消耗 1.5 气瓶量" % game.poison_timer,17,Color("d5c0f2"))
+	region(BOTTOM_LEFT)
 	_panel(Rect2(30,685,236,104),Color(0.025,0.12,0.16,0.78))
 	_text(Vector2(48,712),"探索目标",13,MINT)
 	_text(Vector2(48,743),"寻找沉船与月光珍珠",17,LIGHT)
 	_text(Vector2(48,771),"任意海面均可呼叫接驳船",13,MUTED)
 	_draw_depth_gauge()
+	region(BOTTOM_CENTER)
 	_panel(Rect2(290,768,1035,43),Color(0.025,0.12,0.16,0.85))
 	_text(Vector2(308,794),"WASD 游泳   Q / E 潜浮   Shift 冲刺   Ctrl 慢游   左键 / 空格 鱼叉 · 20m   F 互动   Esc 暂停",15,MUTED)
+	region(BOTTOM_LEFT)
 	_text(Vector2(42,882),"M  音效开关   ·   F1  GM 自选潜点",12,MUTED)
+	region(BOTTOM_RIGHT)
 	_text(Vector2(1200,882),"TIDAL BAY / 01",13,MUTED,true)
 	if game.hurt_cooldown > 1.8:
-		draw_rect(Rect2(0,0,1440,900),Color(0.85,0.2,0.2,0.08))
+		screen_overlay(Color(0.85,0.2,0.2,0.08))
 
 func _draw_depth_gauge() -> void:
+	region(CENTER_RIGHT)
 	var x: float = 1360
 	draw_line(Vector2(x,264),Vector2(x,604),Color(MUTED,0.35),2)
 	for i in range(6):
@@ -336,6 +446,7 @@ func _draw_depth_gauge() -> void:
 
 
 func _draw_ocean_map() -> void:
+	region(TOP_LEFT)
 	var rect := Rect2(30,170,220,230)
 	_panel(rect,Color(0.025,0.12,0.16,0.84))
 	_text(rect.position+Vector2(14,25),"海域导航  ·  N ↑",14,MINT)

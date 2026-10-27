@@ -64,6 +64,9 @@ var hunt_warning_timer: float = 0.0
 var notice: String = "潮汐湾的第一束晨光，正在等你。"
 var notice_timer: float = 8.0
 var last_result: Dictionary = {}
+var rescue_result_visible := false
+var harvest_result_visible := false
+var rescue_time := 0.0
 var rng = RandomNumberGenerator.new()
 var capture_mode: bool = false
 var capture_clock: float = 0.0
@@ -599,6 +602,9 @@ func confirm_new_game() -> void:
 	cargo.clear()
 	orders.clear()
 	last_result.clear()
+	rescue_result_visible = false
+	harvest_result_visible = false
+	rescue_time = 0.0
 	service_summary.clear()
 	service_feedback.clear()
 	service_reviews = {"satisfied":0,"okay":0,"lost":0}
@@ -666,10 +672,11 @@ func confirm_new_game() -> void:
 	hud.rebuild()
 
 func start_dive(animate_entry: bool = true, random_entry: bool = true, site_override: int = -1) -> void:
-	if new_game_confirmation or gm_menu_open or state != "dock":
+	if new_game_confirmation or gm_menu_open or rescue_result_visible or state != "dock":
 		return
 	if site_override < -1 or site_override >= Ocean.DIVE_SITES.size():
 		return
+	harvest_result_visible = false
 	gm_test_active = false
 	_clear_projectiles()
 	restaurant_node.visible = false
@@ -710,7 +717,7 @@ func start_dive(animate_entry: bool = true, random_entry: bool = true, site_over
 	_play_tone(480, 0.18)
 
 func open_gm_menu() -> void:
-	if gm_menu_open or new_game_confirmation or layout_mode or state not in ["dock","dive","paused"]:
+	if gm_menu_open or new_game_confirmation or rescue_result_visible or layout_mode or state not in ["dock","dive","paused"]:
 		return
 	gm_return_state = state
 	gm_menu_open = true
@@ -819,6 +826,7 @@ func _gm_test_pose(index: int) -> Dictionary:
 func finish_dive(rescued: bool = false) -> void:
 	if state != "dive":
 		return
+	var depleted: bool = rescued and oxygen <= 0.0
 	gm_test_active = false
 	drift_current = Vector3.ZERO
 	current_hint = ""
@@ -826,17 +834,33 @@ func finish_dive(rescued: bool = false) -> void:
 	camera.fov = 66
 	_clear_projectiles()
 	last_result = progress.complete_dive(cargo, rescued, depth_record)
+	last_result["depleted"] = depleted
+	rescue_result_visible = rescued
 	environment.fog_light_color = Color("136675")
 	environment.background_color = Color("126879")
 	cargo.clear()
-	state = "dock"
+	state = "rescuing" if depleted else "dock"
+	rescue_time = 2.8 if depleted else 0.0
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	if rescued:
 		tell("救援艇已接你返航。货物按 35% 价值结算，升级潜水气瓶后再试一次。", 14)
 	else:
-		tell("收获 %d 件，已存入仓库。去餐厅售卖筹资，或留下鱼做菜。" % last_result.count, 12)
+		tell("收获 %d 件，已存入仓库。去餐厅售卖筹资，或留下鱼做菜。" % last_result.count, 5)
+		harvest_result_visible = true
 	hud.rebuild()
 	_play_tone(660,0.28)
+
+func dismiss_rescue_result() -> void:
+	if state != "dock" or not rescue_result_visible:
+		return
+	rescue_result_visible = false
+	hud.rebuild()
+
+func _update_rescue(delta: float) -> void:
+	rescue_time = maxf(0.0, rescue_time - delta)
+	if rescue_time <= 0.0:
+		state = "dock"
+		hud.rebuild()
 
 func upgrade(kind: String) -> void:
 	if progress.buy_upgrade(kind):
@@ -880,6 +904,12 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 func _unhandled_input(event: InputEvent) -> void:
+	if state == "rescuing":
+		return
+	if rescue_result_visible:
+		if event is InputEventKey and event.pressed and not event.echo and event.physical_keycode in [KEY_ENTER, KEY_SPACE]:
+			dismiss_rescue_result()
+		return
 	if new_game_confirmation:
 		if event is InputEventKey and event.pressed and event.physical_keycode == KEY_ESCAPE:
 			cancel_new_game()
@@ -918,9 +948,15 @@ func _unhandled_input(event: InputEvent) -> void:
 		shoot()
 
 func _physics_process(delta: float) -> void:
+	if state == "rescuing":
+		_update_rescue(delta)
+		hud.queue_redraw()
+		return
 	if state not in ["paused","service_paused"]:
 		clock += delta
 		notice_timer = maxf(0, notice_timer-delta)
+		if notice_timer <= 0.0:
+			harvest_result_visible = false
 		_animate_ocean(delta)
 	if state == "dive":
 		if entry_active:
@@ -1151,11 +1187,19 @@ func _update_dive(delta: float) -> void:
 		finish_dive(true)
 
 func _animate_ocean(_delta: float) -> void:
+	# The restaurant hides the entire ocean; do not simulate invisible fish there.
+	if not ocean_root.visible:
+		return
 	canyon_root.animate(clock,player.position)
 	storm_school.animate(clock,player.position)
 	for item in fish:
 		if item.alive:
 			item.previous_position = item.node.position
+			# The dock is a local vista, not a simulation of every distant habitat.
+			if state == "dock":
+				item.node.visible = item.node.position.distance_squared_to(camera.position) < 140.0 * 140.0
+				if not item.node.visible:
+					continue
 			_update_fish(item,_delta)
 	for item in pickups:
 		if item.active:
@@ -1373,6 +1417,7 @@ func context_hint() -> String:
 	return ""
 
 func tell(message: String, seconds: float) -> void:
+	harvest_result_visible = false
 	notice = message
 	notice_timer = seconds
 
@@ -1444,8 +1489,9 @@ func _run_smoke() -> void:
 
 # Shore management and restaurant service.
 func open_restaurant() -> void:
-	if state not in ["dock","restaurant"]:
+	if rescue_result_visible or state not in ["dock","restaurant"]:
 		return
+	harvest_result_visible = false
 	state = "restaurant"
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	player.visible = false
@@ -1753,7 +1799,7 @@ func finish_service() -> void:
 # Transactional furniture layout: only Save commits money and changes to progress.
 func _rebuild_restaurant() -> void:
 	var model = layout_work if layout_mode else progress
-	restaurant_node.rebuild(model.renovation,model.furniture_items(),{"floor":model.floor_style,"wall":model.wall_style})
+	restaurant_node.rebuild(model.renovation,model.furniture_items(),{"floor":model.floor_style,"wall":model.wall_style},layout_mode)
 	if layout_mode:
 		restaurant_node.set_layout_grid(true)
 		restaurant_node.highlight_furniture(layout_selected)
@@ -2036,7 +2082,7 @@ func _update_layout_preview() -> void:
 		return
 	var mouse: Vector2 = get_viewport().get_mouse_position()
 	if not layout_view_rect().has_point(mouse) or not layout_placing:
-		restaurant_node.clear_layout_preview()
+		restaurant_node.hide_layout_preview()
 		return
 	var point: Variant = _layout_point(mouse)
 	if point == null:
@@ -2049,7 +2095,9 @@ func _update_layout_preview() -> void:
 	restaurant_node.set_layout_preview(item.kind,layout_cursor,layout_rotation,item.color,layout_reason.is_empty(),str(item.get("variant","basic")))
 
 func layout_view_rect() -> Rect2:
-	return LAYOUT_AREA if layout_panel_visible else Rect2(8,96,1424,708)
+	var view_size := get_viewport().get_visible_rect().size
+	var left: float = LAYOUT_AREA.position.x if layout_panel_visible else 8.0
+	return Rect2(left,96,view_size.x-left-8,view_size.y-192)
 
 func toggle_layout_panel() -> void:
 	if not layout_mode:

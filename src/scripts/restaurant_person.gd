@@ -381,7 +381,7 @@ func _update_feedback() -> void:
 		elif state == "ready":
 			_feedback("出锅啦！\n%d 份料理等上桌" % ready_count, mint)
 		else:
-			_feedback("潮间厨房\n备料就绪" if int(get_meta("waiting_orders", 0)) == 0 else "收到新订单\n等你安排制作", cream)
+			_feedback("潮间厨房\n欢迎光临" if int(get_meta("waiting_orders", 0)) == 0 else "收到新订单\n等你安排制作", cream)
 		return
 	var mood: String = str(_live_feedback.get("mood", "satisfied"))
 	var short_text: String = "等得好久…" if mood == "lost" else ("有点饿啦" if mood == "okay" else ("请帮我上菜" if state == "ready" else ("好香，期待" if state == "cooking" else "期待鲜鱼")))

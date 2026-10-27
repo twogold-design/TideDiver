@@ -4,7 +4,9 @@ const P = preload("res://scripts/progression.gd")
 const Rules = preload("res://scripts/layout_rules.gd")
 const Art = preload("res://scripts/furniture_art.gd")
 const TEST_PATH := "res://tests/temp/furniture_catalog_v4.json"
+const SUMMER := {"table":["果色海风餐桌",190],"plant":["彩陶三角梅",80],"rug":["柑橘编织圆毯",105],"lamp":["夏夜彩灯笼",125],"shelf":["柠檬饮品推车",175],"bench":["贝壳靠背长椅",150],"parasol":["果色拼瓣遮阳伞",185],"coastal":["夏日冲浪板架",95]}
 const EXPECTED := {
+	"soft":[["海风三角彩旗",65],["贝壳风铃挂帘",95],["藤编灯笼串",195]],
 	"table":[["旧木双人桌",70],["浅蓝藤椅圆桌",160],["柚木条纹餐桌",320]],
 	"plant":[["陶盆海岸绿植",25],["木箱组合花草",65],["陶缸棕榈",130]],
 	"rug":[["椰纤迎宾垫",30],["条纹户外地毯",90],["沙色海蓝地毯",180]],
@@ -22,6 +24,9 @@ func _init() -> void:
 	_test_legacy_and_invalid_variants()
 	_test_disk_roundtrip()
 	_test_model_bounds()
+	_test_cloth_batching()
+	_test_parasol_bases()
+	_test_cached_models()
 	print("%s: Tide Diver furniture catalog (%d checks)." % ["PASS" if failures == 0 else "FAIL", checks])
 	quit(0 if failures == 0 else 1)
 func _check(condition: bool, description: String) -> void:
@@ -39,19 +44,76 @@ func _mesh_bounds(node: Node3D, transform: Transform3D, result: Array) -> void:
 		if child is Node3D:
 			_mesh_bounds(child, local, result)
 
+func _test_cloth_batching() -> void:
+	var model := Node3D.new()
+	var material: Material = Art._mat(Color("72cbb9"))
+	Art._box(model,Vector3.ZERO,Vector3.ONE,material)
+	Art._quad(model,[Vector3(-1,2,-1),Vector3(1,2,-1),Vector3(1,2,1),Vector3(-1,2,1)],material)
+	var expected_indices: int = 0
+	for mesh: MeshInstance3D in model.get_children():
+		var arrays: Array = mesh.mesh.surface_get_arrays(0)
+		expected_indices += arrays[Mesh.ARRAY_INDEX].size() if arrays[Mesh.ARRAY_INDEX] != null else arrays[Mesh.ARRAY_VERTEX].size()
+	Art._merge_geometry(model)
+	var merged: MeshInstance3D = model.get_child(0)
+	_check(merged.mesh.surface_get_arrays(0)[Mesh.ARRAY_INDEX].size() == expected_indices,"Cloth roof faces survive batching with solid furniture of the same material")
+	model.free()
+
 func _test_model_bounds() -> void:
 	# Replacing assets must not silently overlap neighbors in existing saved layouts.
 	for kind: String in EXPECTED:
-		for variant: String in ["basic", "comfort", "premium"]:
+		for variant: String in Rules.variant_ids(kind):
 			var model: Node3D = Art.build({"uid":100, "kind":kind, "variant":variant, "color":0})
 			var bounds: Array = []
 			_mesh_bounds(model, Transform3D.IDENTITY, bounds)
 			var valid: bool = not bounds.is_empty()
-			var size: Vector2 = Rules.footprint(kind, 0)
+			var size: Vector2 = Rules.CATALOG[kind].size
 			for box: AABB in bounds:
 				valid = valid and box.position.x >= -size.x * 0.5 - 0.001 and box.end.x <= size.x * 0.5 + 0.001 and box.position.z >= -size.y * 0.5 - 0.001 and box.end.z <= size.y * 0.5 + 0.001
-			_check(valid, "Actual harbor model stays within its saved placement footprint: " + kind + "/" + variant)
+			_check(valid, "Actual model stays within its visual catalog size: " + kind + "/" + variant)
+			if kind == "rug":
+				var above_deck: bool = true
+				for box: AABB in bounds:
+					above_deck = above_deck and box.position.y > 0.045
+				_check(above_deck,"Rug body, pattern and fringe remain above the deck: " + variant)
 			model.free()
+func _test_cached_models() -> void:
+	var a: Node3D = Art.build({"uid":901,"kind":"soft","variant":"premium","color":2})
+	var b: Node3D = Art.build({"uid":902,"kind":"soft","variant":"premium","color":2})
+	var part_a: MeshInstance3D = a.get_child(0)
+	var part_b: MeshInstance3D = b.get_child(0)
+	_check(a != b and a.get_meta("uid") == 901 and b.get_meta("uid") == 902,"Cached instances keep independent furniture identities")
+	_check(part_a.mesh == part_b.mesh,"Repeated furniture reuses generated geometry")
+	var original: Material = part_b.material_override
+	part_a.material_override = StandardMaterial3D.new()
+	_check(part_b.material_override == original,"Ghost material replacement does not alter another cached furniture instance")
+	_check(Art._model_cache.size() <= Art.MODEL_CACHE_LIMIT,"Furniture cache remains bounded")
+	a.free()
+	b.free()
+
+func _test_parasol_bases() -> void:
+	for variant in ["basic","comfort","summer"]:
+		var p = _new()
+		p.coins = 10000
+		var table: int = p.buy_furniture("table")
+		var umbrella: int = p.buy_furniture("parasol",variant)
+		_check(p.place_furniture(table,-3.5,0.5,0),"Place table for canopy-overhang fixture")
+		for rotation in range(4):
+			_check(p.place_furniture(umbrella,-1.5,0.5,rotation),"Umbrella canopy can cover adjacent table at every rotation: " + variant)
+		_check(not p.place_furniture(umbrella,-2.0,0.5,0),"Umbrella base still cannot intersect a table: " + variant)
+		_check(not p.place_furniture(table,-2.5,0.5,0),"Moving a table into an existing umbrella base is also rejected: " + variant)
+		var restored = _new()
+		restored._apply_save_data(p._save_data())
+		_check(restored.furniture_by_uid(umbrella).placed and restored.furniture_by_uid(table).placed,"Loading keeps both table and overlapping canopy placed: " + variant)
+		_check(p.place_furniture(umbrella,9.5,8.5,0),"Canopy may extend beyond the deck when the base fits: " + variant)
+		_check(not p.place_furniture(umbrella,10.0,9.0,0),"Base must stay inside the deck: " + variant)
+	var p = _new()
+	p.coins = 10000
+	var table: int = p.buy_furniture("table")
+	var pergola: int = p.buy_furniture("parasol","premium")
+	p.place_furniture(table,-3.5,0.5,0)
+	_check(not p.place_furniture(pergola,-1.5,0.5,0),"Four-post pergola retains its full supporting footprint")
+	_check(Rules.bounds({"kind":"parasol","variant":"summer","rotation":1,"x":0,"z":0}).size == Vector2.ONE,"Summer umbrella bounds use its wider base")
+
 func _new() -> RefCounted:
 	var p = P.new()
 	p.persistence_enabled = false
@@ -59,11 +121,12 @@ func _new() -> RefCounted:
 	return p
 func _test_prices_and_purchase() -> void:
 	for kind in EXPECTED:
-		_check(Rules.variant_ids(kind) == ["basic","comfort","premium"], "Each furniture category exposes all three tiers: " + kind)
-		for index in range(3):
-			var variant: String = ["basic","comfort","premium"][index]
-			var name: String = EXPECTED[kind][index][0]
-			var price: int = EXPECTED[kind][index][1]
+		_check(Rules.variant_ids(kind) == ["basic","comfort","premium","summer"], "Each category retains classic tiers and adds a summer model: " + kind)
+		for index in range(4):
+			var variant: String = Rules.variant_ids(kind)[index]
+			var expected: Array = (["糖果球泡彩灯",135] if kind == "soft" else SUMMER[kind]) if variant == "summer" else EXPECTED[kind][index]
+			var name: String = expected[0]
+			var price: int = expected[1]
 			var data: Dictionary = Rules.variant_data(kind,variant)
 			_check(data.name == name and data.cost == price and not data.description.is_empty(), "Specified name/price/description: " + kind + "/" + variant)
 			var p = _new()
@@ -89,10 +152,11 @@ func _test_expanded_geometry() -> void:
 	_check(p.place_furniture(table,9.0,7.5,0), "Premium table fits new far-right/back edge outside old room")
 	_check(p.place_furniture(table,-9.0,7.5,0), "Premium table fits new far-left/back edge")
 	_check(not p.place_furniture(table,100.0,7.5,0) and not p.place_furniture(table,9.5,7.5,0), "Distant and footprint-overflow positions remain invalid")
-	_check(not p.place_furniture(table,0.0,4.0,0), "Central aisle remains protected for solids")
+	_check(p.place_furniture(table,0.0,4.0,0), "Central entrance area permits solid furniture")
+	p.store_furniture(table)
 	var plant: int = p.buy_furniture("plant","comfort")
-	_check(p.place_furniture(plant,1.0,4.0,0), "Plant touching new 0.6-meter half-aisle is valid")
-	_check(not p.place_furniture(plant,0.5,4.0,0), "Plant encroaching new aisle remains invalid")
+	_check(p.place_furniture(plant,1.0,4.0,0), "Plant beside the center line is valid")
+	_check(p.place_furniture(plant,0.5,4.0,0) and p.place_furniture(plant,0.0,4.0,0), "Plant can cross and occupy the center line")
 	var rug: int = p.buy_furniture("rug","premium")
 	_check(p.place_furniture(rug,0.0,7.5,0), "Rug can cross aisle in expanded rear area")
 	_check(Rules.footprint("table",0) == Vector2(2.5,3.8) and Rules.footprint("table",1) == Vector2(3.8,2.5), "All table tiers retain standard and rotated footprints")
@@ -131,18 +195,20 @@ func _clear_fixture() -> void:
 func _test_disk_roundtrip() -> void:
 	_clear_fixture()
 	var p = _new()
-	p.coins = 5000
+	p.coins = 10000
 	p.save_path = TEST_PATH
 	p.persistence_enabled = true
 	var identities: Dictionary = {}
+	var lamp_uid: int = -1
 	for kind in EXPECTED:
-		for variant in ["basic","comfort","premium"]:
+		for variant in Rules.variant_ids(kind):
 			var uid: int = p.buy_furniture(kind,variant)
 			identities[uid] = {"kind":kind,"variant":variant}
-	var lamp_uid: int = 111
+			if kind == "lamp" and variant == "summer":
+				lamp_uid = uid
 	_check(p.furniture_by_uid(lamp_uid).kind == "lamp" and p.place_furniture(lamp_uid,9.0,8.5,1), "Roundtrip fixture includes furniture in expanded room")
 	var saved: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(TEST_PATH))
-	_check(saved.version == 4 and saved.furnishings.size() == 24, "V4 writes all twenty-four purchased variants")
+	_check(saved.version == 4 and saved.furnishings.size() == 36, "V4 writes all thirty-six purchased variants without a save migration")
 	var loaded = P.new()
 	loaded.save_path = TEST_PATH
 	loaded.load_game()

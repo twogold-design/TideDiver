@@ -79,7 +79,7 @@ func _test_purchase_and_styles() -> void:
 	_check(full.furniture_by_uid(1).color == 2 and full.floor_style == 1, "Resetting layout preserves chosen colors and room style")
 func _test_geometry() -> void:
 	var p = _new(true)
-	_check(not p.placement_reason(1,0,0,0).is_empty(), "Solid table cannot obstruct central entrance aisle")
+	_check(p.place_furniture(1,0,0,0), "Solid table can be placed in the central entrance area")
 	_check(not p.place_furniture(1,-10.0,0,0), "Footprint exceeding room edge is rejected")
 	_check(not p.place_furniture(1,3.5,-0.5,0), "Solid furniture cannot overlap another solid")
 	_check(p.place_furniture(1,-3.5,-0.5,1) and p.furniture_by_uid(1).rotation == 1, "Quarter-turn rotation swaps rectangular footprint")
@@ -125,7 +125,7 @@ func _test_sanitization_and_migration() -> void:
 	]
 	p._apply_save_data({"version":3,"renovation":flags,"furnishings":raw,"floor_style":99,"wall_style":-2,"next_furniture_uid":100})
 	_check(not p.furniture_by_uid(1).placed and p.furniture_by_uid(1).color == 2, "V3 loading preserves deliberately stored gift and its color")
-	_check(not p.furniture_by_uid(2).placed and not p.furniture_by_uid(101).placed, "Invalid aisle and overlapping placements become stored items")
+	_check(p.furniture_by_uid(2).placed and not p.furniture_by_uid(101).placed, "Loading preserves central furniture while still storing overlapping items")
 	_check(not p.furniture_by_uid(102).placed and is_finite(p.furniture_by_uid(102).x) and not p.furniture_by_uid(103).placed, "Huge/nonfinite positions are sanitized into safe storage")
 	_check(p.furniture_by_uid(104).is_empty() and p.furniture_by_uid(9).is_empty() and p.furniture_items().size() == 12, "Unknown kinds, reserved IDs and duplicate IDs are discarded")
 	_check(p.floor_style == 2 and p.wall_style == 0 and p.next_furniture_uid >= 104, "Styles are bounded and next UID cannot collide")
@@ -228,14 +228,14 @@ func _test_disk_roundtrip() -> void:
 	p.set_room_style("wall",2)
 	p.coins = 100
 	var uid: int = p.buy_furniture("lamp")
-	p.place_furniture(uid,-5.5,4.5,0)
+	p.place_furniture(uid,0.0,4.5,0)
 	var saved: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(TEST_PATH))
 	_check(saved.version == 4 and FileAccess.file_exists(TEST_PATH + ".bak"), "V4 layout data uses existing atomic-save and backup mechanism")
 	var restored = P.new()
 	restored.save_path = TEST_PATH
 	restored.load_game()
 	_check(restored.seats() == 3 and not restored.furniture_by_uid(1).placed and restored.furniture_by_uid(2).color == 2, "Disk restart preserves stored gifts and colors")
-	_check(restored.floor_style == 1 and restored.wall_style == 2 and restored.furniture_by_uid(uid).placed and restored.coins == 60, "Disk restart preserves purchased furniture, placement, styles and purchase cost")
+	_check(restored.floor_style == 1 and restored.wall_style == 2 and restored.furniture_by_uid(uid).placed and restored.furniture_by_uid(uid).x == 0.0 and restored.coins == 60, "Disk restart preserves central furniture placement, styles and purchase cost")
 	_check(restored.next_furniture_uid > uid and restored.furniture_items().size() == 9, "Disk restart retains unique purchase identity without duplicating gifts")
 	_clear_fixture()
 

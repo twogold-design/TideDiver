@@ -147,12 +147,23 @@ func _test_rescue() -> void:
 	game.player.position = Vector3(200, -26, 200)
 	game.oxygen = 0.01
 	game._update_dive(1.0)
-	_check(game.state == "dock" and game.last_result.rescued, "Empty oxygen triggers rescue to dock")
+	_check(game.state == "rescuing" and game.last_result.rescued, "Empty oxygen starts a visible rescue transition")
 	_check(game.last_result.earned == 63 and memory.coins == 63, "Rescue settles exactly 35 percent")
 	_check(game.cargo.is_empty() and memory.day == 2 and memory.saves == 1, "Rescue clears cargo, advances day, and persists once")
 	_check(memory.best_depth == 26.0 and memory.total_fish == 10, "Rescue records depth and fish statistics")
 	game.finish_dive(true)
 	_check(memory.day == 2 and memory.coins == 63 and memory.saves == 1, "Duplicate settlement is ignored")
+	var rescue_position: Vector3 = game.player.position
+	game._physics_process(1.0)
+	_check(game.state == "rescuing" and game.player.position == rescue_position, "Rescue transition holds the underwater view without more simulation")
+	game._physics_process(2.0)
+	_check(game.state == "dock" and game.rescue_result_visible and game.hud.buttons.size() == 1, "Dock keeps the rescue summary until acknowledged")
+	game.start_dive(false, false)
+	_check(game.state == "dock", "Rescue summary blocks an accidental new dive")
+	game._physics_process(20.0)
+	_check(game.rescue_result_visible and memory.saves == 1, "Return summary does not disappear with the old toast timer or settle twice")
+	_key(KEY_ENTER)
+	_check(not game.rescue_result_visible and game.hud.buttons.size() == 8, "Acknowledging restores normal dock controls")
 
 func _test_return_and_upgrade() -> void:
 	game.start_dive(false, false)
@@ -164,6 +175,12 @@ func _test_return_and_upgrade() -> void:
 	_key(KEY_F)
 	_check(game.state == "dock" and not game.last_result.rescued, "Surface F returns safely")
 	_check(game.last_result.earned == 0 and memory.coins == 63 and memory.inventory.chest == 1 and memory.day == 3, "Safe return stores cargo without automatically selling it")
+	_check(game.harvest_result_visible and game.hud.buttons.size() == 8, "Safe return shows a harvest notification while retaining all dock controls")
+	var saves_before: int = memory.saves
+	game._physics_process(3.0)
+	_check(game.harvest_result_visible and game.state == "dock", "Harvest notification is readable while already back at the dock")
+	game._physics_process(3.0)
+	_check(not game.harvest_result_visible and game.state == "dock" and memory.saves == saves_before, "Harvest notification expires without confirmation, navigation, or duplicate settlement")
 	game.open_restaurant()
 	game.sell_goods("chest", 1)
 	_check(memory.coins == 153 and memory.inventory.chest == 0, "Warehouse sale funds diving equipment")
@@ -190,6 +207,8 @@ func _test_restart() -> void:
 	_key(KEY_ESCAPE)
 	game.hud._rescue()
 	_check(game.state == "dock" and game.last_result.rescued and memory.day == 4, "Pause-menu rescue ends dive")
+	_check(game.rescue_result_visible and not game.last_result.depleted, "Manual rescue explains the return without claiming empty oxygen")
+	game.dismiss_rescue_result()
 
 
 func _test_3d_controls_and_geometry() -> void:

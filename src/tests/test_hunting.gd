@@ -143,9 +143,13 @@ func _test_warehouse_pagination() -> void:
 		ui.rebuild()
 		for id in ui._warehouse_ids():
 			seen[id] = true
+		var page_top := INF
+		for button in ui.buttons:
+			if button.text == "上一页":
+				page_top = button.position.y
 		for button in ui.buttons:
 			if button.text in ["卖 1 件","全卖"]:
-				rows_fit = rows_fit and button.position.y + button.size.y < 625
+				rows_fit = rows_fit and is_finite(page_top) and button.position.y + button.size.y < page_top
 	_check(seen.size() == P.GOODS.size() and rows_fit, "Every warehouse good is reachable and sale rows fit above page controls")
 	game.return_to_dock()
 

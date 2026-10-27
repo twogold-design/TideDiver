@@ -1,4 +1,4 @@
-extends Node2D
+extends "res://scripts/responsive_ui.gd"
 const Rules = preload("res://scripts/layout_rules.gd")
 const Furniture = preload("res://scripts/furniture_art.gd")
 const CREAM = Color("f6ead4")
@@ -10,12 +10,18 @@ var font: Font
 var controls: Array[Control] = []
 var category: String = "rug"
 var page: String = "shop"
+var button_anchor := TOP_LEFT
+var _preview_views: Dictionary = {}
+var _last_reason: String = ""
+const PREVIEW_CACHE_LIMIT := 8
 
 func _ready() -> void:
+	super._ready()
 	font = preload("res://assets/fonts/ui_font.tres")
 
 func _process(_delta: float) -> void:
-	if visible:
+	if visible and _last_reason != game.layout_reason:
+		_last_reason = game.layout_reason
 		queue_redraw()
 
 func _style(color: Color, border: Color = Color(0.7,0.85,0.8,0.15)) -> StyleBoxFlat:
@@ -29,8 +35,7 @@ func _style(color: Color, border: Color = Color(0.7,0.85,0.8,0.15)) -> StyleBoxF
 func _button(label: String, rect: Rect2, action: Callable, primary: bool = false, disabled: bool = false) -> void:
 	var b = Button.new()
 	b.text = label
-	b.position = rect.position
-	b.size = rect.size
+	place_control(b, rect, button_anchor)
 	b.disabled = disabled
 	b.focus_mode = Control.FOCUS_NONE
 	b.add_theme_font_override("font",font)
@@ -44,12 +49,26 @@ func _button(label: String, rect: Rect2, action: Callable, primary: bool = false
 	b.add_theme_stylebox_override("disabled",_style(Color("1d353d")))
 	b.pressed.connect(action)
 	add_child(b)
+	native_button_label(b,font,15,Color("14343a") if primary else CREAM,Color("14343a") if primary else Color.WHITE,Color("778e94"))
 	controls.append(b)
 
 func _preview(rect: Rect2, kind: String, variant: String) -> void:
+	var key: String = kind+"/"+variant
+	if _preview_views.has(key):
+		var cached: TextureRect = _preview_views[key]
+		_preview_views.erase(key)
+		_preview_views[key] = cached
+		place_control(cached,rect,TOP_LEFT)
+		cached.visible = true
+		return
+	if _preview_views.size() >= PREVIEW_CACHE_LIMIT:
+		var oldest: String = _preview_views.keys()[0]
+		var old_view: TextureRect = _preview_views[oldest]
+		remove_child(old_view)
+		old_view.queue_free()
+		_preview_views.erase(oldest)
 	var display = TextureRect.new()
-	display.position = rect.position
-	display.size = rect.size
+	place_control(display, rect, TOP_LEFT)
 	display.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	display.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	var viewport = SubViewport.new()
@@ -76,14 +95,14 @@ func _preview(rect: Rect2, kind: String, variant: String) -> void:
 	scene.add_child(light)
 	var view = Camera3D.new()
 	view.projection = Camera3D.PROJECTION_ORTHOGONAL
-	view.size = 4.4 if kind in ["table","rug","parasol"] else (3.4 if kind == "bench" else 2.8)
+	view.size = 4.4 if kind in ["table","rug","parasol","soft"] else (3.4 if kind == "bench" else 2.8)
 	view.position = Vector3(4,5,6) if kind == "rug" else Vector3(4,3,6)
 	scene.add_child(view)
-	view.look_at_from_position(view.position,Vector3(0,0.15 if kind == "rug" else 0.85,0))
+	view.look_at_from_position(view.position,Vector3(0,0.15 if kind == "rug" else (1.5 if kind == "soft" else 0.85),0))
 	view.current = true
 	display.texture = viewport.get_texture()
 	add_child(display)
-	controls.append(display)
+	_preview_views[key] = display
 
 func set_page(value: String) -> void:
 	page = value
@@ -93,7 +112,14 @@ func set_category(value: String) -> void:
 	category = value
 	rebuild()
 
+func shop_variants() -> Array:
+	var variants: Array = Rules.variant_ids(category)
+	variants.sort_custom(func(a, b): return int(Rules.variant_data(category,a).cost) < int(Rules.variant_data(category,b).cost))
+	return variants
+
 func rebuild() -> void:
+	for display: TextureRect in _preview_views.values():
+		display.visible = false
 	for c in controls:
 		remove_child(c)
 		c.queue_free()
@@ -101,14 +127,18 @@ func rebuild() -> void:
 	visible = game.layout_mode
 	if not visible:
 		return
+	button_anchor = TOP_CENTER
 	_button("展开家具栏  Tab" if not game.layout_panel_visible else "收起家具栏  Tab",Rect2(368,24,162,45),game.toggle_layout_panel)
 	_button("视角归中  F",Rect2(542,24,128,45),game.reset_layout_camera)
+	button_anchor = TOP_RIGHT
 	_button("保存布局",Rect2(1050,24,170,45),game.save_layout,true)
 	_button("取消修改",Rect2(1234,24,178,45),game.cancel_layout)
+	button_anchor = BOTTOM_LEFT
 	_button("撤销 Ctrl+Z",Rect2(20,839,142,41),game.undo_layout,false,game.layout_history.is_empty())
 	_button("还原默认摆位",Rect2(174,839,142,41),game.reset_layout_draft)
 	var selected: Dictionary = game.layout_work.furniture_by_uid(game.layout_selected)
 	var empty: bool = selected.is_empty()
+	button_anchor = BOTTOM_RIGHT
 	_button("仅收纳",Rect2(725,839,98,41),game.store_selected_furniture,false,empty or not selected.get("placed",false))
 	_button("移动  G",Rect2(835,839,130,41),game.begin_move_furniture,false,empty)
 	_button("旋转  R",Rect2(978,839,130,41),game.rotate_layout,false,empty)
@@ -117,26 +147,27 @@ func rebuild() -> void:
 	var refund: int = game.layout_work.furniture_refund(game.layout_selected)
 	_button("取消选购" if pending else ("回收 +%d G" % refund if not empty else "半价回收"),Rect2(1264,839,148,41),game.recycle_selected_furniture,false,empty)
 	if game.layout_panel_visible:
+		button_anchor = TOP_LEFT
 		_button("家具商店",Rect2(20,110,142,40),func(): set_page("shop"),page=="shop")
 		_button("我的家具",Rect2(174,110,142,40),func(): set_page("owned"),page=="owned")
 		if page == "shop":
 			var index: int = 0
 			for kind in Rules.CATALOG:
-				_button(Rules.CATALOG[kind].name,Rect2(20+(index%4)*75,158+int(index/4)*38,71,34),func(): set_category(kind),category==kind)
+				var last_single: bool = index == Rules.CATALOG.size()-1 and index%4 == 0
+				_button(Rules.CATALOG[kind].name,Rect2(20+(index%4)*75,158+int(index/4)*38,296 if last_single else 71,34),func(): set_category(kind),category==kind)
 				index += 1
 			index = 0
-			for variant in Rules.variant_ids(category):
+			for variant in shop_variants():
 				var product: Dictionary = Rules.variant_data(category,variant)
-				var y: float = 240 + index*170
-				_preview(Rect2(26,y+19,120,128),category,variant)
+				var y: float = 278 + index*128
+				_preview(Rect2(26,y+8,108,116),category,variant)
 				var available: int = game.layout_work.coins + int(game.layout_pending_purchase.get("cost",0))
-				_button("%d G · 选购" % int(product.cost),Rect2(153,y+112,150,38),func(): game.buy_layout_furniture(category,variant),false,available < int(product.cost))
+				_button("%d G · 选购" % int(product.cost),Rect2(153,y+94,150,28),func(): game.buy_layout_furniture(category,variant),false,available < int(product.cost))
 				index += 1
 		else:
 			var owned = ItemList.new()
 			owned.name = "OwnedFurnitureList"
-			owned.position = Vector2(20,190)
-			owned.size = Vector2(296,405)
+			place_control(owned, Rect2(20,190,296,405), TOP_LEFT)
 			owned.add_theme_font_override("font",font)
 			owned.add_theme_font_size_override("font_size",16)
 			owned.add_theme_color_override("font_color",CREAM)
@@ -156,8 +187,10 @@ func rebuild() -> void:
 				if int(item.uid) == game.layout_selected:
 					owned.select(i)
 				i += 1
-			owned.item_selected.connect(func(index: int): game.select_furniture(int(owned.get_item_metadata(index))))
+			# Rebuilding removes this list; let ItemList finish handling the click first.
+			owned.item_selected.connect(func(index: int): game.call_deferred("select_furniture",int(owned.get_item_metadata(index))))
 			add_child(owned)
+			native_item_list(owned,16,14)
 			controls.append(owned)
 			var floors = ["暖木地板","浅砂地板","薄荷木板"]
 			var walls = ["奶油墙面","薄荷墙面","珊瑚墙面"]
@@ -166,7 +199,7 @@ func rebuild() -> void:
 	queue_redraw()
 
 func _text(pos: Vector2, value: String, size: int = 18, color: Color = CREAM) -> void:
-	draw_string(font,pos,value,HORIZONTAL_ALIGNMENT_LEFT,-1,size,color)
+	native_text(font,pos,value,size,color)
 
 func _panel(rect: Rect2, color: Color = Color(0.025,0.12,0.15,0.97)) -> void:
 	draw_style_box(_style(color),rect)
@@ -174,13 +207,16 @@ func _panel(rect: Rect2, color: Color = Color(0.025,0.12,0.15,0.97)) -> void:
 func _draw() -> void:
 	if not visible or font == null:
 		return
-	draw_rect(Rect2(0,0,1440,88),Color("09232d"))
+	region(TOP_LEFT)
+	screen_bar(88,Color("09232d"))
 	_text(Vector2(24,40),"一间有你风格的海岸小店",25)
 	_text(Vector2(26,68),"TIDE TABLE  /  家具与空间",13,MINT)
+	region(TOP_CENTER)
 	_text(Vector2(702,39),"可用 %d G" % game.layout_work.coins,22,GOLD)
 	var cost: int = game.progress.coins-game.layout_work.coins
 	_text(Vector2(702,66),("本次支出 %d G" % cost if cost >= 0 else "本次返还 %d G" % -cost)+" · 保存后生效",14,MUTED)
 	if game.layout_panel_visible:
+		region(TOP_LEFT)
 		_panel(Rect2(8,96,320,704))
 		if page == "shop":
 			var i: int = 0
@@ -194,26 +230,31 @@ func _draw() -> void:
 				"bench":[["风化漂木","渔港长凳"],["浅蓝木靠背","条纹坐垫"],["藤编沙发","配套茶几"]],
 				"parasol":[["浅蓝帆布","木质伞杆"],["双色海蓝伞面","加固伞骨"],["木架卷帘","暖色灯串"]],
 				"coastal":[["手绘鲜鱼","黑板菜单"],["渔获木箱","浮球缆绳"],["木船造型","鲜鱼陈列"]]}
-			for variant in Rules.variant_ids(category):
-				var y: float = 240+i*170
-				_panel(Rect2(20,y,296,164),Color("17363e"))
-				_text(Vector2(153,y+29),Rules.variant_data(category,variant).name,16)
-				_text(Vector2(153,y+53),tiers[i],12,GOLD)
-				_text(Vector2(153,y+76),notes[category][i][0],13,MUTED)
-				_text(Vector2(153,y+96),notes[category][i][1],13,MUTED)
+			for variant in shop_variants():
+				var y: float = 278+i*128
+				var product: Dictionary = Rules.variant_data(category,variant)
+				var tier_index: int = ["basic","comfort","premium"].find(variant)
+				var details: Array = product.notes if product.has("notes") else notes[category][tier_index]
+				_panel(Rect2(20,y,296,126),Color("17363e"))
+				_text(Vector2(153,y+24),product.name,16)
+				_text(Vector2(153,y+44),"三款配色" if variant == "summer" or category == "soft" else tiers[tier_index],12,GOLD)
+				_text(Vector2(153,y+64),details[0],13,MUTED)
+				_text(Vector2(153,y+83),details[1],13,MUTED)
 				i += 1
-			_text(Vector2(24,772),"每款均为独立造型 · 保存后拥有",13,MUTED)
 		else:
 			_text(Vector2(22,177),"点选收纳家具即可重新摆放",14,MUTED)
 			_text(Vector2(22,625),"房间风格 / 免费切换",17,MINT)
 			_text(Vector2(22,779),"回收退50% · 仅收纳则保留家具",13,MUTED)
-	draw_rect(Rect2(0,804,1440,96),Color("09232d"))
+	region(BOTTOM_LEFT)
+	screen_bar(96,Color("09232d"),true)
 	var selected: Dictionary = game.layout_work.furniture_by_uid(game.layout_selected)
 	var hint: String = game.layout_reason
 	if game.layout_placing and hint.is_empty():
 		hint = "绿色可放置 · 左键确认 · 右键 / Esc 取消选购不扣款" if not game.layout_pending_purchase.is_empty() else "绿色可放置 · 左键确认 · 右键 / Esc 取消摆放"
 	_text(Vector2(20,827),hint,15,GOLD)
-	_text(Vector2(340,857),"点选家具开始布置" if selected.is_empty() else Rules.item_name(selected)+"  /  %d°" % (game.layout_rotation*90),18,MINT)
+	region(BOTTOM_CENTER)
+	_text(Vector2(340,857),"点选家具开始布置" if selected.is_empty() else Rules.item_name(selected),18,MINT)
 	_text(Vector2(340,883),"中键平移 · Alt+中键旋转 · 滚轮缩放",13,MUTED)
+	region(BOTTOM_RIGHT)
 	_text(Vector2(1100,784),"营业桌位 %d / %d" % [game.layout_work.seats(),4 if game.layout_work.renovation.expansion else 2],16,Color("183c41"))
 
