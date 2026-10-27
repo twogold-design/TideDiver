@@ -112,6 +112,30 @@ static func _plate(surface: SurfaceTool, center: Vector3, radius: float) -> void
 		_triangle(surface, rim_a, rim_b, inner_b, Color("f6efe2"))
 		_triangle(surface, rim_a, center - Vector3.UP * 0.10, rim_b, Color("929c92"))
 		_tube(surface, inner_a, rim_a, 0.035, 0.035, Color.WHITE)
+	# Small raised corallites break up the otherwise smooth table surface.
+	for index in range(4):
+		var angle: float = float(index) * 2.399
+		var point: Vector3 = center + Vector3(cos(angle) * radius * 0.54, 0.235, sin(angle) * radius * 0.54)
+		_cup(surface, point, 0.065, 0.055, Color("f4edda"), 5)
+
+static func _cup(surface: SurfaceTool, base: Vector3, height: float, radius: float, color: Color, sides: int = 7) -> void:
+	# Open tube, rolled lip and a shaded inner bowl, shared by polyps and sponges.
+	for index in range(sides):
+		var a: float = float(index) * TAU / float(sides)
+		var b: float = float(index + 1) * TAU / float(sides)
+		var da := Vector3(cos(a), 0, sin(a))
+		var db := Vector3(cos(b), 0, sin(b))
+		var lower_a: Vector3 = base + da * radius * 0.72
+		var lower_b: Vector3 = base + db * radius * 0.72
+		var rim_a: Vector3 = base + Vector3.UP * height + da * radius
+		var rim_b: Vector3 = base + Vector3.UP * height + db * radius
+		var inner_a: Vector3 = base + Vector3.UP * height + da * radius * 0.66
+		var inner_b: Vector3 = base + Vector3.UP * height + db * radius * 0.66
+		_triangle(surface, lower_a, rim_a, lower_b, color)
+		_triangle(surface, lower_b, rim_a, rim_b, color)
+		_triangle(surface, rim_a, rim_b, inner_a, color.lightened(0.18))
+		_triangle(surface, rim_b, inner_b, inner_a, color.lightened(0.18))
+		_triangle(surface, inner_a, inner_b, base + Vector3.UP * height * 0.70, color.darkened(0.50))
 
 static func _coral_mesh(form: int) -> ArrayMesh:
 	var surface := SurfaceTool.new()
@@ -125,10 +149,13 @@ static func _coral_mesh(form: int) -> ArrayMesh:
 				var tip := Vector3(cos(angle) * 1.75, 2.7 + float(arm % 2) * 0.55, sin(angle) * 1.75)
 				_tube(surface, Vector3(0, 0.45, 0), elbow, 0.14, 0.10, Color("c8cec2"))
 				_tube(surface, elbow, tip, 0.10, 0.045, Color("eeeeeb"))
+				_cup(surface, tip, 0.085, 0.065, Color("f3e8d4"), 5)
 				for fork in range(2):
 					var join: Vector3 = elbow.lerp(tip, 0.30 + float(fork) * 0.34)
 					var end: Vector3 = join + Vector3(cos(angle + 0.8) * 0.65, 0.8, sin(angle + 0.8) * 0.65)
 					_tube(surface, join, end, 0.065, 0.025, Color.WHITE)
+					var twig: Vector3 = end + Vector3(cos(angle - 0.4) * 0.16, 0.27, sin(angle - 0.4) * 0.16)
+					_tube(surface, end.lerp(join, 0.18), twig, 0.030, 0.012, Color("f2ede2"))
 		1:
 			_tube(surface, Vector3.ZERO, Vector3(0, 2.0, 0), 0.30, 0.18, Color("aeb7a8"))
 			_plate(surface, Vector3(0, 2.0, 0), 2.45)
@@ -148,6 +175,9 @@ static func _coral_mesh(form: int) -> ArrayMesh:
 					var from := Vector3(sin(angle) * radius, 0.7 + cos(angle) * radius, sin(angle * 2.0) * 0.12)
 					var to := Vector3(sin(angle + 0.22) * radius, 0.7 + cos(angle + 0.22) * radius, sin((angle + 0.22) * 2.0) * 0.12)
 					_tube(surface, from, to, 0.035, 0.035, Color("d7dfd9"))
+					if posmod(spoke + tier, 3) == 0:
+						var diagonal := Vector3(sin(angle + 0.22) * (radius - 0.38), 0.7 + cos(angle + 0.22) * (radius - 0.38), sin((angle + 0.22) * 2.0) * 0.12)
+						_tube(surface, from, diagonal, 0.022, 0.016, Color("eef0e5"))
 		3:
 			_dome(surface, Vector3.ZERO, Vector3(1.75, 1.55, 1.65), Color("9cae9c"))
 			for band in range(9):
@@ -155,11 +185,20 @@ static func _coral_mesh(form: int) -> ArrayMesh:
 				for step in range(12):
 					var a: float = float(step) * PI / 24.0
 					var b: float = float(step + 1) * PI / 24.0
-					var angle_a: float = longitude + sin(a * 9.0 + band) * 0.10
-					var angle_b: float = longitude + sin(b * 9.0 + band) * 0.10
+					var angle_a: float = longitude + sin(a * 10.0 + band * 1.7) * 0.18
+					var angle_b: float = longitude + sin(b * 10.0 + band * 1.7) * 0.18
 					var start := Vector3(cos(angle_a) * cos(a) * 1.78, sin(a) * 1.58, sin(angle_a) * cos(a) * 1.68)
 					var end := Vector3(cos(angle_b) * cos(b) * 1.78, sin(b) * 1.58, sin(angle_b) * cos(b) * 1.68)
 					_tube(surface, start, end, 0.065, 0.065, Color("eff0d9"))
+			for bridge in range(4):
+				var longitude: float = float(bridge * 2) * TAU / 9.0
+				var latitude: float = 0.48 + float(bridge % 2) * 0.40
+				for step in range(3):
+					var a: float = longitude + float(step) * TAU / 27.0
+					var b: float = longitude + float(step + 1) * TAU / 27.0
+					var start := Vector3(cos(a) * cos(latitude) * 1.78, sin(latitude) * 1.58, sin(a) * cos(latitude) * 1.68)
+					var end := Vector3(cos(b) * cos(latitude) * 1.78, sin(latitude) * 1.58, sin(b) * cos(latitude) * 1.68)
+					_tube(surface, start, end, 0.055, 0.055, Color("e8edcc"))
 			_dome(surface, Vector3(1.05, 0.0, 0.7), Vector3(0.85, 0.72, 0.80), Color("b5c5ac"))
 	surface.generate_normals()
 	return surface.commit()

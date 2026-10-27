@@ -10,6 +10,7 @@ const Layout = preload("res://scripts/layout_rules.gd")
 const FishData = preload("res://scripts/fish_catalog.gd")
 const FishBrain = preload("res://scripts/fish_brain.gd")
 const StormSchool = preload("res://scripts/storm_school.gd")
+const DiverMotion = preload("res://scripts/diver_motion.gd")
 const COASTAL_FISH_COUNT = 21
 const COASTAL_KINDS = [0,1,3,4,6,2]
 const ENTRY_SCHOOL_KINDS = [0,1,3,4,6]
@@ -35,6 +36,7 @@ var gm_menu_open: bool = false
 var gm_return_state: String = "dock"
 var gm_test_active: bool = false
 var player: CharacterBody3D
+var diver_motion = DiverMotion.new()
 var camera: Camera3D
 var environment: Environment
 var hud: Node2D
@@ -319,6 +321,7 @@ func _setup_world() -> void:
 	ocean_root.add_child(boat)
 	player = CharacterBody3D.new()
 	player.add_child(Art.create_diver())
+	diver_motion.setup(player.get_child(0))
 	var collider = CollisionShape3D.new()
 	var shape = SphereShape3D.new()
 	shape.radius = 0.65
@@ -351,6 +354,11 @@ func _spawn_population() -> void:
 		var kind: int = COASTAL_KINDS[posmod(i - 5, COASTAL_KINDS.size())]
 		var depth: float = rng.randf_range(7, 15) if kind != 2 else rng.randf_range(17, 24)
 		var p = Vector3(rng.randf_range(-34, 34), -depth, rng.randf_range(-37, 27))
+		if i >= 13:
+			var angle: float = float(i)*2.399963
+			var reach: float = rng.randf_range(47.0,Ocean.COASTAL_RADIUS*0.90)
+			p.x = sin(angle)*reach
+			p.z = cos(angle)*reach
 		if i < 5:
 			kind = 0
 			p = Vector3((i - 2) * 3.0, -7 - i * 0.6, 1 - i * 2.0)
@@ -386,6 +394,9 @@ func _spawn_population() -> void:
 	_spawn_entry_fish()
 	for point in Ocean.pickup_points():
 		_add_pickup(point.position,point.kind)
+		if point.get("exploration",false):
+			pickups[-1]["exploration_site"] = point.site_index
+			pickups[-1]["location_name"] = point.name
 	for zone in Ocean.ZONES:
 		var node: Node3D = _jellyfish()
 		var pos: Vector3 = Ocean.hazard_home(Ocean.ZONES.find(zone))
@@ -642,6 +653,7 @@ func confirm_new_game() -> void:
 	player.visible = false
 	player.velocity = Vector3.ZERO
 	dive_origin = Vector3.ZERO
+	diver_motion.reset()
 	entry_site_index = -1
 	boat.position = Vector3(0,0.3,14)
 	player.position = Vector3(0,-6,14)
@@ -692,6 +704,7 @@ func start_dive(animate_entry: bool = true, random_entry: bool = true, site_over
 	player.velocity = Vector3.ZERO
 	player.rotation = Vector3.ZERO
 	player.position = dive_origin + (Vector3(0,2.4,17.5) if animate_entry else Vector3(0,-6,14))
+	diver_motion.reset()
 	player.visible = true
 	yaw = 0
 	pitch = -0.12
@@ -747,6 +760,7 @@ func gm_select_dive_site(index: int, direct: bool = false) -> void:
 	player.velocity = Vector3.ZERO
 	player.rotation = Vector3.ZERO
 	drift_current = Vector3.ZERO
+	diver_motion.reset()
 	current_hint = ""
 	catch_timer = 0.0
 	hit_timer = 0.0
@@ -820,6 +834,7 @@ func finish_dive(rescued: bool = false) -> void:
 	if state != "dive":
 		return
 	gm_test_active = false
+	diver_motion.reset()
 	drift_current = Vector3.ZERO
 	current_hint = ""
 	entry_active = false
@@ -1124,11 +1139,7 @@ func _update_dive(delta: float) -> void:
 	player.position.y = clampf(player.position.y,maxf(Ocean.Y_MIN,Ocean.seabed_height(player.position.x,player.position.z)+0.8),Ocean.Y_MAX)
 	player.rotation.y = lerp_angle(player.rotation.y,yaw,delta*8)
 	player.rotation.x = lerpf(player.rotation.x,vertical*0.22,delta*5)
-	var diver_art = player.get_child(0)
-	for leg_name in ["LegLeft", "LegRight"]:
-		var leg = diver_art.get_node_or_null(leg_name)
-		if leg:
-			leg.rotation.x = sin(clock * (10.0 if boosting else 5.5) + (0.0 if leg_name == "LegLeft" else PI)) * (0.3 if move.length() > 0.1 else 0.10)
+	diver_motion.advance(delta, Vector3(input_dir.x,vertical,input_dir.y).limit_length(), boosting)
 	depth_record = maxf(depth_record,-player.position.y)
 	var use_rate: float = (0.72 + maxf(0,-player.position.y-20)*0.009) * (1.8 if boosting else 1.0)
 	oxygen = maxf(0, oxygen-use_rate*delta)
@@ -1342,21 +1353,33 @@ func ocean_edge_distance() -> float:
 func ocean_zone_name() -> String:
 	if absf(player.position.z-Ocean.CANYON_CENTER.z) < Ocean.CANYON_HALF_LENGTH+8 and absf(player.position.x-Ocean.canyon_center_x(player.position.z)) < 42:
 		return Ocean.ZONES[0].name
-	var nearest: String = "蓝海航道"
-	if Vector2(player.position.x,player.position.z).length() < 42:
-		return "潮汐湾 · 近岸"
-	var best: float = INF
-	for zone in Ocean.ZONES:
-		var distance: float = Vector2(player.position.x,player.position.z).distance_to(Vector2(zone.center.x,zone.center.z))
-		var reach: float = 60.0 if zone.id in ["southern_spires","amber_reef"] else 45.0
-		if distance < reach and distance < best:
-			best = distance
-			nearest = zone.name
-			if zone.id == "southern_spires":
-				nearest += " · 杰克风暴"
-			elif zone.id == "amber_reef":
-				nearest += " · 珊瑚花园"
+	var area: Dictionary = Ocean.exploration_area_for_position(player.position)
+	if area.is_empty():
+		return "蓝海航道"
+	var nearest: String = area.name
+	if area.id == "southern_spires":
+		nearest += " · 杰克风暴"
+	elif area.id == "amber_reef":
+		nearest += " · 珊瑚花园"
+	var destination: Dictionary = nearby_exploration_point()
+	if not destination.is_empty() and destination.distance < 16.0:
+		nearest = "%s · %s" % [area.name,destination.name]
 	return nearest
+
+func nearby_exploration_point() -> Dictionary:
+	var areas: Array = Ocean.exploration_areas()
+	var area: Dictionary = Ocean.exploration_area_for_position(player.position)
+	if area.is_empty():
+		return {}
+	var best: float = INF
+	var result: Dictionary = {}
+	var site_index: int = areas.find(area)
+	for point: Dictionary in Ocean.exploration_points(site_index):
+		var distance: float = Vector2(player.position.x-point.position.x,player.position.z-point.position.z).length()
+		if distance < best:
+			best = distance
+			result = {"name":point.name,"position":point.position,"distance":distance}
+	return result
 func context_hint() -> String:
 	if entry_active:
 		return "正在入水 · 感受海水的浮力"

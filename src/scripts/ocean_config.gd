@@ -18,13 +18,20 @@ const TERRAIN_STEP := 4.0
 const CANYON_CENTER := Vector3(-210,0,-230)
 const CANYON_CURRENT_SPEED := 0.9
 const CANYON_HALF_LENGTH := 85.0
+const COASTAL_RADIUS := 68.0
+const EXPLORATION_NAMES := [
+	["海草沙坡", "浅礁贝床"], ["岩岸断层", "外围遗迹"],
+	["幽光苔坡", "深蓝花圃"], ["散落货舱", "断桅遗物"],
+	["珊瑚外礁", "海扇长廊"], ["外缘石柱", "沙谷石门"],
+	["外环贝床", "月光沙台"]
+]
 const ZONES := [
-	{"id":"twin_gates","name":"双门遗迹 · 潮流大峡谷","center":Vector3(-210,-52,-230),"radius":42.0,"fish_kind":2},
-	{"id":"lantern_garden","name":"幽蓝灯园","center":Vector3(35,-82,-360),"radius":44.0,"fish_kind":2},
-	{"id":"merchant_wreck","name":"远航沉船","center":Vector3(310,-52,-130),"radius":46.0,"fish_kind":1},
-	{"id":"amber_reef","name":"琥珀珊瑚礁","center":Vector3(-180,-29,135),"radius":40.0,"fish_kind":0},
-	{"id":"southern_spires","name":"南潮石林","center":Vector3(-45,-52,300),"radius":44.0,"fish_kind":1},
-	{"id":"pearl_atoll","name":"月贝环礁","center":Vector3(245,-32,240),"radius":42.0,"fish_kind":1},
+	{"id":"twin_gates","name":"双门遗迹 · 潮流大峡谷","center":Vector3(-210,-52,-230),"radius":70.0,"core_radius":42.0,"fish_kind":2},
+	{"id":"lantern_garden","name":"幽蓝灯园","center":Vector3(35,-82,-360),"radius":70.0,"core_radius":44.0,"fish_kind":2},
+	{"id":"merchant_wreck","name":"远航沉船","center":Vector3(310,-52,-130),"radius":74.0,"core_radius":46.0,"fish_kind":1},
+	{"id":"amber_reef","name":"琥珀珊瑚礁","center":Vector3(-180,-29,135),"radius":68.0,"core_radius":40.0,"fish_kind":0},
+	{"id":"southern_spires","name":"南潮石林","center":Vector3(-45,-52,300),"radius":72.0,"core_radius":44.0,"fish_kind":1},
+	{"id":"pearl_atoll","name":"月贝环礁","center":Vector3(245,-32,240),"radius":70.0,"core_radius":42.0,"fish_kind":1},
 ]
 
 # Boat origins keep the stern jump on the open-water approach to each landmark.
@@ -37,6 +44,35 @@ const DIVE_SITES := [
 	{"name":"南潮石林", "origin":Vector3(-45,0,240)},
 	{"name":"月贝环礁", "origin":Vector3(245,0,180)},
 ]
+
+static func exploration_areas() -> Array:
+	var result: Array = [{"id":"tidal_cove","name":"潮汐湾 · 近岸","center":Vector3(0,-22,0),"radius":COASTAL_RADIUS,"core_radius":42.0}]
+	result.append_array(ZONES)
+	return result
+
+static func exploration_points(site_index: int) -> Array:
+	if site_index < 0 or site_index >= DIVE_SITES.size():
+		return []
+	var area: Dictionary = exploration_areas()[site_index]
+	var center: Vector3 = area.center
+	var radius: float = area.radius
+	var result: Array = []
+	for branch in range(2):
+		var side: float = -1.0 if branch == 0 else 1.0
+		var point: Vector3 = center + Vector3(side*radius*0.82,0,-side*radius*0.18)
+		point.y = seabed_height(point.x,point.z)
+		result.append({"name":EXPLORATION_NAMES[site_index][branch],"position":point})
+	return result
+
+static func exploration_area_for_position(point: Vector3) -> Dictionary:
+	var nearest: Dictionary = {}
+	var best: float = INF
+	for area: Dictionary in exploration_areas():
+		var distance: float = Vector2(point.x-area.center.x,point.z-area.center.z).length()
+		if distance <= float(area.radius)+12.0 and distance < best:
+			nearest = area
+			best = distance
+	return nearest
 
 static func canyon_center_x(z: float) -> float:
 	return CANYON_CENTER.x + 5.0*sin((z-CANYON_CENTER.z)*0.045)
@@ -104,6 +140,18 @@ static func pickup_points() -> Array:
 			var route: Vector3 = center*fraction
 			route.y = maxf(-18.0-fraction*18.0,seabed_height(route.x,route.z)+7.0)
 			result.append({"kind":"oxygen","position":route})
+	# Each wider area gains two outer discoveries and a northern loop air station.
+	# Keep all original pickup ordering intact for existing saves and test fixtures.
+	var areas: Array = exploration_areas()
+	for site in range(areas.size()):
+		var area: Dictionary = areas[site]
+		var points: Array = exploration_points(site)
+		for branch in range(points.size()):
+			var point: Vector3 = points[branch].position + Vector3.UP
+			result.append({"kind":"pearl" if branch == 0 or site == 0 else "chest","position":point,"site_index":site,"exploration":true,"name":points[branch].name})
+		var station: Vector3 = area.center + Vector3(0,0,-float(area.radius)*0.72)
+		station.y = maxf(area.center.y,seabed_height(station.x,station.z)+8.0)
+		result.append({"kind":"oxygen","position":station,"site_index":site,"exploration":true,"name":"外围补气点"})
 	return result
 
 static func zone_for_position(point: Vector3) -> Dictionary:
@@ -119,10 +167,15 @@ static func zone_for_position(point: Vector3) -> Dictionary:
 
 ## Unobstructed southern landmark approaches; leave room for the swim envelope.
 static func fish_home(zone_index: int, fish_index: int) -> Vector3:
-	var center: Vector3 = ZONES[clampi(zone_index,0,ZONES.size()-1)].center
-	var column: int = posmod(fish_index,5)
-	var row: int = clampi(int(float(fish_index)/5.0),0,4)
-	var point: Vector3 = center+Vector3(float(column-2)*9.0,float(row-1)*4.0,25.0+float(row)*9.0)
+	var zone: Dictionary = ZONES[clampi(zone_index,0,ZONES.size()-1)]
+	var center: Vector3 = zone.center
+	var point: Vector3
+	if fish_index < 4:
+		point = center+Vector3((float(fish_index)-1.5)*10.0,float(fish_index%2)*3.0,27.0+float(fish_index%2)*7.0)
+	else:
+		var angle: float = float(fish_index-4)*2.399963+float(zone_index)*0.47
+		var reach: float = float(zone.radius)*(0.55+0.34*float(fish_index%4)/3.0)
+		point = center+Vector3(sin(angle)*reach,float(fish_index%3-1)*3.0,cos(angle)*reach)
 	point.y = maxf(point.y,seabed_height(point.x,point.z)+10.0)
 	return point
 

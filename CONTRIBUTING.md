@@ -28,7 +28,7 @@
 ## 提交前
 
 - `BuildWeb.cmd`：从源码重新生成根目录网页文件及双击资源。非 Windows 平台可在 Godot 编辑器中用已有的 Web 预设导出到根目录 `index.html`，然后执行 `node tools/prepare_local.cjs`。此步骤还处理引擎在本地文件模式下的 PWA 探测。
-- `Test.cmd`：运行 15 套逻辑和图形回归；任何脚本错误也会使验证失败。
+- `Test.cmd`：运行 18 套逻辑和图形回归，包含潜水方向动作、海底细节与潜点扩展专项；脚本、着色器错误或缺少PASS均会使验证失败。
 - 保持预览服务器运行，执行 `npm run test:web`：使用独立浏览器环境验证潜水、暂停、持久化存档、布局操作及餐厅营业。默认使用已安装的 Edge；可设置 `TIDE_BROWSER_CHANNEL=chrome` 使用已安装的 Chrome。
 - `npm run test:local`：通过真实 `file://` 地址运行同一套浏览器流程，检查直接打开 HTML、存档重载、声音资源加载，以及没有服务器或网络请求。
 - `npm run test:resolution`：验证高分屏原生渲染分辨率、全屏、窗口大小变化和屏幕缩放倍率变化；截图保存在工程同级工作目录。

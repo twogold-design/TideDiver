@@ -3,6 +3,7 @@ extends Node3D
 ## Exposed canyon banks and current tracers; the shared seabed supplies all collision.
 const Ocean = preload("res://scripts/ocean_config.gd")
 const Coral = preload("res://scripts/coral_garden.gd")
+const Geology = preload("res://scripts/ocean_geology.gd")
 const CENTER_Z := -230.0
 const LENGTH := 160.0
 const TRACE_COUNT := 160
@@ -39,16 +40,12 @@ static func build(parent: Node3D) -> Node3D:
 	var strata := MeshInstance3D.new()
 	strata.name = "LayeredBanks"
 	strata.mesh = _bank_mesh(origin)
-	strata.material_override = _rock_material()
+	strata.material_override = Geology.rock_material()
 	strata.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	strata.visibility_range_end = 195.0
 	strata.visibility_range_end_margin = 20.0
 	canyon.add_child(strata)
-	var rock := SphereMesh.new()
-	rock.radius = 1.0
-	rock.height = 2.0
-	rock.radial_segments = 9
-	rock.rings = 4
+	var rock: ArrayMesh = Geology.rock_mesh(2)
 	_batch(canyon, "RockShelves", rock, rock_transforms, rock_colors, _rock_material())
 	_batch(canyon, "SparseSeaFans", Coral._coral_mesh(2), fan_transforms, fan_colors, _rock_material())
 	canyon._build_current(origin)
