@@ -414,8 +414,12 @@ func _draw_hud() -> void:
 	region(BOTTOM_LEFT)
 	_panel(Rect2(30,685,236,104),Color(0.025,0.12,0.16,0.78))
 	_text(Vector2(48,712),"探索目标",13,MINT)
-	_text(Vector2(48,743),"寻找沉船与月光珍珠",17,LIGHT)
-	_text(Vector2(48,771),"任意海面均可呼叫接驳船",13,MUTED)
+	var discovery: Dictionary = game.nearby_exploration_point()
+	var exploration_label: String = "沿导航寻找外围支路"
+	if not discovery.is_empty():
+		exploration_label = ("抵达 · %s" % discovery.name) if discovery.distance < 16.0 else ("%s · %d m" % [discovery.name,int(discovery.distance)])
+	_text(Vector2(48,743),exploration_label,17,LIGHT)
+	_text(Vector2(48,771),"◇ 外围景观 · + 补气点",13,MUTED)
 	_draw_depth_gauge()
 	region(BOTTOM_CENTER)
 	_panel(Rect2(290,768,1035,43),Color(0.025,0.12,0.16,0.85))
@@ -452,9 +456,17 @@ func _draw_ocean_map() -> void:
 	_text(rect.position+Vector2(14,25),"海域导航  ·  N ↑",14,MINT)
 	var map_rect := Rect2(rect.position+Vector2(18,42),Vector2(184,160))
 	draw_rect(map_rect,Color(0.08,0.27,0.31,0.8))
-	for zone in game.Ocean.ZONES:
+	var areas: Array = game.Ocean.exploration_areas()
+	for site in range(areas.size()):
+		var zone: Dictionary = areas[site]
 		var pos: Vector2 = _map_point(zone.center,map_rect)
+		var radius: float = float(zone.radius)*map_rect.size.x/(game.Ocean.X_MAX-game.Ocean.X_MIN)
+		draw_circle(pos,radius,Color(0.45,0.72,0.72,0.12))
+		draw_arc(pos,radius,0,TAU,32,Color(0.45,0.72,0.72,0.38),1,true)
 		draw_circle(pos,5,Color("719ca0"))
+		for point: Dictionary in game.Ocean.exploration_points(site):
+			var marker: Vector2 = _map_point(point.position,map_rect)
+			draw_polyline(PackedVector2Array([marker+Vector2(0,-3),marker+Vector2(3,0),marker+Vector2(0,3),marker+Vector2(-3,0),marker+Vector2(0,-3)]),GOLD,1,true)
 	for item in game.pickups:
 		if item.kind == "oxygen" and item.active:
 			var pos: Vector2 = _map_point(item.home,map_rect)
@@ -464,7 +476,7 @@ func _draw_ocean_map() -> void:
 	var direction := Vector2(-sin(game.yaw),-cos(game.yaw))
 	draw_circle(diver,4,GOLD)
 	draw_line(diver,diver+direction*11,GOLD,2)
-	_text(rect.position+Vector2(14,220),"金色：你   +：补氧   ●：礁区",12,MUTED)
+	_text(rect.position+Vector2(14,220),"金色：你   +：补气   ◇：支路",12,MUTED)
 
 func _map_point(point: Vector3, rect: Rect2) -> Vector2:
 	return rect.position + Vector2(inverse_lerp(game.Ocean.X_MIN,game.Ocean.X_MAX,point.x)*rect.size.x,inverse_lerp(game.Ocean.Z_MIN,game.Ocean.Z_MAX,point.z)*rect.size.y)

@@ -1,0 +1,222 @@
+extends SceneTree
+## Actual peripheral landmarks, usable resources and physical exploration routes.
+const Ocean = preload("res://scripts/ocean_config.gd")
+
+class MemoryProgression extends "res://scripts/progression.gd":
+	var saves: int = 0
+	func load_game() -> void:
+		pass
+	func save_game() -> void:
+		saves += 1
+
+var game: Node
+var memory: MemoryProgression
+var checks: int = 0
+var failures: int = 0
+
+func _init() -> void:
+	call_deferred("_run")
+
+func _check(condition: bool, description: String) -> void:
+	checks += 1
+	if not condition:
+		failures += 1
+		printerr("FAIL: " + description)
+
+func _run() -> void:
+	game = load("res://scenes/main.tscn").instantiate()
+	memory = MemoryProgression.new()
+	memory.persistence_enabled = false
+	game.progress = memory
+	game.muted = true
+	game.smoke_mode = true
+	root.add_child(game)
+	game.smoke_mode = true
+	game.set_process(false)
+	game.set_physics_process(false)
+	await physics_frame
+	await process_frame
+	game.start_dive(false, false)
+	await physics_frame
+	await process_frame
+	var progress_before: Dictionary = memory._save_data().duplicate(true)
+	var areas: Array = Ocean.exploration_areas()
+	var expansions: Node3D = game.ocean_root.get_node_or_null("DiveExpansions")
+	var added_resources: int = 0
+	for item in game.pickups:
+		if item.has("exploration_site"):
+			added_resources += 1
+	_check(areas.size() == 7 and Ocean.DIVE_SITES.size() == 7, "All seven original dive destinations provide expanded exploration areas")
+	_check(game.fish.size() == 167 and game.fish_population_count() == 167 and game.pickups.size() == 74 and game.pickups.size() == 11 + Ocean.pickup_points().size() and added_resources == 21, "Larger areas add twenty-one resources while keeping the ordinary fish population sparse")
+	_check(expansions != null and int(expansions.get_meta("site_count", 0)) == 7 and int(expansions.get_meta("side_area_count", 0)) == 14, "The actual scene includes fourteen peripheral landmarks across all seven sites")
+	if expansions != null and areas.size() == 7:
+		var ids: Dictionary = {}
+		for site in range(areas.size()):
+			var area: Dictionary = areas[site]
+			ids[area.id] = true
+			_check(float(area.radius) >= 68 and float(area.radius) >= float(area.core_radius) + 20, "Explorable radius extends substantially beyond the old core: " + str(area.name))
+			_test_fish_coverage(area)
+			await _test_landmarks(site, area, expansions)
+			_test_peripheral_resources(site, area)
+		_check(ids.size() == 7, "Expanded areas preserve seven distinct destination identities")
+		_test_gm_and_random_departures()
+		await _test_air_cost()
+	_check(Ocean.current_velocity(Vector3(Ocean.canyon_center_x(-230) + 40, -50, -230)).is_zero_approx() and Ocean.current_velocity(Vector3(Ocean.canyon_center_x(-130), -50, -130)).is_zero_approx(), "Expanding the canyon destination does not spread its original current into surrounding water")
+	_check(memory._save_data() == progress_before and memory.saves == 0, "Exploration, collection, refills and GM inspection do not change or save durable progress")
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	game.free()
+	await process_frame
+	print("%s: Tide Diver expanded dive areas (%d checks)." % ["PASS" if failures == 0 else "FAIL", checks])
+	quit(0 if failures == 0 else 1)
+
+func _test_fish_coverage(area: Dictionary) -> void:
+	var center: Vector3 = area.center
+	var nearby: int = 0
+	var peripheral: int = 0
+	for item in game.fish:
+		var distance: float = Vector2(item.home.x - center.x, item.home.z - center.z).length()
+		if distance <= float(area.radius) + 8:
+			nearby += 1
+			if distance > float(area.core_radius) + 5:
+				peripheral += 1
+	_check(nearby >= 10 and peripheral >= 3, "Real fish remain distributed inside the larger area and beyond its old core: " + str(area.name))
+
+func _test_landmarks(site: int, area: Dictionary, expansions: Node3D) -> void:
+	var points: Array = Ocean.exploration_points(site)
+	_check(points.size() == 2, "Two actual destinations extend the exploration route at site %d" % site)
+	var region: Node3D = expansions.get_node_or_null("Site%d" % site)
+	for index in range(points.size()):
+		var point: Dictionary = points[index]
+		var position: Vector3 = point.position
+		var center: Vector3 = area.center
+		var radial: float = Vector2(position.x - center.x, position.z - center.z).length()
+		var node: Node3D = region.get_node_or_null("Point%d" % index) if region != null else null
+		_check(node != null and radial > float(area.core_radius) + 5 and radial <= float(area.radius) + 1 and _inside_bounds(position) and absf(position.y - Ocean.seabed_height(position.x, position.z)) < 0.02, "The new destination is grounded beyond the old core and inside the ocean: site %d point %d" % [site, index])
+		if node == null:
+			continue
+		_check(node.global_position.distance_to(position) < 0.03 and str(node.get_meta("exploration_name", "")) == str(point.name), "Actual peripheral scenery and its displayed name match the reachable destination: site %d point %d" % [site, index])
+		_check(_route_clear(area, position) and _sphere_clear(position + Vector3.UP * 8, 0.65), "A real diver can follow a submerged route around the main scenery to the new destination: site %d point %d" % [site, index])
+		game.player.position = position + Vector3.UP * 8
+		var nearby: Dictionary = game.nearby_exploration_point()
+		_check(not nearby.is_empty() and nearby.name == point.name and nearby.distance < 0.01 and game.ocean_zone_name().contains(str(point.name)), "Reaching the peripheral point identifies the actual destination in navigation: site %d point %d" % [site, index])
+		game.camera.position = position + Vector3(12, 10, 16)
+		game.camera.look_at(position + Vector3.UP * 2, Vector3.UP)
+		await process_frame
+		await RenderingServer.frame_post_draw
+		_check(_visible_mesh(node) and not root.get_texture().get_image().is_empty(), "The peripheral destination has actual visible scenery in a rendered game frame: site %d point %d" % [site, index])
+
+func _route_clear(area: Dictionary, destination: Vector3) -> bool:
+	var center: Vector3 = area.center
+	var radius: float = float(area.core_radius) + 8
+	var angle: float = atan2(destination.x - center.x, destination.z - center.z)
+	var route: Array[Vector3] = [center + Vector3(0, 0, 36), center + Vector3(0, 0, radius)]
+	for step in range(1, 25):
+		var heading: float = angle * float(step) / 24.0
+		route.append(center + Vector3(sin(heading) * radius, 0, cos(heading) * radius))
+	route.append(destination)
+	for segment in range(1, route.size()):
+		var start: Vector3 = route[segment - 1]
+		var finish: Vector3 = route[segment]
+		var count: int = maxi(1, int(ceil(Vector2(finish.x - start.x, finish.z - start.z).length() / 2.0)))
+		var previous := Vector3(start.x, Ocean.seabed_height(start.x, start.z) + 8, start.z)
+		for step in range(1, count + 1):
+			var horizontal: Vector3 = start.lerp(finish, float(step) / count)
+			var current := Vector3(horizontal.x, Ocean.seabed_height(horizontal.x, horizontal.z) + 8, horizontal.z)
+			var collision := KinematicCollision3D.new()
+			if game.player.test_move(Transform3D(Basis.IDENTITY, previous), current - previous, collision):
+				return false
+			previous = current
+	return true
+
+func _test_peripheral_resources(site: int, area: Dictionary) -> void:
+	var center: Vector3 = area.center
+	var collectibles: Array[Dictionary] = []
+	var refills: Array[Dictionary] = []
+	for item in game.pickups:
+		var distance: float = Vector2(item.home.x - center.x, item.home.z - center.z).length()
+		if item.active and int(item.get("exploration_site", -1)) == site and distance > float(area.core_radius) + 2 and distance <= float(area.radius) + 8:
+			if item.kind == "oxygen":
+				refills.append(item)
+			else:
+				collectibles.append(item)
+	_check(collectibles.size() == 2 and refills.size() == 1, "The outer exploration area contains two new collectible rewards and one new usable refill: " + str(area.name))
+	game.cargo.clear()
+	var collected: bool = collectibles.size() >= 2
+	for item in collectibles.slice(0, 2):
+		var count: int = game.cargo.size()
+		game.player.position = item.node.position
+		game.interact()
+		collected = collected and game.cargo.size() == count + 1 and game.cargo[-1].id == item.kind and not item.active and not item.node.visible
+	_check(collected, "New peripheral rewards can actually be collected once into the existing cargo system: " + str(area.name))
+	var refilled: bool = not refills.is_empty()
+	if refilled:
+		var item: Dictionary = refills[0]
+		game.oxygen = 10
+		game.player.position = item.node.position
+		game.interact()
+		refilled = game.oxygen == 45 and not item.active and not item.node.visible
+	_check(refilled, "The peripheral gas bottle actually restores the original thirty-five units of air: " + str(area.name))
+
+func _test_gm_and_random_departures() -> void:
+	for site in range(7):
+		game.open_gm_menu()
+		var expected: Dictionary = game._gm_test_pose(site)
+		game.gm_select_dive_site(site, true)
+		_check(game.entry_site_index == site and game.player.position.is_equal_approx(expected.position) and _sphere_clear(game.player.position, 0.65), "Expanding the destination preserves its original safe GM viewpoint: %d" % site)
+	game.entry_rng.seed = 20261027
+	var previous: int = -1
+	var visited: Dictionary = {}
+	var valid: bool = true
+	for departure in range(8):
+		game.state = "dock"
+		game.start_dive(false)
+		valid = valid and game.entry_site_index >= 0 and game.entry_site_index < 7 and game.entry_site_index != previous and game.fish.size() == 167 and game.pickups.size() == 74
+		previous = game.entry_site_index
+		visited[previous] = true
+		var landing: Vector3 = game.dive_origin + Vector3(0, -6, 25)
+		var nearby: int = 0
+		for item in game.fish:
+			if item.node.position.distance_to(landing) <= 30:
+				nearby += 1
+		valid = valid and nearby <= 14
+	_check(valid and visited.size() > 1, "Normal departures stay random and retain the original sparse landing density in expanded areas")
+
+func _test_air_cost() -> void:
+	game.player.position = Vector3(400, -20, 400)
+	game.player.velocity = Vector3.ZERO
+	game.oxygen = 100
+	game.poison_timer = 0
+	game.hurt_cooldown = 0
+	await process_frame
+	game.set_physics_process(true)
+	await physics_frame
+	var air_before: float = game.oxygen
+	for frame in range(30):
+		await physics_frame
+	game.set_physics_process(false)
+	_check(absf((air_before - game.oxygen) - 0.36) < 0.003, "Expanding the world does not increase normal breathing cost in real physics frames")
+
+func _visible_mesh(node: Node) -> bool:
+	if node is MeshInstance3D and node.mesh != null and node.is_visible_in_tree() and game.camera.is_position_in_frustum(node.global_transform * node.get_aabb().get_center()):
+		return true
+	if node is MultiMeshInstance3D and node.multimesh != null and node.multimesh.instance_count > 0 and node.is_visible_in_tree():
+		for index in range(node.multimesh.instance_count):
+			if game.camera.is_position_in_frustum(node.global_transform * node.multimesh.get_instance_transform(index).origin):
+				return true
+	for child in node.get_children():
+		if _visible_mesh(child):
+			return true
+	return false
+
+func _inside_bounds(point: Vector3) -> bool:
+	return point.x >= Ocean.X_MIN and point.x <= Ocean.X_MAX and point.z >= Ocean.Z_MIN and point.z <= Ocean.Z_MAX and point.y >= Ocean.Y_MIN and point.y <= Ocean.Y_MAX
+
+func _sphere_clear(point: Vector3, radius: float) -> bool:
+	var sphere := SphereShape3D.new()
+	sphere.radius = radius
+	var query := PhysicsShapeQueryParameters3D.new()
+	query.shape = sphere
+	query.transform = Transform3D(Basis.IDENTITY, point)
+	query.collision_mask = 1
+	query.exclude = [game.player.get_rid()]
+	return game.get_world_3d().direct_space_state.intersect_shape(query, 1).is_empty()

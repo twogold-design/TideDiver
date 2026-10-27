@@ -5,6 +5,11 @@ const Ocean = preload("res://scripts/ocean_config.gd")
 const FishArt = preload("res://scripts/fish_art.gd")
 const CoralGarden = preload("res://scripts/coral_garden.gd")
 const CanyonArt = preload("res://scripts/canyon_art.gd")
+const Geology = preload("res://scripts/ocean_geology.gd")
+const ReefLife = preload("res://scripts/reef_life.gd")
+const DiveExpansions = preload("res://scripts/dive_expansions.gd")
+static var _reef_coral: ArrayMesh
+static var _life_materials: Dictionary = {}
 
 const CORAL: Color = Color("ef9277")
 const MINT: Color = Color("69c6a4")
@@ -41,6 +46,15 @@ static func _box(parent: Node3D, pos: Vector3, size: Vector3, material: Material
 	var mesh: BoxMesh = BoxMesh.new()
 	mesh.size = size
 	return _mesh(parent, mesh, pos, material)
+
+static func _rock(parent: Node3D, pos: Vector3, size: Vector3, variant: int = 0) -> MeshInstance3D:
+	var stone: MeshInstance3D = _mesh(parent, Geology.rock_mesh(variant), pos, Geology.rock_material())
+	# Keep eroded hero rocks within the original collision envelope, including
+	# the tops of tall stone spires, rather than leaving an invisible upper cap.
+	var bounds: AABB = stone.mesh.get_aabb()
+	stone.scale = size * Vector3(2,2,2) / bounds.size
+	stone.position = pos - bounds.get_center() * stone.scale
+	return stone
 
 static func _cylinder(parent: Node3D, pos: Vector3, radius: float, height: float, material: Material, top_radius: float = -1.0) -> MeshInstance3D:
 	var mesh: CylinderMesh = CylinderMesh.new()
@@ -86,32 +100,27 @@ static func _branch(parent: Node3D, start: Vector3, end: Vector3, radius: float,
 	_sphere(parent, end, Vector3.ONE * radius * 0.76, material, 8)
 
 static func _coral(parent: Node3D, pos: Vector3, size: float, color: Color) -> void:
-	var group: Node3D = Node3D.new()
-	group.position = pos
-	parent.add_child(group)
-	var mat: StandardMaterial3D = _mat(color)
-	for i: int in range(5):
-		var angle: float = float(i) * TAU / 5.0
-		var middle: Vector3 = Vector3(cos(angle) * size * 0.23, size * 0.6, sin(angle) * size * 0.23)
-		var tip: Vector3 = Vector3(cos(angle) * size * 0.43, size * (0.85 + sin(float(i) * 3.0) * 0.2), sin(angle) * size * 0.43)
-		_branch(group, Vector3.ZERO, middle, size * 0.065, mat)
-		_branch(group, middle, tip, size * 0.052, mat)
-		_branch(group, middle, middle + Vector3(cos(angle + 1) * size * 0.3, size * 0.2, sin(angle + 1) * size * 0.3), size * 0.038, mat)
+	if _reef_coral == null:
+		_reef_coral = CoralGarden._coral_mesh(0)
+	var coral: MeshInstance3D = _mesh(parent, _reef_coral, pos, _life_material(color))
+	coral.scale = Vector3.ONE * size / 3.25
+
+static func _life_material(color: Color) -> StandardMaterial3D:
+	if not _life_materials.has(color):
+		var material: StandardMaterial3D = ReefLife.material()
+		material.albedo_color = color
+		_life_materials[color] = material
+	return _life_materials[color]
 
 static func _weed(parent: Node3D, pos: Vector3, size: float, color: Color) -> void:
-	var mat: StandardMaterial3D = _mat(color)
-	for i: int in range(4):
-		var angle: float = float(i) * 1.9
-		var offset: Vector3 = Vector3(cos(angle) * 0.25, 0, sin(angle) * 0.25)
-		var leaf: MeshInstance3D = _sphere(parent, pos + offset + Vector3(0, size * 0.45, 0), Vector3(size * 0.08, size * 0.5, size * 0.018), mat, 6)
-		leaf.rotation = Vector3(0.16 * cos(angle), angle, 0.17 * sin(angle))
+	var plant: MeshInstance3D = _mesh(parent, ReefLife.mesh("Seagrass"), pos, _life_material(color))
+	plant.scale = Vector3(size*0.45,size/1.5,size*0.45)
 
 static func _reef(parent: Node3D, pos: Vector3, size: float, seed_value: int) -> void:
-	var stone: StandardMaterial3D = _mat(Color("2d686b"))
-	var sand: StandardMaterial3D = _mat(Color("8aaf9b"))
-	_sphere(parent, pos - Vector3(0, size * 0.32, 0), Vector3(size, size * 0.48, size * 0.8), stone, 9)
+	_rock(parent, pos - Vector3(0, size * 0.32, 0), Vector3(size, size * 0.48, size * 0.8), seed_value)
 	_solid_rock(parent, pos - Vector3(0, size * 0.32, 0), Vector3(size, size * 0.48, size * 0.8))
-	_sphere(parent, pos - Vector3(0, size * 0.05, 0), Vector3(size * 0.88, size * 0.1, size * 0.68), sand, 10)
+	var sand_cap: MeshInstance3D = _mesh(parent, Geology.rock_mesh(seed_value+1), pos-Vector3(0,size*0.05,0), Geology.sand_material())
+	sand_cap.scale = Vector3(size*0.88,size*0.1,size*0.68)
 	for i: int in range(7):
 		var a: float = float(i) * 2.399 + float(seed_value)
 		var distance: float = size * (0.27 + float(i % 3) * 0.19)
@@ -122,7 +131,8 @@ static func _reef(parent: Node3D, pos: Vector3, size: float, seed_value: int) ->
 			_weed(parent, p, size * (0.35 + float(i % 3) * 0.12), MINT.darkened(float(i % 3) * 0.09))
 	for i: int in range(4):
 		var p: Vector3 = pos + Vector3(sin(float(i) * 2.1) * size * 0.7, 0.2, cos(float(i) * 2.1) * size * 0.6)
-		_sphere(parent, p, Vector3.ONE * size * 0.12, _mat(Color("7b9dc0") if i % 2 == 0 else Color("d9a0a1")), 7)
+		var sponge: MeshInstance3D = _mesh(parent, ReefLife.mesh("TubeSponge"), p, _life_material(Color("8ba7be") if i % 2 == 0 else Color("dbb4ae")))
+		sponge.scale = Vector3.ONE * size * 0.15
 
 static func _water_and_rays(parent: Node3D) -> void:
 	var surface_shader: Shader = Shader.new()
@@ -182,9 +192,7 @@ static func _build_seabed(parent: Node3D) -> void:
 	var terrain := Node3D.new()
 	terrain.name = "NaturalSeabed"
 	parent.add_child(terrain)
-	var material: StandardMaterial3D = _mat(Color.WHITE)
-	material.vertex_color_use_as_albedo = true
-	material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	var material: Material = Geology.sand_material()
 	# 49 chunks keep distant geometry out of the renderer. Each collision surface
 	# uses exactly the same four-metre vertices as Ocean.seabed_height().
 	var side: int = 50
@@ -246,7 +254,7 @@ static func build_world(parent: Node3D) -> void:
 	var ground: float = Ocean.seabed_height(first.x,first.z)
 	var anchor_height: float = (-14.0-ground)*0.5
 	var anchor := Vector3(8,ground+anchor_height,-2)
-	_sphere(parent,anchor,Vector3(4.8,anchor_height+1.0,3.8),_mat(Color("355e63")),9)
+	_rock(parent,anchor,Vector3(4.8,anchor_height+1.0,3.8),3)
 	_solid_rock(parent,anchor,Vector3(4.8,anchor_height+1.0,3.8))
 	_reef(parent,first,5.3,0)
 	# Shallow coral beds sit on low outcrops, never float above the sand.
@@ -255,7 +263,7 @@ static func build_world(parent: Node3D) -> void:
 		var distance: float = 22.0+float(i%4)*13.0
 		var p: Vector3 = _ground_point(cos(a)*distance,sin(a)*distance)
 		var size := Vector3(2.2+float(i%3),1.3,2.0+float(i%2))
-		_sphere(parent,p+Vector3.UP*0.55,size,_mat(Color("426b68")),8)
+		_rock(parent,p+Vector3.UP*0.55,size,i)
 		_solid_rock(parent,p+Vector3.UP*0.55,size)
 		if i%2 == 0:
 			_coral(parent,p+Vector3.UP*1.7,2.4,CORAL)
@@ -273,6 +281,9 @@ static func build_world(parent: Node3D) -> void:
 		var p := Vector3(sin(float(i)*71.3)*55,-3-fposmod(float(i)*7.73,21),cos(float(i)*39.9)*55)
 		_sphere(parent,p,Vector3.ONE*0.035,particle_mat,4)
 	_build_outer_ocean(parent)
+	Geology.decorate(parent)
+	ReefLife.build(parent)
+	DiveExpansions.build(parent)
 
 static func create_diver() -> Node3D:
 	return preload("res://scripts/diver_art.gd").build()
@@ -299,11 +310,14 @@ static func create_pickup(kind: String) -> Node3D:
 		_box(root, Vector3(0, 0.7, -0.345), Vector3(0.07, 0.24, 0.03), _mat(Color("387974")))
 		_box(root, Vector3(0, 0.7, -0.35), Vector3(0.22, 0.07, 0.03), _mat(Color("387974")))
 	else:
-		var shell: StandardMaterial3D = _mat(Color("c994a2"))
-		_sphere(root, Vector3(0, 0.1, 0), Vector3(0.65, 0.13, 0.55), shell, 10)
-		var lid: MeshInstance3D = _sphere(root, Vector3(0, 0.40, 0.3), Vector3(0.64, 0.10, 0.55), shell, 10)
+		var shell: StandardMaterial3D = _life_material(Color("e2c3c4"))
+		var lower: MeshInstance3D = _mesh(root, ReefLife.shell_valve_mesh(), Vector3(0,0.1,-0.3),shell)
+		lower.rotation.z = PI
+		lower.scale = Vector3(0.7,0.7,0.9)
+		var lid: MeshInstance3D = _mesh(root, ReefLife.shell_valve_mesh(), Vector3(0,0.13,-0.3),shell)
+		lid.scale = Vector3(0.7,0.7,0.9)
 		lid.rotation.x = -0.85
-		_sphere(root, Vector3(0, 0.35, -0.1), Vector3.ONE * 0.28, _mat(Color("f2ead0"), 0.55), 12)
+		_sphere(root, Vector3(0, 0.30, 0.16), Vector3.ONE * 0.24, _mat(Color("f2ead0"), 0.40), 20)
 	return root
 
 static func create_boat() -> Node3D:
@@ -338,7 +352,7 @@ static func _outer_gate(parent: Node3D, origin: Vector3, scale_factor: float = 1
 	root.position = origin
 	root.scale = Vector3.ONE*scale_factor
 	parent.add_child(root)
-	var stone: StandardMaterial3D = _mat(Color("729497"))
+	var stone: Material = Geology.rock_material()
 	var light: StandardMaterial3D = _mat(Color("88d3c5"),0.45)
 	for side: float in [-1.0,1.0]:
 		_box(root,Vector3(side*7.0,7.0,0),Vector3(3,14,3.5),stone)
@@ -391,7 +405,6 @@ static func _outer_garden(parent: Node3D) -> void:
 		_weed(parent,p,3.4,Color("4a8398"))
 
 static func _outer_spires(parent: Node3D) -> void:
-	var stone: StandardMaterial3D = _mat(Color("455e67"))
 	# Eroded slabs follow two banks of an open gully; the passage remains clear.
 	for i: int in range(8):
 		var x: float = -15.0 if i%2 == 0 else 14.0
@@ -399,19 +412,23 @@ static func _outer_spires(parent: Node3D) -> void:
 		var height: float = 5.0+float(i%3)*3.0
 		var p: Vector3 = _region_ground(parent,x,z,height*0.45)
 		var size := Vector3(3.4,height*0.65,6.0)
-		_sphere(parent,p,size,stone,7)
+		_rock(parent,p,size,i+2)
 		_solid_rock(parent,p,size)
 		_weed(parent,p+Vector3.UP*height*0.62,1.7,MINT)
 
 static func _outer_atoll(parent: Node3D) -> void:
-	var shell: StandardMaterial3D = _mat(Color("c49caa"))
+	var shell: StandardMaterial3D = _life_material(Color("dec5cf"))
 	var pearl: StandardMaterial3D = _mat(Color("e0ecd3"),0.35)
 	for i: int in range(12):
 		var angle: float = float(i)*TAU/12.0
 		var pos: Vector3 = _region_ground(parent,cos(angle)*23.0,sin(angle)*19.0-8,0.3)
-		_sphere(parent,pos,Vector3(2.8,0.45,2.0),shell,8)
-		_sphere(parent,pos+Vector3.UP*0.7,Vector3.ONE*0.65,pearl,8)
-		var lid: MeshInstance3D = _sphere(parent,pos+Vector3(0,1.4,0.8),Vector3(2.7,0.3,1.9),shell,8)
+		var base: Vector3 = pos-Vector3(0,0,1.0)
+		var lower: MeshInstance3D = _mesh(parent,ReefLife.shell_valve_mesh(),base,shell)
+		lower.rotation.z = PI
+		lower.scale = Vector3(3,0.8,3)
+		_sphere(parent,base+Vector3(0,0.7,1.3),Vector3.ONE*0.60,pearl,20)
+		var lid: MeshInstance3D = _mesh(parent,ReefLife.shell_valve_mesh(),base+Vector3.UP*0.1,shell)
+		lid.scale = Vector3(3,0.9,3)
 		lid.rotation.x = -0.65
 		_weed(parent,pos+Vector3(3,0,0),2.1,MINT)
 
@@ -461,7 +478,7 @@ static func _build_outer_ocean(parent: Node3D) -> void:
 		for i: int in range(4):
 			var p: Vector3 = _region_ground(region,-27+float(i)*18,-25,0.65)
 			var size := Vector3(2.6,1.5,3.4)
-			_sphere(region,p,size,_mat(Color("466968")),8)
+			_rock(region,p,size,i+index)
 			_solid_rock(region,p,size)
 	# Sparse bottom-dwelling vegetation gives the long routes scale.
 	for i: int in range(70):
