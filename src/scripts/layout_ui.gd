@@ -1,6 +1,5 @@
 extends "res://scripts/responsive_ui.gd"
 const Rules = preload("res://scripts/layout_rules.gd")
-const Furniture = preload("res://scripts/furniture_art.gd")
 const CREAM = Color("f6ead4")
 const MINT = Color("a9ead2")
 const GOLD = Color("efbf75")
@@ -71,36 +70,9 @@ func _preview(rect: Rect2, kind: String, variant: String) -> void:
 	place_control(display, rect, TOP_LEFT)
 	display.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	display.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	var viewport = SubViewport.new()
-	viewport.size = Vector2i(232,248)
-	viewport.own_world_3d = true
-	viewport.transparent_bg = true
-	viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
-	viewport.msaa_3d = Viewport.MSAA_2X
-	display.add_child(viewport)
-	var scene = Node3D.new()
-	viewport.add_child(scene)
-	var furniture: Node3D = Furniture.build({"kind":kind,"variant":variant,"uid":-1,"color":0})
-	scene.add_child(furniture)
-	var world = WorldEnvironment.new()
-	world.environment = Environment.new()
-	world.environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	world.environment.ambient_light_color = Color("c0d5dc")
-	world.environment.ambient_light_energy = 0.65
-	world.environment.tonemap_mode = Environment.TONE_MAPPER_FILMIC
-	scene.add_child(world)
-	var light = DirectionalLight3D.new()
-	light.rotation_degrees = Vector3(-42,-28,0)
-	light.light_energy = 1.1
-	scene.add_child(light)
-	var view = Camera3D.new()
-	view.projection = Camera3D.PROJECTION_ORTHOGONAL
-	view.size = 4.4 if kind in ["table","rug","parasol","soft"] else (3.4 if kind == "bench" else 2.8)
-	view.position = Vector3(4,5,6) if kind == "rug" else Vector3(4,3,6)
-	scene.add_child(view)
-	view.look_at_from_position(view.position,Vector3(0,0.15 if kind == "rug" else (1.5 if kind == "soft" else 0.85),0))
-	view.current = true
-	display.texture = viewport.get_texture()
+	# The shop views are static. Bake them from the full models instead of
+	# allocating four 3D worlds and compiling their shaders on first entry.
+	display.texture = load("res://assets/furniture_previews/%s_%s.png" % [kind,variant])
 	add_child(display)
 	_preview_views[key] = display
 

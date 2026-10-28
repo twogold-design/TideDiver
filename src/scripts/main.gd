@@ -132,6 +132,8 @@ const LAYOUT_DEFAULT_YAW: float = 0.5317240673
 const LAYOUT_DEFAULT_PITCH: float = 0.8829062407
 var layout_camera_yaw: float = LAYOUT_DEFAULT_YAW
 var layout_camera_pitch: float = LAYOUT_DEFAULT_PITCH
+var _entry_water_meshes: Array[SphereMesh] = []
+var _entry_water_material: StandardMaterial3D
 const LAYOUT_AREA = Rect2(332,96,1100,708)
 
 func _ready() -> void:
@@ -158,6 +160,7 @@ func _ready() -> void:
 	hud.game = self
 	layer.add_child(hud)
 	_setup_sound()
+	_prepare_entry_water()
 	if OS.has_feature("web"):
 		var web_platform = preload("res://scripts/web_platform.gd").new()
 		web_platform.game = self
@@ -1092,36 +1095,7 @@ func _update_entry(delta: float) -> void:
 func _play_splash() -> void:
 	if muted:
 		return
-	# Layer the initial impact, broad spray and irregular resonant bubbles.
-	var wav := AudioStreamWAV.new()
-	wav.format = AudioStreamWAV.FORMAT_16_BITS
-	wav.mix_rate = 22050
-	var data := PackedByteArray()
-	var count: int = 26460
-	data.resize(count * 2)
-	var noise := RandomNumberGenerator.new()
-	noise.seed = 31415
-	var low: float = 0.0
-	var mid: float = 0.0
-	for i in range(count):
-		var t: float = float(i) / 22050.0
-		var white: float = noise.randf_range(-1, 1)
-		low = lerpf(low, white, 0.045)
-		mid = lerpf(mid, white, 0.42)
-		var attack: float = minf(t / 0.008, 1.0)
-		var impact: float = low * 3.8 * exp(-t * 24)
-		var spray: float = (mid - low) * 1.3 * exp(-t * 5.5)
-		var wash: float = low * 1.7 * (1.0 - exp(-t * 22)) * exp(-t * 3.8)
-		var bubbles: float = 0.0
-		for j in range(9):
-			var age: float = t - (0.12 + j * 0.083 + sin(j * 17.0) * 0.025)
-			if age > 0:
-				var frequency: float = 340 + fposmod(j * 173.0, 630)
-				bubbles += sin(TAU * (frequency * age - 230 * age * age)) * exp(-age * 38) * minf(age * 900, 1.0) * 0.17
-		var value: float = (impact + spray + wash) * attack + bubbles
-		data.encode_s16(i * 2, int(clampf(value, -0.95, 0.95) * 29000))
-	wav.data = data
-	sound_player.stream = wav
+	sound_player.stream = preload("res://assets/audio/dive_splash.wav")
 	sound_player.play()
 
 func _capture_feedback(kind: int, location: Vector3) -> void:
@@ -1168,17 +1142,21 @@ func _capture_feedback(kind: int, location: Vector3) -> void:
 	sound_player.stream = wav
 	sound_player.play()
 
+func _prepare_entry_water() -> void:
+	_entry_water_material = StandardMaterial3D.new()
+	_entry_water_material.albedo_color = Color("b9f1ed")
+	_entry_water_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	for i in range(4):
+		var sphere := SphereMesh.new()
+		sphere.radius = 0.06 + float(i) * 0.025
+		sphere.height = sphere.radius * 2
+		_entry_water_meshes.append(sphere)
+
 func _spawn_entry_water() -> void:
 	for i in range(42):
 		var droplet := MeshInstance3D.new()
-		var sphere := SphereMesh.new()
-		sphere.radius = 0.06 + float(i % 4) * 0.025
-		sphere.height = sphere.radius * 2
-		droplet.mesh = sphere
-		var mat := StandardMaterial3D.new()
-		mat.albedo_color = Color("b9f1ed")
-		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		droplet.material_override = mat
+		droplet.mesh = _entry_water_meshes[i % 4]
+		droplet.material_override = _entry_water_material
 		var angle: float = float(i) * 2.399
 		var bubble: bool = i >= 24
 		droplet.position = Vector3(player.position.x + sin(angle) * 0.4, -0.8 if bubble else 0.65, player.position.z + cos(angle) * 0.4)
@@ -1673,7 +1651,7 @@ func open_restaurant() -> void:
 	restaurant_node.visible = true
 	ocean_root.visible = false
 	_reset_shore_lighting()
-	_rebuild_restaurant()
+	_rebuild_restaurant(true)
 	environment.fog_enabled = false
 	environment.background_color = Color("7dafb8")
 	camera.fov = 50
@@ -1974,9 +1952,9 @@ func finish_service() -> void:
 
 
 # Transactional furniture layout: only Save commits money and changes to progress.
-func _rebuild_restaurant() -> void:
+func _rebuild_restaurant(reuse_room: bool = false) -> void:
 	var model = layout_work if layout_mode else progress
-	restaurant_node.rebuild(model.renovation,model.furniture_items(),{"floor":model.floor_style,"wall":model.wall_style},layout_mode)
+	restaurant_node.rebuild(model.renovation,model.furniture_items(),{"floor":model.floor_style,"wall":model.wall_style},layout_mode or reuse_room)
 	if layout_mode:
 		restaurant_node.set_layout_grid(true)
 		restaurant_node.highlight_furniture(layout_selected)
@@ -2032,7 +2010,7 @@ func _end_layout() -> void:
 	restaurant_node.clear_layout_preview()
 	restaurant_node.set_layout_grid(false)
 	restaurant_node.highlight_furniture(-1)
-	_rebuild_restaurant()
+	_rebuild_restaurant(true)
 	hud.rebuild()
 
 func _remember_layout() -> void:

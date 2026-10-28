@@ -4,7 +4,7 @@ $zip = Join-Path (Split-Path $root -Parent) ((Split-Path $root -Leaf) + '-Web.zi
 # Include the complete web source, templates, tests and root entry; exclude generated/local data.
 $files = @(Get-ChildItem -LiteralPath $root -Recurse -File -Force | Where-Object {
     $relative = $_.FullName.Substring($root.Length + 1).Replace('\','/')
-    $relative -notmatch '(^|/)(\.git|\.godot|node_modules)/|^src/(tests/temp|saves|artifacts)/' -and $relative -notmatch '\.log$'
+    $relative -notmatch '(^|/)(\.git|\.godot|\.runtime|node_modules)/|^src/(tests/temp|saves|artifacts)/' -and $relative -notmatch '\.log$'
 })
 $bytes = ($files | Measure-Object Length -Sum).Sum
 if ($bytes -ge 200000000) { throw "Full web project exceeds 200 MB: $bytes" }

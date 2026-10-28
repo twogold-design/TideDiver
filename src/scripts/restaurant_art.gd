@@ -13,6 +13,7 @@ const WOOD: Color = Color("ba865b")
 const MINT: Color = Color("75aa98")
 const INK: Color = Color("344f50")
 var _room: Node3D
+var _shore: Node3D
 var _people: Node3D
 var _customers: Dictionary = {}
 var _materials: Dictionary = {}
@@ -231,23 +232,28 @@ func _sync_layout_furniture(items: Array) -> void:
 	highlight_furniture(selected)
 
 func _build_shore() -> void:
-	Coast.build(_room)
-	_palm(_room, Vector3(-14.4, -0.3, -5.0), 1.9)
-	_palm(_room, Vector3(14.2, -0.3, -6.5), 1.65)
-	_palm(_room, Vector3(-14.8, -0.3, 10.0), 1.4)
+	if is_instance_valid(_shore):
+		return
+	_shore = Node3D.new()
+	_shore.name = "RestaurantShore"
+	add_child(_shore)
+	Coast.build(_shore)
+	_palm(_shore, Vector3(-14.4, -0.3, -5.0), 1.9)
+	_palm(_shore, Vector3(14.2, -0.3, -6.5), 1.65)
+	_palm(_shore, Vector3(-14.8, -0.3, 10.0), 1.4)
 	for i: int in range(12):
 		var p: Vector3 = Vector3((14.2 + float(i % 4) * 2.4) * (-1 if i % 2 else 1), -0.25, -3.0 + float(i) * 1.6)
-		_sphere(_room, p, Vector3(0.4 + float(i % 3) * 0.2, 0.2, 0.3), Color("a9ac96"))
+		_sphere(_shore, p, Vector3(0.4 + float(i % 3) * 0.2, 0.2, 0.3), Color("a9ac96"))
 	# Expanded front terrace follows the larger room instead of stretching furniture.
-	_box(_room, Vector3(0, -0.16, 11.2), Vector3(22.3, 0.28, 3.4), Color("927a59"))
+	_box(_shore, Vector3(0, -0.16, 11.2), Vector3(22.3, 0.28, 3.4), Color("927a59"))
 	for i: int in range(32):
-		var plank: MeshInstance3D = _box(_room, Vector3(-10.85 + float(i) * 0.7, 0.005, 11.2), Vector3(0.67, 0.045, 3.4), Color("ac8d65"))
+		var plank: MeshInstance3D = _box(_shore, Vector3(-10.85 + float(i) * 0.7, 0.005, 11.2), Vector3(0.67, 0.045, 3.4), Color("ac8d65"))
 		plank.material_override = Furniture._mat(Color("ac8d65"), 1)
-	_box(_room, Vector3(0, -0.29, 13.25), Vector3(4.5, 0.16, 0.8), Color("ae926c"))
+	_box(_shore, Vector3(0, -0.29, 13.25), Vector3(4.5, 0.16, 0.8), Color("ae926c"))
 	for x: float in [-10.7, 10.7]:
 		for z: float in [10.0, 12.6]:
-			_cylinder(_room, Vector3(x, 0.5, z), 0.10, 1.0, Color("8e7353"))
-		_bar(_room, Vector3(x, 0.8, 10.0), Vector3(x, 0.8, 12.6), 0.035, Color("c8ba96"))
+			_cylinder(_shore, Vector3(x, 0.5, z), 0.10, 1.0, Color("8e7353"))
+		_bar(_shore, Vector3(x, 0.8, 10.0), Vector3(x, 0.8, 12.6), 0.035, Color("c8ba96"))
 
 func _build_shell(clean: bool) -> void:
 	var floors: Array[Color] = [Color("aa8157"), Color("b4a681"), Color("63897f")]

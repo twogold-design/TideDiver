@@ -92,6 +92,10 @@
     document.addEventListener('tide-ready', () => {
       resize(); cover.hidden = true; canvas.focus();
     });
+    document.addEventListener('tide-loading', event => {
+      status.textContent = event.detail;
+      progress.removeAttribute('value');
+    });
     canvas.addEventListener('contextmenu', event => event.preventDefault());
     canvas.addEventListener('webglcontextlost', event => {
       event.preventDefault(); fail('图形连接已中断，请重新加载游戏。已保存的进度仍会保留。');
