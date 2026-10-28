@@ -1,6 +1,7 @@
 extends RefCounted
 ## Original low-poly fish, facing local -Z. Visual joints leave the hunting root intact.
 const StonefishArt = preload("res://scripts/stonefish_art.gd")
+static var _models: Dictionary = {}
 
 static func _material(color: String, glow: float = 0.0) -> StandardMaterial3D:
 	var result := StandardMaterial3D.new()
@@ -73,6 +74,23 @@ static func _tail(root: Node3D, z: float, span: float, length: float, mat: Mater
 	return tail
 
 static func build(kind: int) -> Node3D:
+	# Each species shares immutable geometry/materials; every fish retains its own
+	# nodes so tails, armour scaling and camouflage can animate independently.
+	if not _models.has(kind):
+		var template := _build_model(kind)
+		_own_model(template,template)
+		var packed := PackedScene.new()
+		packed.pack(template)
+		template.free()
+		_models[kind] = packed
+	return _models[kind].instantiate()
+
+static func _own_model(node: Node, root: Node) -> void:
+	for child: Node in node.get_children():
+		child.owner = root
+		_own_model(child,root)
+
+static func _build_model(kind: int) -> Node3D:
 	if kind == 9:
 		return StonefishArt.build()
 	var root := Node3D.new()

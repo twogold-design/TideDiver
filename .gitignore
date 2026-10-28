@@ -3,4 +3,5 @@ src/tests/temp/
 src/saves/
 src/artifacts/
 node_modules/
+.runtime/
 *.log

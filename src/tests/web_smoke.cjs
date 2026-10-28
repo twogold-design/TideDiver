@@ -9,6 +9,7 @@ const wide = process.argv.includes('--wide');
 const uiText = process.argv.includes('--ui-text');
 const summer = process.argv.includes('--summer');
 const layoutPerf = process.argv.includes('--layout-perf');
+const layoutTransitions = process.argv.includes('--layout-transitions');
 const entryURL = localFile ? pathToFileURL(path.join(root,'index.html')).href : 'http://127.0.0.1:8060/';
 const work = path.join(path.dirname(root),'.'+path.basename(root)+'-web-work');
 fs.mkdirSync(path.join(work,'temp'),{recursive:true});
@@ -102,7 +103,37 @@ const messages = [];
     await page.goto(entryURL);
     await page.getByRole('button',{name:'启程 · 开始游戏'}).click();
     await page.waitForFunction(() => window.tideGameReady === true, null, {timeout:120000});
-    await clickGame(240,586,[0,0.5]); await clickGame(440,755,[0.5,1]);
+    await clickGame(240,586,[0,0.5]);
+    if(layoutTransitions){
+      const samples=[];
+      const measure=async(name,x,y,anchor)=>{
+        await page.evaluate(()=>{
+          window.layoutTransitionFrames=[];window.layoutTransitionRecording=true;
+          let last=performance.now();
+          const frame=now=>{if(!window.layoutTransitionRecording)return;window.layoutTransitionFrames.push(now-last);last=now;requestAnimationFrame(frame);};
+          requestAnimationFrame(frame);
+        });
+        await page.waitForTimeout(150);
+        await clickGame(x,y,anchor);
+        await page.waitForTimeout(2000);
+        const result=await page.evaluate(()=>{
+          window.layoutTransitionRecording=false;
+          const frames=window.layoutTransitionFrames.slice(1).sort((a,b)=>a-b);
+          return {maxMs:Math.max(...frames),p95Ms:frames[Math.floor(frames.length*.95)],over100Ms:frames.filter(v=>v>100)};
+        });
+        samples.push({name,...result});console.log('LAYOUT_TRANSITION',name,JSON.stringify(result));
+        await page.screenshot({path:path.join(output,`layout-transition-${name}.png`)});
+      };
+      await measure('enter-first',440,755,[.5,1]);
+      await measure('cancel',1323,46,[1,0]);
+      await measure('enter-repeat',440,755,[.5,1]);
+      await measure('save',1135,46,[1,0]);
+      fs.writeFileSync(path.join(work,process.argv.includes('--baseline')?'layout-transitions-before.json':'layout-transitions-after.json'),JSON.stringify(samples,null,2));
+      assert.deepEqual(errors,[]);
+      if(!process.argv.includes('--baseline'))assert.ok(samples.every(v=>v.maxMs<300),'Layout entry and exit avoid long freezes');
+      if(!summer)return;
+    }
+    await clickGame(440,755,[0.5,1]);
     await page.waitForTimeout(1500);
     await page.screenshot({path:path.join(output,'web_layout.png')});
     if(layoutPerf){

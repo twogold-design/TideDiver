@@ -540,9 +540,25 @@ func _test_layout_reuse() -> void:
 	ui.set_category("soft")
 	var preview_id: int = ui._preview_views["soft/premium"].get_instance_id()
 	ui.rebuild()
-	_check(ui._preview_views["soft/premium"].get_instance_id() == preview_id,"Selection refreshes preserve the shop preview viewport")
+	_check(ui._preview_views["soft/premium"].get_instance_id() == preview_id,"Selection refreshes preserve the shop preview image")
 	_check(ui._preview_views.size() <= ui.PREVIEW_CACHE_LIMIT,"Shop preview cache remains bounded")
+	for kind: String in game.Layout.CATALOG:
+		for variant: String in game.Layout.variant_ids(kind):
+			var preview: Texture2D = load("res://assets/furniture_previews/%s_%s.png" % [kind,variant])
+			_check(preview != null and preview.get_size() == Vector2(232,248),"Bundled shop preview matches the original resolution: "+kind+"/"+variant)
+	_check(ui._preview_views["soft/premium"].get_child_count() == 0,"Static shop previews require no live 3D viewport")
 	game.cancel_layout()
+	_check(game.restaurant_node._room.get_instance_id() == room_id,"Cancelling layout reuses the unchanged room")
+	game.enter_layout()
+	game.save_layout()
+	_check(game.restaurant_node._room.get_instance_id() == room_id,"Saving layout reuses the unchanged room")
+	var shore_id: int = game.restaurant_node._shore.get_instance_id()
+	var original_floor: int = progress.floor_style
+	game.enter_layout()
+	game.set_layout_style("floor",(original_floor+1)%3)
+	game.cancel_layout()
+	_check(progress.floor_style == original_floor and game.restaurant_node._styles.floor == original_floor,"Cancelling a floor change restores the original appearance")
+	_check(game.restaurant_node._shore.get_instance_id() == shore_id,"Restoring room styles preserves the shore scene")
 
 func _test_shop_buttons() -> void:
 	var starting_money: int = progress.coins

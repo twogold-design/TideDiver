@@ -3,7 +3,7 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'environment.ps1')
 & $Godot --headless --editor --path $source --log-file (Join-Path $work 'test-import.log') --quit
 if ($LASTEXITCODE -ne 0) { throw 'Import failed.' }
-$tests = @('progression','restaurant','game','restaurant_flow','layout','layout_flow','furniture_catalog','new_game','living_world','hunting','dive_spawns','ocean_features','coastal_update','canyon_current','gm_dives','diver_motion','seabed_detail','dive_expansion','ray_wreck','canyon_wildlife','stonefish','depth_lighting','loot','fish_motion','marine_life','diver_atmosphere')
+$tests = @('progression','restaurant','game','restaurant_flow','layout','layout_flow','furniture_catalog','new_game','living_world','hunting','dive_spawns','ocean_features','coastal_update','canyon_current','gm_dives','diver_motion','seabed_detail','dive_expansion','ray_wreck','canyon_wildlife','stonefish','depth_lighting','loot','fish_motion','marine_life','diver_atmosphere','transitions')
 foreach ($test in $tests) {
     $log = Join-Path $work ("test-$test.log")
     $options = @('--audio-driver','Dummy')
