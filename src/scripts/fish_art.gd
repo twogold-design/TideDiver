@@ -1,5 +1,5 @@
 extends RefCounted
-## Original low-poly fish, facing local -Z. Tail and eel joints animate in FishBrain.
+## Original low-poly fish, facing local -Z. Visual joints leave the hunting root intact.
 const StonefishArt = preload("res://scripts/stonefish_art.gd")
 static var _models: Dictionary = {}
 
@@ -61,7 +61,7 @@ static func _eyes(root: Node3D, width: float, height: float, z: float, big: bool
 	for side: float in [-1.0,1.0]:
 		var radius: float = 0.12 if big else 0.075
 		_ellipsoid(root,Vector3(side*width,height,z),Vector3.ONE*radius,white,"Eye")
-		_ellipsoid(root,Vector3(side*(width+radius*0.55),height,z-0.02),Vector3(radius*0.6,radius*0.7,radius*0.7),pupil)
+		_ellipsoid(root,Vector3(side*(width+radius*0.55),height,z-0.02),Vector3(radius*0.6,radius*0.7,radius*0.7),pupil,"Pupil")
 
 static func _tail(root: Node3D, z: float, span: float, length: float, mat: Material) -> Node3D:
 	var tail := Node3D.new()
@@ -97,6 +97,7 @@ static func _build_model(kind: int) -> Node3D:
 	root.name = "FishArt"
 	if kind == 7:
 		_build_moray(root)
+		_rig(root,0.0,false)
 		return root
 	var colors: Array[String] = ["e99a42","3c9ba8","65488d","a9d5dc","a8a566","c96043","286ba2","7d9170","688b9d"]
 	var widths: Array[float] = [0.28,0.32,0.42,0.13,0.52,0.29,0.43,0.25,0.53]
@@ -114,7 +115,11 @@ static func _build_model(kind: int) -> Node3D:
 	_tail(root,length*0.82,h*(1.5 if kind in [3,6,8] else 1.0),length*0.56,fin)
 	for side: float in [-1.0,1.0]:
 		var wing: float = 1.05 if kind == 8 else (0.7 if kind == 6 else 0.42)
-		_fin(root,Vector3(side*w,-0.04,-length*0.3),Vector3(side*(w+wing),-0.2,length*0.4),Vector3(side*w,-0.08,length*0.35),fin,"PectoralFin")
+		var joint := Node3D.new()
+		joint.name = "PectoralLeft" if side < 0.0 else "PectoralRight"
+		joint.position = Vector3(side*w,-0.04,-length*0.3)
+		root.add_child(joint)
+		_fin(joint,Vector3.ZERO,Vector3(side*wing,-0.16,length*0.7),Vector3(0,-0.04,length*0.65),fin,"PectoralFin")
 	if kind != 4:
 		_fin(root,Vector3(0,h*0.8,-length*0.3),Vector3(0,h+(0.7 if kind == 8 else 0.28),length*0.02),Vector3(0,h*0.7,length*0.6),fin,"DorsalFin")
 	match kind:
@@ -156,16 +161,52 @@ static func _build_model(kind: int) -> Node3D:
 		8:
 			_ellipsoid(root,Vector3(0,-0.04,-1.37),Vector3(0.37,0.22,0.62),body,"Snout")
 			_ellipsoid(root,Vector3(0,-0.22,-1.45),Vector3(0.30,0.025,0.30),_material("233d4a"),"Mouth")
+			var jaw := Node3D.new()
+			jaw.name = "Jaw"
+			jaw.position = Vector3(0,-0.16,-0.99)
+			root.add_child(jaw)
+			_ellipsoid(jaw,Vector3(0,-0.075,-0.43),Vector3(0.30,0.08,0.50),pale,"LowerJaw")
+			for side: float in [-1.0,1.0]:
+				for tooth in range(4):
+					var z: float = -0.68+tooth*0.11
+					_fin(jaw,Vector3(side*0.18,0,z),Vector3(side*0.18,0.055,z+0.025),Vector3(side*0.18,0,z+0.05),pale,"Tooth")
 			for side: float in [-1.0,1.0]:
 				for i in range(3):
 					_ellipsoid(root,Vector3(side*0.50,0,-0.55+i*0.13),Vector3(0.022,0.23,0.025),_material("314d60"),"Gill")
+	_rig(root,-length*0.35,true)
 	return root
+
+static func _rig(root: Node3D, pivot_z: float, flexible_body: bool) -> void:
+	var parts: Array[Node] = root.get_children()
+	var motion := Node3D.new()
+	motion.name = "Motion"
+	root.add_child(motion)
+	var flex := Node3D.new()
+	flex.name = "BodyFlex"
+	flex.position.z = pivot_z
+	motion.add_child(flex)
+	for part: Node3D in parts:
+		# Eyes and jaws stabilize the head while the overlapping trunk bends behind it.
+		var head: bool = str(part.name).begins_with("Eye") or str(part.name).begins_with("Pupil") or part.name in ["Jaw","Mouth","Snout","Head"]
+		var parent: Node3D = flex if flexible_body and not head else motion
+		var rest: Transform3D = part.transform
+		root.remove_child(part)
+		parent.add_child(part)
+		part.transform = rest
+		if parent == flex:
+			part.position.z -= pivot_z
+	root.set_meta("motion_rig",true)
 
 static func _build_moray(root: Node3D) -> void:
 	var skin := _material("657b52")
 	var spot := _material("b6be83")
 	_ellipsoid(root,Vector3(0,0,-0.65),Vector3(0.29,0.30,0.64),skin,"Head")
 	_ellipsoid(root,Vector3(0,-0.16,-0.98),Vector3(0.22,0.025,0.30),_material("223629"),"Mouth")
+	var jaw := Node3D.new()
+	jaw.name = "Jaw"
+	jaw.position = Vector3(0,-0.10,-0.70)
+	root.add_child(jaw)
+	_ellipsoid(jaw,Vector3(0,-0.09,-0.31),Vector3(0.22,0.09,0.38),skin,"LowerJaw")
 	_eyes(root,0.25,0.10,-0.94)
 	var parent: Node3D = root
 	for i in range(6):

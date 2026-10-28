@@ -96,7 +96,8 @@ func rebuild() -> void:
 			var y: float = 215 + index * 66
 			_button("船上入水",Rect2(817,y+8,150,40),game.gm_select_dive_site.bind(index,false))
 			_button("直达景观",Rect2(982,y+8,170,40),game.gm_select_dive_site.bind(index,true),true)
-		_button("返回游戏 · F1 / Esc",Rect2(580,715,280,48),game.close_gm_menu)
+		_button("无限气瓶量：" + ("开启" if game.gm_infinite_air else "关闭"),Rect2(290,715,420,48),game.toggle_gm_infinite_air,game.gm_infinite_air)
+		_button("返回游戏 · F1 / Esc",Rect2(750,715,400,48),game.close_gm_menu)
 		queue_redraw()
 		return
 	if game.state == "dock":
@@ -261,7 +262,7 @@ func _draw_gm_menu() -> void:
 		_text(Vector2(286,y+31),"%02d" % (index+1),15,MINT,true)
 		_text(Vector2(326,y+25),game.Ocean.DIVE_SITES[index].name,19,GOLD if selected else LIGHT)
 		_text(Vector2(326,y+46),descriptions[index],13,MUTED)
-	_center(Vector2(720,784),"船上入水体验完整跳水 · 直达景观快速检查潜点特色",13,MUTED)
+	_center(Vector2(720,784),"无限气瓶量适用于呼吸、受伤和中毒；重新打开游戏后默认关闭。",13,MUTED)
 
 func _draw_dock() -> void:
 	# An editorial split layout keeps the underwater vista visible.
@@ -344,12 +345,12 @@ func _draw_hud() -> void:
 	_text(Vector2(52,59),"TIDE DIVER",19,LIGHT,true)
 	_text(Vector2(230,57),"潮间潜客",15,MUTED)
 	_text(Vector2(52,88),"AIR",22,MINT,true)
-	var fraction: float = game.oxygen/game.progress.oxygen_max()
+	var fraction: float = 1.0 if game.gm_infinite_air else game.oxygen/game.progress.oxygen_max()
 	var oxygen_color: Color = MINT if fraction > 0.25 else Color("ff886b")
 	draw_style_box(_style(Color("21434b")),Rect2(95,77,210,11))
 	draw_style_box(_style(oxygen_color),Rect2(95,77,210*maxf(fraction,0.01),11))
-	_text(Vector2(316,88),str(int(game.oxygen)),17,oxygen_color,true)
-	_text(Vector2(52,123),"气瓶量",13,MUTED)
+	_text(Vector2(316,88),"∞" if game.gm_infinite_air else str(int(game.oxygen)),17,oxygen_color,true)
+	_text(Vector2(52,123),"气瓶量 · GM 无限" if game.gm_infinite_air else "气瓶量",13,MINT if game.gm_infinite_air else MUTED)
 	_text(Vector2(214,123),"DAY %02d  ·  潮汐湾" % game.progress.day,13,MUTED)
 	region(TOP_RIGHT)
 	var bag_full: bool = game.weight() >= game.progress.capacity()
@@ -436,7 +437,8 @@ func _draw_hud() -> void:
 		_center(Vector2(720,271),game.hunt_warning,18,Color("ffb190"))
 	if game.poison_timer > 0:
 		region(TOP_CENTER)
-		_center(Vector2(720,316),"中毒 %.1f 秒 · 每秒额外消耗 1.5 气瓶量" % game.poison_timer,17,Color("d5c0f2"))
+		var poison_label: String = "中毒 %.1f 秒 · GM 已免除耗气" if game.gm_infinite_air else "中毒 %.1f 秒 · 每秒额外消耗 1.5 气瓶量"
+		_center(Vector2(720,316),poison_label % game.poison_timer,17,Color("d5c0f2"))
 	region(BOTTOM_LEFT)
 	_panel(Rect2(30,685,236,104),Color(0.025,0.12,0.16,0.78))
 	_text(Vector2(48,712),"探索目标",13,MINT)

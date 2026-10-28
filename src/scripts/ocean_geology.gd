@@ -263,6 +263,8 @@ static func detail_point(area: Dictionary, site: int, index: int, core_count: in
 	return point
 
 static func _detail_clear(point: Vector3, center: Vector3, site: int) -> bool:
+	if Ocean.seabed_height(point.x,point.z) > -6.0:
+		return false
 	var entry: Vector3 = Ocean.DIVE_SITES[site].origin + Vector3(0, 0, 25)
 	var p := Vector2(point.x, point.z)
 	var a := Vector2(entry.x, entry.z)

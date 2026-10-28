@@ -103,8 +103,9 @@ static func _branch(parent: Node3D, start: Vector3, end: Vector3, radius: float,
 static func _coral(parent: Node3D, pos: Vector3, size: float, color: Color) -> void:
 	if _reef_coral == null:
 		_reef_coral = CoralGarden._coral_mesh(0)
-	var coral: MeshInstance3D = _mesh(parent, _reef_coral, pos, _life_material(color))
-	coral.scale = Vector3.ONE * size / 3.25
+	var muted: Color = color.lerp(Color("a19b87"),0.42)
+	var coral: MeshInstance3D = _mesh(parent, _reef_coral, pos, CoralGarden.material(muted))
+	coral.scale = Vector3.ONE * size / 2.1
 
 static func _life_material(color: Color) -> StandardMaterial3D:
 	if not _life_materials.has(color):
@@ -114,6 +115,8 @@ static func _life_material(color: Color) -> StandardMaterial3D:
 	return _life_materials[color]
 
 static func _weed(parent: Node3D, pos: Vector3, size: float, color: Color) -> void:
+	if parent.to_global(pos).y+size > -0.5:
+		return
 	var plant: MeshInstance3D = _mesh(parent, ReefLife.mesh("Seagrass"), pos, _life_material(color))
 	plant.scale = Vector3(size*0.45,size/1.5,size*0.45)
 
@@ -489,6 +492,11 @@ static func _build_outer_ocean(parent: Node3D) -> void:
 		# Low peripheral stones blend the landmark into its natural shelf.
 		for i: int in range(4):
 			var p: Vector3 = _region_ground(region,-27+float(i)*18,-25,0.65)
+			if index == 0:
+				var world: Vector3 = region.to_global(p)
+				var cross_slope: float = absf(Ocean.seabed_height(world.x-2.6,world.z)-Ocean.seabed_height(world.x+2.6,world.z))
+				if cross_slope > 4.0:
+					continue
 			var size := Vector3(2.6,1.5,3.4)
 			_rock(region,p,size,i+index)
 			_solid_rock(region,p,size)

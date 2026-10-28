@@ -24,12 +24,25 @@ func _run() -> void:
 		var mesh_a: MeshInstance3D = a.find_children("*","MeshInstance3D",true,false)[0]
 		var mesh_b: MeshInstance3D = b.find_children("*","MeshInstance3D",true,false)[0]
 		_check(mesh_a.mesh == mesh_b.mesh,"Species geometry is shared")
-		var tail_a: Node3D = a.get_node("Tail")
-		var tail_b: Node3D = b.get_node("Tail")
-		var original := tail_b.transform
-		tail_a.rotation.y += 0.7
+		var tail_a := a.find_child("Tail",true,false) as Node3D
+		var tail_b := b.find_child("Tail",true,false) as Node3D
+		_check(tail_a != null and tail_b != null,"Both species instances retain an animated tail")
+		var independent: bool = tail_a != null and tail_b != null
+		for joint_name: String in ["Tail","Motion","BodyFlex","Jaw"]:
+			var joint_a := a.find_child(joint_name,true,false) as Node3D
+			var joint_b := b.find_child(joint_name,true,false) as Node3D
+			if joint_a == null and joint_b == null:
+				continue
+			if joint_a == null or joint_b == null:
+				independent = false
+				continue
+			var original: Transform3D = joint_b.transform
+			joint_a.rotation.y += 0.7
+			joint_a.position += Vector3(0.1,0.2,-0.3)
+			joint_a.scale *= Vector3(1.1,0.9,1.2)
+			independent = independent and joint_a != joint_b and joint_b.transform == original
 		a.scale = Vector3.ONE * 1.5
-		_check(tail_b.transform == original and b.scale == Vector3.ONE,"Fish animations and armour remain independent")
+		_check(independent and b.scale == Vector3.ONE,"Fish tails, body motion, jaws and armour remain independent")
 		a.free()
 		b.free()
 	var game = load("res://scenes/main.tscn").instantiate()
@@ -38,6 +51,7 @@ func _run() -> void:
 	game.muted = true
 	root.add_child(game)
 	game.set_physics_process(false)
+	game.set_process_unhandled_input(false)
 	await physics_frame
 	await process_frame
 	var room_id: int = game.restaurant_node._room.get_instance_id()

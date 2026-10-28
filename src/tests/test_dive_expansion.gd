@@ -35,6 +35,7 @@ func _run() -> void:
 	game.smoke_mode = true
 	game.set_process(false)
 	game.set_physics_process(false)
+	game.set_process_unhandled_input(false)
 	await physics_frame
 	await process_frame
 	game.start_dive(false, false)
@@ -78,7 +79,7 @@ func _test_current_isolation() -> void:
 	for side: float in [-1.0, 1.0]:
 		var inside_z: float = center_z + side * (Ocean.CANYON_HALF_LENGTH - 10.0)
 		extended_flow = extended_flow and Ocean.current_velocity(Vector3(Ocean.canyon_center_x(inside_z), -50, inside_z)).length() > 0.1
-		extended_flow = extended_flow and Ocean.current_velocity(Vector3(Ocean.canyon_center_x(center_z) + side * (Ocean.CANYON_BANK_HALF_WIDTH - 8.0), -50, center_z)).length() > 0.1
+		extended_flow = extended_flow and Ocean.current_velocity(Vector3(Ocean.canyon_center_x(center_z) + side * (Ocean.CANYON_FLOOR_HALF_WIDTH + 4.0), -50, center_z)).length() > 0.1
 		for outside: float in [0.0, 0.5, 12.0]:
 			var outside_z: float = center_z + side * (Ocean.CANYON_HALF_LENGTH + outside)
 			quiet_mouths = quiet_mouths and Ocean.current_velocity(Vector3(Ocean.canyon_center_x(outside_z), -50, outside_z)).is_zero_approx()
@@ -139,9 +140,16 @@ func _route_clear(area: Dictionary, destination: Vector3) -> bool:
 	var radius: float = float(area.core_radius) + 8
 	var angle: float = atan2(destination.x - center.x, destination.z - center.z)
 	var route: Array[Vector3] = [center + Vector3(0, 0, 36), center + Vector3(0, 0, radius)]
-	for step in range(1, 25):
-		var heading: float = angle * float(step) / 24.0
-		route.append(center + Vector3(sin(heading) * radius, 0, cos(heading) * radius))
+	if area.id == "twin_gates":
+		# Follow the submerged gorge rather than crossing its exposed island banks.
+		route.clear()
+		for step in range(49):
+			var z: float = lerpf(center.z + 36.0,destination.z,float(step)/48.0)
+			route.append(Vector3(Ocean.canyon_center_x(z),0,z))
+	else:
+		for step in range(1, 25):
+			var heading: float = angle * float(step) / 24.0
+			route.append(center + Vector3(sin(heading) * radius, 0, cos(heading) * radius))
 	route.append(destination)
 	for segment in range(1, route.size()):
 		var start: Vector3 = route[segment - 1]
@@ -153,6 +161,7 @@ func _route_clear(area: Dictionary, destination: Vector3) -> bool:
 			var current := Vector3(horizontal.x, Ocean.seabed_height(horizontal.x, horizontal.z) + 8, horizontal.z)
 			var collision := KinematicCollision3D.new()
 			if game.player.test_move(Transform3D(Basis.IDENTITY, previous), current - previous, collision):
+				printerr("Route obstruction at %s toward %s: %s" % [previous,current,collision.get_collider()])
 				return false
 			previous = current
 	return true

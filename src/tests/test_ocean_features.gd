@@ -150,6 +150,9 @@ func _test_coral(garden: Node3D) -> void:
 	var actual_forms: Dictionary = {}
 	var aligned: bool = true
 	var metadata_matches: bool = true
+	var lane_clear: bool = true
+	var bounded_geometry: bool = true
+	var materials: Dictionary = {}
 	var minimum := Vector2(INF, INF)
 	var maximum := Vector2(-INF, -INF)
 	for child in garden.get_children():
@@ -162,10 +165,19 @@ func _test_coral(garden: Node3D) -> void:
 			metadata_matches = false
 			continue
 		mesh_ids[batch.mesh.get_instance_id()] = true
+		materials[child.material_override.get_instance_id()] = true
+		var arrays: Array = batch.mesh.surface_get_arrays(0)
+		var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		bounded_geometry = bounded_geometry and vertices.size()/3 <= 4600 and vertices.size()/3 >= 1000
 		instance_count += batch.instance_count
 		for index in range(batch.instance_count):
 			var local_point: Vector3 = batch.get_instance_transform(index).origin
 			var world: Vector3 = child.global_transform * local_point
+			var transform: Transform3D = batch.get_instance_transform(index)
+			for vertex_index in range(0,vertices.size(),9):
+				var point: Vector3 = transform*vertices[vertex_index]
+				var lane: float = sin((point.z+6.0)*0.055)*6.0
+				lane_clear = lane_clear and absf(point.x-lane) >= 3.5
 			aligned = aligned and absf(world.y - Ocean.seabed_height(world.x, world.z)) < 0.002
 			minimum.x = minf(minimum.x, local_point.x)
 			minimum.y = minf(minimum.y, local_point.z)
@@ -186,6 +198,8 @@ func _test_coral(garden: Node3D) -> void:
 	_check(aligned, "Every actual coral instance root meets the real world seabed height")
 	_check(maximum.x - minimum.x > 80 and maximum.y - minimum.y > 65, "The real coral placement spans more than eighty by sixty-five metres")
 	_check(_collision_nodes(garden) == 0, "The visual coral garden adds no collision objects or shapes")
+	_check(lane_clear, "The rendered organic colonies leave a continuous seven-metre sand lane rather than only clearing their roots")
+	_check(bounded_geometry and materials.size() == 1, "Four detailed coral meshes share one material and stay within a bounded per-colony geometry budget")
 
 func _collision_nodes(node: Node) -> int:
 	var count: int = 1 if node is CollisionObject3D or node is CollisionShape3D else 0

@@ -17,9 +17,11 @@ const TERRAIN_EXTENT := 700.0
 const TERRAIN_STEP := 4.0
 const CANYON_CENTER := Vector3(-210,0,-230)
 const CANYON_CURRENT_SPEED := 2.2
-const CANYON_HALF_LENGTH := 145.0
+const CANYON_HALF_LENGTH := 225.0
+const CANYON_BEND_AMPLITUDE := 26.0
+const CANYON_BEND_FREQUENCY := 0.018
 const CANYON_FLOOR_HALF_WIDTH := 14.0
-const CANYON_BANK_HALF_WIDTH := 46.0
+const CANYON_BANK_HALF_WIDTH := 62.0
 const COASTAL_RADIUS := 68.0
 const EXPLORATION_NAMES := [
 	["海草沙坡", "浅礁贝床"], ["岩岸断层", "外围遗迹"],
@@ -39,7 +41,7 @@ const ZONES := [
 # Boat origins keep the stern jump on the open-water approach to each landmark.
 const DIVE_SITES := [
 	{"name":"潮汐湾近岸", "origin":Vector3(0,0,0)},
-	{"name":"双门遗迹 · 潮流大峡谷", "origin":Vector3(-210,0,-290)},
+	{"name":"双门遗迹 · 潮流大峡谷", "origin":Vector3(-226,0,-290)},
 	{"name":"幽蓝灯园", "origin":Vector3(35,0,-420)},
 	{"name":"远航沉船", "origin":Vector3(310,0,-190)},
 	{"name":"琥珀珊瑚礁", "origin":Vector3(-180,0,75)},
@@ -62,11 +64,17 @@ static func exploration_points(site_index: int) -> Array:
 	for branch in range(2):
 		var side: float = -1.0 if branch == 0 else 1.0
 		var point: Vector3 = center + Vector3(side*radius*0.82,0,-side*radius*0.18)
+		if site_index == 1:
+			# Discoveries sit inside the bends, reachable without crossing the island ridge.
+			point.z = center.z + side * 52.0
+			point.x = canyon_center_x(point.z) + side * 8.0
 		point.y = seabed_height(point.x,point.z)
 		result.append({"name":EXPLORATION_NAMES[site_index][branch],"position":point})
 	return result
 
 static func exploration_area_for_position(point: Vector3) -> Dictionary:
+	if absf(point.z-CANYON_CENTER.z) <= CANYON_HALF_LENGTH and absf(point.x-canyon_center_x(point.z)) <= CANYON_BANK_HALF_WIDTH:
+		return ZONES[0]
 	var nearest: Dictionary = {}
 	var best: float = INF
 	for area: Dictionary in exploration_areas():
@@ -77,20 +85,23 @@ static func exploration_area_for_position(point: Vector3) -> Dictionary:
 	return nearest
 
 static func canyon_center_x(z: float) -> float:
-	return CANYON_CENTER.x + 5.0*sin((z-CANYON_CENTER.z)*0.045)
+	return CANYON_CENTER.x + CANYON_BEND_AMPLITUDE*sin((z-CANYON_CENTER.z)*CANYON_BEND_FREQUENCY)
+
+static func canyon_tangent(z: float) -> Vector3:
+	var bend: float = CANYON_BEND_AMPLITUDE*CANYON_BEND_FREQUENCY*cos((z-CANYON_CENTER.z)*CANYON_BEND_FREQUENCY)
+	return Vector3(bend,0,1).normalized()
 
 static func current_velocity(point: Vector3) -> Vector3:
 	var along: float = absf(point.z-CANYON_CENTER.z)
 	var across: float = absf(point.x-canyon_center_x(point.z))
-	var longitudinal: float = 1.0-smoothstep(100.0,CANYON_HALF_LENGTH,along)
-	var lateral: float = 1.0-smoothstep(16.0,44.0,across)
+	var longitudinal: float = 1.0-smoothstep(CANYON_HALF_LENGTH-45.0,CANYON_HALF_LENGTH,along)
+	var lateral: float = 1.0-smoothstep(12.0,28.0,across)
 	var depth: float = smoothstep(25.0,45.0,-point.y)
 	if longitudinal <= 0 or lateral <= 0 or depth <= 0:
 		return Vector3.ZERO
 	if point.y < seabed_height(point.x,point.z)+0.7:
 		return Vector3.ZERO
-	var bend: float = 5.0*0.045*cos((point.z-CANYON_CENTER.z)*0.045)
-	return Vector3(bend,0,1).normalized()*CANYON_CURRENT_SPEED*longitudinal*lateral*depth
+	return canyon_tangent(point.z)*CANYON_CURRENT_SPEED*longitudinal*lateral*depth
 
 static func terrain_vertex_height(x: float, z: float) -> float:
 	var r: float = Vector2(x,z).length()
@@ -106,10 +117,16 @@ static func terrain_vertex_height(x: float, z: float) -> float:
 	# Low stone ridges around the southern gorge, never a perimeter cage.
 	height += 11.0*sin(x*0.075)*exp(-Vector2(x+45.0,z-300.0).length_squared()/4900.0)
 	# A deep, navigable gorge is local to the twin-gate dive site.
-	var canyon_along: float = 1.0-smoothstep(95.0,CANYON_HALF_LENGTH,absf(z-CANYON_CENTER.z))
-	var canyon_across: float = 1.0-smoothstep(CANYON_FLOOR_HALF_WIDTH,CANYON_BANK_HALF_WIDTH,absf(x-canyon_center_x(z)))
+	var canyon_along: float = 1.0-smoothstep(CANYON_HALF_LENGTH-65.0,CANYON_HALF_LENGTH,absf(z-CANYON_CENTER.z))
+	var across: float = absf(x-canyon_center_x(z))
+	var canyon_across: float = 1.0-smoothstep(CANYON_FLOOR_HALF_WIDTH,CANYON_BANK_HALF_WIDTH,across)
 	height -= 52.0*canyon_along*canyon_across
-	return clampf(height,-118.0,-17.0)
+	height = clampf(height,-118.0,-17.0)
+	# Two eroded island ridges grow out of the same collision mesh as the gorge.
+	# The deep centre stays open, with broad mouths tapering into the original shelf.
+	var ridge: float = smoothstep(24.0,43.0,across)*(1.0-smoothstep(43.0,CANYON_BANK_HALF_WIDTH,across))
+	var crest: float = 26.0 + 6.0*sin(z*0.047+x*0.031) + 3.0*cos(z*0.091-x*0.063)
+	return lerpf(height,crest,ridge*canyon_along)
 
 ## Exact interpolation of the two triangles used in each terrain mesh cell.
 ## Ray-cast collision and this API agree, including between grid vertices.
@@ -135,10 +152,14 @@ static func pickup_points() -> Array:
 		for spec: Dictionary in [{"kind":"pearl","x":-9.0,"z":25.0},{"kind":relic,"x":9.0,"z":29.0},{"kind":"chest","x":2.0,"z":35.0}]:
 			var x: float = center.x+float(spec.x)
 			var z: float = center.z+float(spec.z)
+			if zone_index == 0:
+				x = canyon_center_x(z)+float(spec.x)
 			result.append({"kind":spec.kind,"position":Vector3(x,seabed_height(x,z)+1.0,z)})
 		# Stations stand clear of landmarks at fish depth, with a shallower route tank.
 		var ox: float = center.x-14.0
 		var oz: float = center.z+32.0
+		if zone_index == 0:
+			ox = canyon_center_x(oz)-10.0
 		result.append({"kind":"oxygen","position":Vector3(ox,maxf(center.y,seabed_height(ox,oz)+9.0),oz)})
 		for fraction: float in [0.28,0.54,0.78]:
 			var route: Vector3 = center*fraction
@@ -155,6 +176,8 @@ static func pickup_points() -> Array:
 			var kind: String = ["sea_glass","ancient_coin","amber_shard","conch","pearl","sea_glass","ancient_coin"][site] if branch == 0 else ("conch" if site == 0 else "chest")
 			result.append({"kind":kind,"position":point,"site_index":site,"exploration":true,"name":points[branch].name})
 		var station: Vector3 = area.center + Vector3(0,0,-float(area.radius)*0.72)
+		if site == 1:
+			station.x = canyon_center_x(station.z)
 		station.y = maxf(area.center.y,seabed_height(station.x,station.z)+8.0)
 		result.append({"kind":"oxygen","position":station,"site_index":site,"exploration":true,"name":"外围补气点"})
 	return result
@@ -185,11 +208,18 @@ static func fish_home(zone_index: int, fish_index: int) -> Vector3:
 		var angle: float = float(fish_index-4)*2.399963+float(zone_index)*0.47
 		var reach: float = float(zone.radius)*(0.55+0.34*float(fish_index%4)/3.0)
 		point = center+Vector3(sin(angle)*reach,float(fish_index%3-1)*3.0,cos(angle)*reach)
+	if zone_index == 0:
+		# Fish patrols remain in the water between the emergent banks.
+		if fish_index >= 4:
+			point.z = center.z + (-1.0 if fish_index%2 == 0 else 1.0)*(35.0+float(fish_index%5)*6.0)
+		point.x = canyon_center_x(point.z)+(float(fish_index%4)-1.5)*5.0
 	point.y = maxf(point.y,seabed_height(point.x,point.z)+10.0)
 	return point
 
 static func hazard_home(zone_index: int) -> Vector3:
 	var center: Vector3 = ZONES[clampi(zone_index,0,ZONES.size()-1)].center
 	var point: Vector3 = center+Vector3(23,0,31)
+	if zone_index == 0:
+		point.x = canyon_center_x(point.z)+12.0
 	point.y = maxf(point.y,seabed_height(point.x,point.z)+12.0)
 	return point
