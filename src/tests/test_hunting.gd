@@ -44,6 +44,7 @@ func _run() -> void:
 	await process_frame
 	_test_population_and_seabed()
 	_test_range_and_capture()
+	await _test_capacity_feedback()
 	_test_fish_reactions()
 	_test_predators_and_poison()
 	await _test_obstruction()
@@ -279,6 +280,52 @@ func _test_range_and_capture() -> void:
 		_check(game.cargo.size() == count, "Captured target cannot be harvested twice: " + species.id)
 	game.cargo.clear()
 	progress.spear_level = 0
+func _test_capacity_feedback() -> void:
+	_disable_fish()
+	game.player.position = Vector3(200,-8,200)
+	progress.bag_level = 0
+	progress.spear_level = 3
+	game.cargo.clear()
+	for index in range(11):
+		game.cargo.append({"id":"orange","weight":1,"value":18})
+	var target := _fixture(1,game.player.position+Vector3(0,0,-12))
+	_aim_at(target)
+	_check(game.context_hint().contains("需 2 kg，剩余 1 kg"),"Aiming warns when the target is too heavy even before the bag is entirely full")
+	game.catch_timer = 2.0
+	game.loot_feedback_timer = 3.0
+	game.shoot()
+	_fly_hook()
+	_check(target.alive and target.hp == 1 and target.node.visible and game.weight() == 11,"A real harpoon hit with insufficient capacity preserves the fish and existing cargo")
+	_check(game.capacity_warning_timer == 6.0 and game.capacity_warning_name == FishData.SPECIES[1].name and game.capacity_warning_weight == 2 and game.capacity_warning_action == "未能捕获","Failed capture shows a six-second warning with the actual fish and required capacity")
+	_check(game.catch_timer == 0.0 and game.loot_feedback_timer == 0.0,"Capacity warning replaces stale success feedback")
+	if "--capture-capacity" in OS.get_cmdline_user_args():
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		game.hud.queue_redraw()
+		await process_frame
+		await RenderingServer.frame_post_draw
+		_check(root.get_texture().get_image().save_png("user://capacity-warning.png") == OK,"Capture the actual capacity warning HUD")
+	game.toggle_pause()
+	game._physics_process(1.0)
+	_check(game.capacity_warning_timer == 6.0,"Pausing preserves the warning's reading time")
+	game.toggle_pause()
+	game.capacity_warning_timer = 1.0
+	_aim_at(target)
+	game.shoot()
+	_fly_hook()
+	_check(game.capacity_warning_timer == 6.0 and game.weight() == 11,"Another failed shot refreshes the warning without duplicating cargo")
+	_disable_fish()
+	target = _fixture(0,game.player.position+Vector3(0,0,-12))
+	_aim_at(target)
+	game.shoot()
+	_fly_hook()
+	_check(not target.alive and game.weight() == 12 and game.catch_timer > 0 and game.capacity_warning_timer == 0.0,"A smaller fish that fits exactly can still be captured and replaces the warning with success")
+	game._show_capacity_warning(FishData.SPECIES[1],"未能捕获")
+	game.finish_dive(false)
+	_check(game.state == "dock" and game.capacity_warning_timer == 0.0 and game.capacity_warning_name.is_empty(),"Returning clears the underwater capacity warning")
+	game.start_dive(false,false)
+	_check(game.capacity_warning_timer == 0.0 and game.cargo.is_empty(),"A new dive starts with no stale warning or cargo")
+	progress.spear_level = 0
+
 func _test_fish_reactions() -> void:
 	_disable_fish()
 	game.player.position = Vector3(200,-8,200)

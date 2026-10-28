@@ -66,6 +66,10 @@ var loot_feedback: Array[String] = []
 var loot_feedback_title: String = ""
 var loot_feedback_note: String = ""
 var loot_feedback_timer: float = 0.0
+var capacity_warning_timer: float = 0.0
+var capacity_warning_name: String = ""
+var capacity_warning_weight: int = 0
+var capacity_warning_action: String = ""
 var catch_kind: int = 0
 var hit_timer: float = 0.0
 var entry_active: bool = false
@@ -1044,6 +1048,7 @@ func _physics_process(delta: float) -> void:
 	if state not in ["paused","service_paused"]:
 		catch_timer = maxf(0, catch_timer - delta)
 		loot_feedback_timer = maxf(0, loot_feedback_timer - delta)
+		capacity_warning_timer = maxf(0, capacity_warning_timer - delta)
 		hit_timer = maxf(0, hit_timer - delta)
 		hurt_flash = maxf(0, hurt_flash - delta)
 		_update_effects(delta)
@@ -1398,7 +1403,7 @@ func _hit_fish(target: Dictionary, launched_damage: int = -1) -> void:
 			_capture_feedback(target.kind, target.node.position)
 		else:
 			target.hp = 1
-			tell("背包空间不足，石头鱼仍伏在岩边。先返航清空背包。" if data.behavior == "camouflage" else "背包空间不足，猎物仍在逃跑。上浮返航清空背包。",4)
+			_show_capacity_warning(data,"未能捕获")
 	elif not armored:
 		tell("命中 %s！剩余耐久 %d / %d" % [data.name,target.hp,data.hp],2)
 
@@ -1456,7 +1461,7 @@ func interact() -> void:
 		_show_loot_feedback("补给已拾取",[],restored)
 	else:
 		if weight()+int(info.weight) > progress.capacity():
-			tell("背包空间不足，先返航将收获入库吧。", 3)
+			_show_capacity_warning(info,"未能采集")
 			return
 		cargo.append(info)
 		_show_loot_feedback("采集成功",[info],0.0)
@@ -1470,6 +1475,19 @@ func _clear_loot_feedback() -> void:
 	loot_feedback_title = ""
 	loot_feedback_note = ""
 	loot_feedback_timer = 0.0
+	capacity_warning_timer = 0.0
+	capacity_warning_name = ""
+	capacity_warning_weight = 0
+	capacity_warning_action = ""
+
+func _show_capacity_warning(info: Dictionary, action: String) -> void:
+	_clear_loot_feedback()
+	catch_timer = 0.0
+	capacity_warning_name = str(info.name)
+	capacity_warning_weight = int(info.weight)
+	capacity_warning_action = action
+	capacity_warning_timer = 6.0
+	tell("背包空间不足，先返航将收获入库。",6.0)
 
 func _show_loot_feedback(title: String, claimed: Array, air: float, note: String = "") -> void:
 	_clear_loot_feedback()
@@ -1566,6 +1584,9 @@ func context_hint() -> String:
 	var target: Dictionary = target_fish()
 	if not target.is_empty():
 		var data: Dictionary = FishData.SPECIES[target.kind]
+		var remaining: int = maxi(0,progress.capacity()-weight())
+		if int(data.weight) > remaining:
+			return "%s · 空间不足：需 %d kg，剩余 %d kg" % [data.name,data.weight,remaining]
 		return "%s · 耐久 %d/%d · %d kg | %s" % [data.name,target.hp,data.hp,data.weight,data.hint]
 	return ""
 

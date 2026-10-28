@@ -352,12 +352,15 @@ func _draw_hud() -> void:
 	_text(Vector2(52,123),"气瓶量",13,MUTED)
 	_text(Vector2(214,123),"DAY %02d  ·  潮汐湾" % game.progress.day,13,MUTED)
 	region(TOP_RIGHT)
-	_panel(Rect2(1135,28,275,116))
+	var bag_full: bool = game.weight() >= game.progress.capacity()
+	var capacity_alert: bool = bag_full or game.capacity_warning_timer > 0
+	var capacity_ink := Color("ffb190")
+	_panel(Rect2(1135,28,275,116),Color("352b2b") if capacity_alert else Color(0.025,0.12,0.16,0.88),capacity_ink if capacity_alert else Color(0.4,0.8,0.75,0.18))
 	_text(Vector2(1157,60),"深度",14,MUTED)
 	_text(Vector2(1220,66),"%04.1f" % -game.player.position.y,36,LIGHT,true)
 	_text(Vector2(1345,64),"m",18,MINT,true)
-	_text(Vector2(1157,105),"载重 %02d / %02d kg" % [game.weight(),game.progress.capacity()],16,LIGHT)
-	_text(Vector2(1157,130),"收获价值  %d G" % game.cargo_value(),14,GOLD)
+	_text(Vector2(1157,105),"载重 %02d / %02d kg" % [game.weight(),game.progress.capacity()],18,capacity_ink if capacity_alert else LIGHT)
+	_text(Vector2(1157,130),"背包已满 · 请返航入库" if bag_full else "收获价值  %d G" % game.cargo_value(),14,capacity_ink if bag_full else GOLD)
 	# Compass and heading markers.
 	region(TOP_CENTER)
 	var heading: float = fposmod(-rad_to_deg(game.yaw),360)
@@ -373,6 +376,8 @@ func _draw_hud() -> void:
 	region(CENTER)
 	var target: Dictionary = game.target_fish()
 	var reticle: Color = GOLD if not target.is_empty() else Color(0.88,1,0.94,0.7)
+	if not target.is_empty() and int(game.FishData.SPECIES[target.kind].weight) > game.progress.capacity()-game.weight():
+		reticle = capacity_ink
 	var center = Vector2(720,450)
 	for dir in [Vector2.LEFT,Vector2.RIGHT,Vector2.UP,Vector2.DOWN]:
 		draw_line(center+dir*9,center+dir*17,reticle,2,true)
@@ -384,7 +389,15 @@ func _draw_hud() -> void:
 		var spread: float = 21 + (1.0 - game.hit_timer / 0.3) * 14
 		for diagonal in [Vector2(-1,-1), Vector2(1,-1), Vector2(-1,1), Vector2(1,1)]:
 			draw_line(center + diagonal * spread, center + diagonal * (spread + 9), Color(flash, minf(1, game.hit_timer * 6)), 3, true)
-	if game.loot_feedback_timer > 0:
+	if game.capacity_warning_timer > 0:
+		var alpha: float = minf(1.0,game.capacity_warning_timer/0.5)
+		_panel(Rect2(410,566,620,170),Color(0.20,0.10,0.09,0.97*alpha),Color(capacity_ink,alpha))
+		draw_rect(Rect2(410,566,620,5),Color(capacity_ink,alpha))
+		native_text(font,Vector2(720,608),"背包空间不足",30,Color(capacity_ink,alpha),true,20)
+		native_text(font,Vector2(720,643),"%s · %s" % [game.capacity_warning_action,game.capacity_warning_name],22,Color(LIGHT,alpha),true,16)
+		native_text(font,Vector2(720,676),"需要 %d kg · 当前仅剩 %d kg" % [game.capacity_warning_weight,maxi(0,game.progress.capacity()-game.weight())],19,Color(GOLD,alpha),true,14)
+		native_text(font,Vector2(720,713),"按住 E 上浮，靠近海面后按 F 返航入库",17,Color(LIGHT,alpha),true,14)
+	elif game.loot_feedback_timer > 0:
 		var alpha: float = minf(1.0,game.loot_feedback_timer/0.5)
 		var rows: int = mini(3,game.loot_feedback.size())
 		var has_note: bool = not game.loot_feedback_note.is_empty()
