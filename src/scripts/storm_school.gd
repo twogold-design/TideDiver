@@ -56,7 +56,7 @@ void fragment() {
 
 func animate(time: float, viewer: Vector3) -> void:
 	visible = viewer.distance_to(position) < 180.0
-	rotation.y = time * 0.24
+	rotation.y = -time * 0.24
 	if school != null:
 		(school.material_override as ShaderMaterial).set_shader_parameter("swim_clock",time)
 

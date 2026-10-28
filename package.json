@@ -9,6 +9,7 @@
     "package": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/package_web.ps1",
     "test:web": "node src/tests/web_smoke.cjs",
     "test:local": "node src/tests/web_smoke.cjs --file",
+    "test:marine": "node src/tests/web_marine_update.cjs",
     "test:resolution": "node src/tests/web_resolution.cjs",
     "test:text": "node src/tests/web_text.cjs"
   },

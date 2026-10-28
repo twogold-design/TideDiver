@@ -79,6 +79,9 @@ static func _build_candidates(game: Node) -> Array:
 	return result
 
 static func _safe_home(game: Node, point: Vector3, body: Shape3D) -> bool:
+	# The entire animal, including raised venom spines, stays below the surface.
+	if point.y > -2.0:
+		return false
 	if _ground_basis(point,0).y.y < 0.97:
 		return false
 	for site: Dictionary in Ocean.DIVE_SITES:

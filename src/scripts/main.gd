@@ -16,6 +16,8 @@ const CanyonShark = preload("res://scripts/thresher_shark.gd")
 const StonefishHabitat = preload("res://scripts/stonefish_habitat.gd")
 const DepthLighting = preload("res://scripts/depth_lighting.gd")
 const Loot = preload("res://scripts/loot_catalog.gd")
+const DiverBubbles = preload("res://scripts/diver_bubbles.gd")
+const MarineLife = preload("res://scripts/marine_life.gd")
 const SWIMMING_SPECIES := 9
 const COASTAL_FISH_COUNT = 21
 const COASTAL_KINDS = [0,1,3,4,6,2]
@@ -47,12 +49,15 @@ var wildlife_rng = RandomNumberGenerator.new()
 var gm_menu_open: bool = false
 var gm_return_state: String = "dock"
 var gm_test_active: bool = false
+var gm_infinite_air: bool = false
 var player: CharacterBody3D
 var diver_motion = DiverMotion.new()
 var camera: Camera3D
 var environment: Environment
 var ocean_sun: DirectionalLight3D
 var diver_light: OmniLight3D
+var diver_bubbles: Node3D
+var marine_life: Node3D
 var hud: Node2D
 var fish: Array = []
 var pickups: Array = []
@@ -369,9 +374,14 @@ func _setup_world() -> void:
 	diver_light.light_energy = 0.35
 	diver_light.omni_range = 12
 	player.add_child(diver_light)
+	diver_bubbles = DiverBubbles.new()
+	ocean_root.add_child(diver_bubbles)
+	diver_bubbles.ignored_bodies.append(player.get_rid())
+	marine_life = MarineLife.build(ocean_root,[player.get_rid()],explorable_wreck)
 	_reset_shore_lighting()
 
 func _spawn_population() -> void:
+	marine_life.reset()
 	ray_habitat.reset()
 	canyon_shark.begin_dive(wildlife_rng.randi())
 	for item in fish:
@@ -450,7 +460,7 @@ func _add_fish(kind: int, point: Vector3) -> Dictionary:
 			away = away.normalized() * 45.0 if away.length_squared() > 0.01 else Vector2(45,0)
 			p.x = landing.x + away.x
 			p.z = landing.z + away.y
-	p.y = clampf(p.y,maxf(Ocean.Y_MIN+3,Ocean.seabed_height(p.x,p.z)+5),-6)
+	p.y = clampf(p.y,minf(-6,maxf(Ocean.Y_MIN+3,Ocean.seabed_height(p.x,p.z)+5)),-6)
 	p = _clear_fish_home(p, kind)
 	if not p.is_finite():
 		return {}
@@ -462,6 +472,9 @@ func _add_fish(kind: int, point: Vector3) -> Dictionary:
 	fish.append(item)
 	return item
 func _open_water(point: Vector3, radius: float = 1.2) -> bool:
+	# A trimesh only tests its surface; points inside an island are also solid land.
+	if point.y < Ocean.seabed_height(point.x,point.z)+radius:
+		return false
 	var sphere := SphereShape3D.new()
 	sphere.radius = radius
 	var query := PhysicsShapeQueryParameters3D.new()
@@ -475,7 +488,7 @@ func _clear_fish_home(point: Vector3, kind: int) -> Vector3:
 	var radius: float = float(FishData.SPECIES[kind].radius)
 	var dangerous: bool = FishData.SPECIES[kind].behavior in ["venom","ambush","predator"]
 	var landing := dive_origin + Vector3(0,-6,25)
-	if _open_water(point, radius):
+	if point.y <= -maxf(3.0,radius) and _open_water(point, radius):
 		return point
 	for ring in range(1,13):
 		for direction in range(8):
@@ -483,6 +496,8 @@ func _clear_fish_home(point: Vector3, kind: int) -> Vector3:
 			var candidate := point + Vector3(sin(angle)*ring*2.5,ring*0.5,cos(angle)*ring*2.5)
 			candidate.x = clampf(candidate.x,Ocean.X_MIN+5,Ocean.X_MAX-5)
 			candidate.z = clampf(candidate.z,Ocean.Z_MIN+5,Ocean.Z_MAX-5)
+			if Ocean.seabed_height(candidate.x,candidate.z)+5 > -6:
+				continue
 			candidate.y = clampf(candidate.y,Ocean.seabed_height(candidate.x,candidate.z)+5,-6)
 			if dangerous and Vector2(candidate.x-landing.x,candidate.z-landing.z).length() < 42.0:
 				continue
@@ -545,6 +560,9 @@ func _safe_hazard_home(point: Vector3) -> Vector3:
 		p.x = landing.x + away.x
 		p.z = landing.z + away.y
 	p.y = maxf(p.y,Ocean.seabed_height(p.x,p.z)+4.0)
+	if p.y > -4.0:
+		p.x = Ocean.canyon_center_x(p.z)
+		p.y = maxf(-30.0,Ocean.seabed_height(p.x,p.z)+4.0)
 	return p
 
 func _spread_background_fish() -> void:
@@ -556,7 +574,7 @@ func _spread_background_fish() -> void:
 			continue
 		offset = offset.normalized()*40.0 if offset.length_squared() > 0.01 else Vector2(40,0)
 		var point := Vector3(landing.x+offset.x,item.home.y,landing.z+offset.y)
-		point.y = clampf(point.y,Ocean.seabed_height(point.x,point.z)+5,-6)
+		point.y = clampf(point.y,minf(-6,Ocean.seabed_height(point.x,point.z)+5),-6)
 		point = _clear_fish_home(point,item.kind)
 		if point.is_finite():
 			item.home = point
@@ -573,6 +591,9 @@ func _spawn_entry_fish() -> void:
 			_add_fish(kind,point)
 
 func _add_pickup(pos: Vector3, kind: String) -> void:
+	if Ocean.seabed_height(pos.x,pos.z) > -5.0:
+		pos.x = Ocean.canyon_center_x(pos.z)
+		pos.y = minf(pos.y,-8.0)
 	pos.y = maxf(pos.y,Ocean.seabed_height(pos.x,pos.z)+1.0)
 	var node: Node3D = Art.create_pickup(kind)
 	node.position = pos
@@ -636,6 +657,8 @@ func confirm_new_game() -> void:
 	gm_menu_open = false
 	gm_test_active = false
 	gm_return_state = "dock"
+	gm_infinite_air = false
+	diver_bubbles.reset()
 	state = "dock"
 	entry_active = false
 	drift_current = Vector3.ZERO
@@ -725,6 +748,7 @@ func start_dive(animate_entry: bool = true, random_entry: bool = true, site_over
 		return
 	harvest_result_visible = false
 	gm_test_active = false
+	diver_bubbles.reset()
 	_clear_projectiles()
 	restaurant_node.visible = false
 	preparation.clear()
@@ -787,6 +811,18 @@ func close_gm_menu() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED if state == "dive" else Input.MOUSE_MODE_VISIBLE
 	hud.rebuild()
 
+func toggle_gm_infinite_air() -> void:
+	if not gm_menu_open:
+		return
+	gm_infinite_air = not gm_infinite_air
+	if gm_infinite_air:
+		oxygen = progress.oxygen_max()
+	hud.rebuild()
+
+func _consume_air(amount: float) -> void:
+	if not gm_infinite_air:
+		oxygen = maxf(0.0,oxygen-maxf(0.0,amount))
+
 func gm_select_dive_site(index: int, direct: bool = false) -> void:
 	if not gm_menu_open or index < 0 or index >= Ocean.DIVE_SITES.size():
 		return
@@ -801,6 +837,7 @@ func gm_select_dive_site(index: int, direct: bool = false) -> void:
 		_clear_projectiles()
 		state = "dive"
 	gm_test_active = true
+	diver_bubbles.reset()
 	entry_active = not direct
 	entry_time = 0.0
 	entry_splashed = false
@@ -841,7 +878,8 @@ func _gm_test_pose(index: int) -> Dictionary:
 	match index:
 		1:
 			point = Vector3(Ocean.canyon_center_x(-325),-78,-325)
-			heading = PI
+			var downstream: Vector3 = Ocean.canyon_tangent(point.z)
+			heading = atan2(-downstream.x,-downstream.z)
 			tilt = -0.20
 		2:
 			point = Vector3(35,Ocean.seabed_height(35,-325)+14,-325)
@@ -862,6 +900,8 @@ func _gm_test_pose(index: int) -> Dictionary:
 			for direction in range(8):
 				var angle: float = float(direction)*TAU/8.0
 				var candidate := point + Vector3(sin(angle)*ring*2.0,ring*1.5,cos(angle)*ring*2.0)
+				if Ocean.seabed_height(candidate.x,candidate.z)+3 > -6:
+					continue
 				candidate.y = clampf(candidate.y,Ocean.seabed_height(candidate.x,candidate.z)+3,-6)
 				if _open_water(candidate):
 					point = candidate
@@ -877,6 +917,7 @@ func finish_dive(rescued: bool = false) -> void:
 	if state != "dive":
 		return
 	_clear_loot_feedback()
+	diver_bubbles.reset()
 	var depleted: bool = rescued and oxygen <= 0.0
 	gm_test_active = false
 	diver_motion.reset()
@@ -1017,6 +1058,9 @@ func _physics_process(delta: float) -> void:
 		else:
 			_update_dive(delta)
 			_update_projectiles(delta)
+			if state == "dive":
+				var effort: float = 1.0 if Input.is_action_pressed("boost") else minf(0.5,player.velocity.length()/12.0)
+				diver_bubbles.advance(delta,player.get_child(0).global_transform,true,effort,drift_current)
 	elif state in ["restaurant","service","service_paused"]:
 		if layout_mode:
 			camera.projection = Camera3D.PROJECTION_ORTHOGONAL
@@ -1211,24 +1255,33 @@ func _update_dive(delta: float) -> void:
 		else:
 			current_hint = "横向游动 · 水流侧推"
 	player.velocity = move * speed + drift_current
+	var previous_position: Vector3 = player.position
 	player.move_and_slide()
 	player.position.x = clampf(player.position.x,Ocean.X_MIN,Ocean.X_MAX)
 	player.position.z = clampf(player.position.z,Ocean.Z_MIN,Ocean.Z_MAX)
-	player.position.y = clampf(player.position.y,maxf(Ocean.Y_MIN,Ocean.seabed_height(player.position.x,player.position.z)+0.8),Ocean.Y_MAX)
+	var floor_limit: float = maxf(Ocean.Y_MIN,Ocean.seabed_height(player.position.x,player.position.z)+0.8)
+	if floor_limit > Ocean.Y_MAX:
+		# Never resolve a shoreline collision by lifting the swimmer onto dry land.
+		player.position = previous_position
+		player.velocity = Vector3.ZERO
+	else:
+		player.position.y = clampf(player.position.y,floor_limit,Ocean.Y_MAX)
 	player.rotation.y = lerp_angle(player.rotation.y,yaw,delta*8)
 	player.rotation.x = lerpf(player.rotation.x,vertical*0.22,delta*5)
 	diver_motion.advance(delta, Vector3(input_dir.x,vertical,input_dir.y).limit_length(), boosting)
 	depth_record = maxf(depth_record,-player.position.y)
 	var use_rate: float = (0.72 + maxf(0,-player.position.y-20)*0.009) * (1.8 if boosting else 1.0)
-	oxygen = maxf(0, oxygen-use_rate*delta)
+	_consume_air(use_rate*delta)
+	if gm_infinite_air:
+		oxygen = progress.oxygen_max()
 	_update_swim_camera()
 	for hazard in hazards:
 		if player.position.distance_to(hazard.node.position) < 2.0 and hurt_cooldown <= 0:
-			oxygen = maxf(0,oxygen-12)
+			_consume_air(12)
 			hurt_cooldown = 2.5
-			tell("小心水母！气瓶量减少 12。", 3)
+			tell("小心水母！GM 无限气瓶量已免除耗气。" if gm_infinite_air else "小心水母！气瓶量减少 12。", 3)
 			_play_tone(120,0.18)
-	if oxygen <= 0:
+	if oxygen <= 0 and not gm_infinite_air:
 		finish_dive(true)
 
 func _update_swim_camera() -> void:
@@ -1255,7 +1308,7 @@ func _update_swim_camera() -> void:
 	_apply_underwater_lighting(maxf(0.0,-camera.position.y))
 	var canyon_along: float = absf(player.position.z-Ocean.CANYON_CENTER.z)
 	var canyon_across: float = absf(player.position.x-Ocean.canyon_center_x(player.position.z))
-	var canyon_view: float = smoothstep(30.0,55.0,-player.position.y)*(1.0-smoothstep(44.0,64.0,canyon_across))*(1.0-smoothstep(135.0,175.0,canyon_along))
+	var canyon_view: float = smoothstep(30.0,55.0,-player.position.y)*(1.0-smoothstep(44.0,64.0,canyon_across))*(1.0-smoothstep(Ocean.CANYON_HALF_LENGTH-35.0,Ocean.CANYON_HALF_LENGTH+15.0,canyon_along))
 	environment.fog_density = 0.011 if inside_wreck else lerpf(0.024,0.010,canyon_view)
 
 func _apply_underwater_lighting(depth: float, immersion: float = 1.0) -> Dictionary:
@@ -1281,6 +1334,7 @@ func _animate_ocean(_delta: float) -> void:
 	if not ocean_root.visible:
 		return
 	canyon_root.animate(clock,player.position)
+	marine_life.animate(clock,player.position)
 	storm_school.animate(clock,player.position)
 	explorable_wreck.get_node("WreckFishSchool").animate(clock,player.position)
 	canyon_shark.animate(clock,player.position)
@@ -1308,7 +1362,7 @@ func _update_fish(item: Dictionary, delta: float) -> void:
 func take_hunt_damage(amount: float, poison: bool, source: String) -> void:
 	if state != "dive" or entry_active or hurt_cooldown > 0:
 		return
-	oxygen = maxf(0,oxygen-amount)
+	_consume_air(amount)
 	hurt_cooldown = 2.5
 	hurt_flash = 0.45
 	if poison:
@@ -1316,6 +1370,8 @@ func take_hunt_damage(amount: float, poison: bool, source: String) -> void:
 	hunt_warning = "%s · 气瓶量 -%d%s" % [source,int(amount),"，中毒6秒，保持距离" if poison else "，侧游避开下一次冲刺"]
 	if source == "石头鱼":
 		hunt_warning = "石头鱼毒棘刺伤 · 气瓶量 -%d · 中毒6秒，请远离岩石边缘" % int(amount)
+	if gm_infinite_air:
+		hunt_warning = "%s · GM 无限气瓶量已免除耗气%s" % [source," · 中毒6秒" if poison else ""]
 	hunt_warning_timer = 3.0
 	_play_tone(120,0.12)
 
@@ -1323,7 +1379,7 @@ func _update_hunting_status(delta: float) -> void:
 	hunt_warning_timer = maxf(0,hunt_warning_timer-delta)
 	if poison_timer > 0:
 		var elapsed: float = minf(delta,poison_timer)
-		oxygen = maxf(0,oxygen-elapsed*1.5)
+		_consume_air(elapsed*1.5)
 		poison_timer = maxf(0,poison_timer-delta)
 func weight() -> int:
 	var value: int = 0
@@ -1543,8 +1599,6 @@ func ocean_edge_distance() -> float:
 	return minf(minf(player.position.x-Ocean.X_MIN,Ocean.X_MAX-player.position.x),minf(player.position.z-Ocean.Z_MIN,Ocean.Z_MAX-player.position.z))
 
 func ocean_zone_name() -> String:
-	if absf(player.position.z-Ocean.CANYON_CENTER.z) < Ocean.CANYON_HALF_LENGTH+8 and absf(player.position.x-Ocean.canyon_center_x(player.position.z)) < 42:
-		return Ocean.ZONES[0].name
 	var area: Dictionary = Ocean.exploration_area_for_position(player.position)
 	if area.is_empty():
 		return "蓝海航道"
@@ -1589,6 +1643,9 @@ func context_hint() -> String:
 	if not target.is_empty():
 		var data: Dictionary = FishData.SPECIES[target.kind]
 		return "%s · 耐久 %d/%d · %d kg | %s" % [data.name,target.hp,data.hp,data.weight,data.hint]
+	var observed: String = marine_life.nearby_species(player.position)
+	if not observed.is_empty():
+		return "观察 · %s" % observed
 	return ""
 
 func tell(message: String, seconds: float) -> void:

@@ -2,6 +2,7 @@ extends RefCounted
 ## Local reactive fish simulation. Only the game physics clock advances behaviour.
 const FishData = preload("res://scripts/fish_catalog.gd")
 const Ocean = preload("res://scripts/ocean_config.gd")
+const SWIM_CADENCE := [4.7,5.8,3.5,10.0,3.4,3.0,7.6,5.0,4.4]
 
 static func prepare(item: Dictionary) -> void:
 	if item.has("state"):
@@ -47,6 +48,7 @@ static func advance(game: Node, item: Dictionary, delta: float) -> void:
 		return
 	var node: Node3D = item.node
 	var data: Dictionary = FishData.SPECIES[item.kind]
+	var previous_direction: Vector3 = item.direction
 	var distance: float = node.position.distance_to(game.player.position)
 	# Far-away animals keep their habitat without spending collision-query time.
 	node.visible = distance < 190.0 if game.state == "dive" else true
@@ -125,6 +127,9 @@ static func advance(game: Node, item: Dictionary, delta: float) -> void:
 			var phase: float = float(item.phase)+game.clock*0.13
 			var roam: float = 16.0 if int(item.kind) >= 3 else 7.0
 			var destination: Vector3 = item.home+Vector3(sin(phase)*roam,sin(phase*0.7)*3.0,cos(phase)*roam)
+			# An island ridge is a boundary to swim around, never a higher patrol floor.
+			if Ocean.seabed_height(destination.x,destination.z)+3.0 > -5.0:
+				destination = item.home
 			desired = (destination-node.position).normalized()
 			if behavior == "ambush":
 				speed *= 0.25
@@ -134,11 +139,14 @@ static func advance(game: Node, item: Dictionary, delta: float) -> void:
 	var next: Vector3 = node.position+motion
 	next.x = clampf(next.x,Ocean.X_MIN+5,Ocean.X_MAX-5)
 	next.z = clampf(next.z,Ocean.Z_MIN+5,Ocean.Z_MAX-5)
-	next.y = clampf(next.y,maxf(Ocean.Y_MIN+2,Ocean.seabed_height(next.x,next.z)+3),-5)
+	var floor_limit: float = maxf(Ocean.Y_MIN+2,Ocean.seabed_height(next.x,next.z)+3.0)
+	var water_column: bool = floor_limit <= -5.0
+	if water_column:
+		next.y = clampf(next.y,floor_limit,-5.0)
 	# Sweep ahead so both fleeing fish and charging predators turn before solid reefs.
 	var margin: float = maxf(0.9,float(data.radius))
 	var lookahead: Vector3 = next+(item.direction as Vector3)*margin
-	if _clear(game,node.position,lookahead):
+	if water_column and _wet_path(node.position,lookahead,margin) and _clear(game,node.position,lookahead):
 		node.position = next
 	else:
 		item.direction = (item.direction as Vector3).rotated(Vector3.UP,1.45)
@@ -149,14 +157,70 @@ static func advance(game: Node, item: Dictionary, delta: float) -> void:
 		node.look_at(node.position+(item.direction as Vector3),Vector3.UP)
 	var scale_target: float = 1.5 if item.armor else 1.0
 	node.scale = node.scale.lerp(Vector3.ONE*scale_target,minf(1,delta*5))
-	var tail: Node3D = node.get_node_or_null("Tail")
-	if tail:
-		tail.rotation.y = sin(game.clock*(12.0 if item.state in ["flee","charge"] else 5.5)+float(item.phase))*0.32
-		if int(item.kind) == 7:
+	_animate_pose(item,delta,speed,previous_direction)
+
+static func _wet_path(from: Vector3, to: Vector3, clearance: float) -> bool:
+	# Ray casts alone cannot reject a point wholly inside a concave terrain volume.
+	# Sample its water column as well, including long charge steps across a ridge.
+	var bank_reach: float = Ocean.CANYON_BEND_AMPLITUDE+Ocean.CANYON_BANK_HALF_WIDTH+4.0
+	if minf(from.x,to.x) > Ocean.CANYON_CENTER.x+bank_reach or maxf(from.x,to.x) < Ocean.CANYON_CENTER.x-bank_reach or minf(from.z,to.z) > Ocean.CANYON_CENTER.z+Ocean.CANYON_HALF_LENGTH+4.0 or maxf(from.z,to.z) < Ocean.CANYON_CENTER.z-Ocean.CANYON_HALF_LENGTH-4.0:
+		return true
+	var steps: int = maxi(1,ceili(from.distance_to(to)/2.0))
+	for index in range(steps+1):
+		var point: Vector3 = from.lerp(to,float(index)/steps)
+		if point.y < Ocean.seabed_height(point.x,point.z)+clearance:
+			return false
+	return true
+
+static func _animate_pose(item: Dictionary, delta: float, speed: float, previous_direction: Vector3) -> void:
+	# All deformation is below the hunting root, preserving its position and hit basis.
+	var motion: Node3D = item.node.get_node_or_null("Motion")
+	if motion == null:
+		return
+	var kind: int = item.kind
+	var state: String = item.state
+	var data: Dictionary = FishData.SPECIES[kind]
+	var blend: float = 1.0-exp(-delta*7.0)
+	var activity: float = lerpf(float(item.get("motion_activity",1.0)),clampf(speed/float(data.speed),0.12,2.2),blend)
+	item.motion_activity = activity
+	var cadence: float = SWIM_CADENCE[kind]
+	var phase: float = float(item.get("motion_phase",item.phase))+delta*cadence*(0.50+0.50*activity)
+	# All strokes (.5 and .65 frequencies included) share a twenty-cycle period.
+	item.motion_phase = fposmod(phase,20.0*TAU)
+	var direction: Vector3 = item.direction
+	var turn_rate: float = previous_direction.cross(direction).y/maxf(delta,0.0001)
+	var bank: float = lerpf(float(item.get("motion_bank",0.0)),clampf(turn_rate*0.28,-0.32,0.32),blend)
+	item.motion_bank = bank
+	var windup: float = lerpf(float(item.get("motion_windup",0.0)),1.0 if state == "windup" else 0.0,blend)
+	var charge: float = lerpf(float(item.get("motion_charge",0.0)),1.0 if state == "charge" else 0.0,blend)
+	var recovering: float = lerpf(float(item.get("motion_recover",0.0)),1.0 if state == "recover" else 0.0,blend)
+	item.motion_windup = windup
+	item.motion_charge = charge
+	item.motion_recover = recovering
+	var beat: float = sin(phase)
+	var amplitude: float = (0.16+0.13*activity)*(1.0-windup*0.4)
+	# A steady head, a slight rolling trunk and a delayed tail avoid a rigid pendulum.
+	motion.rotation = Vector3(sin(phase*0.5)*0.018+windup*0.055-charge*0.035,beat*0.018,bank+sin(phase-0.45)*0.025)
+	motion.position = Vector3(0,sin(phase*0.5)*0.018,windup*0.10-charge*0.08)
+	motion.scale = Vector3(1.0+windup*0.025,1.0,1.0-windup*0.055+charge*0.025)
+	var flex: Node3D = motion.get_node("BodyFlex")
+	flex.rotation.y = beat*(0.026+activity*0.012)+windup*0.10
+	var tail: Node3D = motion.get_node_or_null("Tail") if kind == 7 else flex.get_node_or_null("Tail")
+	if tail != null:
+		tail.rotation.y = sin(phase-0.85)*amplitude+windup*0.12
+		if kind == 7:
 			var joint: Node3D = tail
 			for index in range(1,6):
 				joint = joint.get_node("Segment%d" % index)
-				joint.rotation.y = sin(game.clock*6.0+float(item.phase)-index*0.65)*0.22
+				joint.rotation.y = sin(phase-0.85-index*0.68)*(0.15+activity*0.085)+windup*0.12*sin(index*0.65)
+	for side: float in [-1.0,1.0]:
+		var fin: Node3D = flex.get_node_or_null("PectoralLeft" if side < 0 else "PectoralRight")
+		if fin != null:
+			fin.rotation.z = side*(sin(phase*0.65+side*0.22)*(0.10+recovering*0.11)*(1.0-charge*0.65)+windup*0.20+recovering*0.10)
+			fin.rotation.y = side*(charge*0.48-windup*0.18)
+	var jaw: Node3D = motion.get_node_or_null("Jaw")
+	if jaw != null:
+		jaw.rotation.x = -(windup*0.16+charge*0.65+recovering*(0.07+0.035*sin(phase*0.5)))
 
 static func _clear(game: Node, from: Vector3, to: Vector3) -> bool:
 	var query := PhysicsRayQueryParameters3D.create(from,to,1,[game.player.get_rid()])
