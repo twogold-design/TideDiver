@@ -19,6 +19,10 @@ shader_type spatial;
 render_mode cull_disabled;
 varying vec3 ground_position;
 varying vec3 ground_normal;
+uniform vec2 canyon_center;
+uniform float canyon_half_length;
+uniform float canyon_bend_amplitude;
+uniform float canyon_bend_frequency;
 float hash21(vec2 p) {
 	p = fract(p * vec2(123.34, 456.21));
 	p += dot(p, p + 45.32);
@@ -55,6 +59,26 @@ void fragment() {
 	float band = sin(ground_position.y * 2.35 + noise21(p * 0.18) * 2.0) * 0.5 + 0.5;
 	vec3 stone = mix(vec3(0.28, 0.34, 0.34), vec3(0.45, 0.46, 0.40), band * 0.48 + dune * 0.52);
 	ALBEDO = mix(sand, stone, rock_mask * 0.82);
+	// One continuous surface: sediment blends into eroded walls per fragment,
+	// eliminating the old four-metre stair-step edge of the bank overlay mesh.
+	float along = abs(p.y-canyon_center.y);
+	float center_x = canyon_center.x+canyon_bend_amplitude*sin((p.y-canyon_center.y)*canyon_bend_frequency);
+	float across = abs(p.x-center_x);
+	float canyon = (1.0-smoothstep(canyon_half_length-28.0,canyon_half_length+8.0,along))*(1.0-smoothstep(55.0,68.0,across));
+	if (canyon > 0.001) {
+		float erosion = noise21(vec2(p.y*0.075,ground_position.y*0.10));
+		float layers = ground_position.y*0.68 + sin(p.y*0.045)*1.5 + (erosion-0.5)*2.8;
+		float strata = sin(layers)*0.5+0.5;
+		float seam = 1.0-smoothstep(0.025,0.10+fwidth(layers),abs(sin(layers*0.5)));
+		vec3 limestone = mix(vec3(0.38,0.49,0.49),vec3(0.64,0.66,0.56),erosion*0.60+strata*0.40);
+		limestone *= 1.0-seam*0.065;
+		float weathering = noise21(vec2(p.y*0.41,ground_position.y*0.32));
+		limestone *= 0.94+weathering*0.12;
+		float sediment = (1.0-smoothstep(0.10,0.38,slope))*(0.78+bed*0.22);
+		vec3 canyon_sand = mix(vec3(0.58,0.63,0.56),vec3(0.71,0.73,0.63),bed)+ripple_contrast+grain;
+		vec3 canyon_color = mix(limestone,canyon_sand,sediment);
+		ALBEDO = mix(ALBEDO,canyon_color,canyon);
+	}
 	ROUGHNESS = 0.96;
 	SPECULAR = 0.16;
 	// Tiny lighting relief only; vertices and the collision surface stay exact.
@@ -64,6 +88,10 @@ void fragment() {
 """
 	_sand = ShaderMaterial.new()
 	_sand.shader = shader
+	_sand.set_shader_parameter("canyon_center",Vector2(Ocean.CANYON_CENTER.x,Ocean.CANYON_CENTER.z))
+	_sand.set_shader_parameter("canyon_half_length",Ocean.CANYON_HALF_LENGTH)
+	_sand.set_shader_parameter("canyon_bend_amplitude",Ocean.CANYON_BEND_AMPLITUDE)
+	_sand.set_shader_parameter("canyon_bend_frequency",Ocean.CANYON_BEND_FREQUENCY)
 	return _sand
 
 static func rock_material() -> Material:

@@ -15,6 +15,7 @@ const FLOOR_SIZE := Vector3(1400.0,6.0,1400.0)
 const SURFACE_SIZE := Vector2(1400.0,1400.0)
 const TERRAIN_EXTENT := 700.0
 const TERRAIN_STEP := 4.0
+const CANYON_TERRAIN_STEP := 2.0
 const CANYON_CENTER := Vector3(-210,0,-230)
 const CANYON_CURRENT_SPEED := 2.2
 const CANYON_HALF_LENGTH := 225.0
@@ -108,6 +109,20 @@ static func current_velocity(point: Vector3) -> Vector3:
 	return canyon_tangent(point.z)*CANYON_CURRENT_SPEED*longitudinal*lateral*depth
 
 static func terrain_vertex_height(x: float, z: float) -> float:
+	# Fine canyon chunks meet coarse shelf chunks on the same straight edges.
+	# Interpolate odd edge vertices so neither rendering nor collision has cracks.
+	if is_zero_approx(fposmod(x + TERRAIN_EXTENT, 200.0)) and not is_zero_approx(fposmod(z, TERRAIN_STEP)):
+		var base_z: float = floor(z / TERRAIN_STEP) * TERRAIN_STEP
+		return lerpf(_terrain_height(x, base_z), _terrain_height(x, base_z + TERRAIN_STEP), (z - base_z) / TERRAIN_STEP)
+	if is_zero_approx(fposmod(z + TERRAIN_EXTENT, 200.0)) and not is_zero_approx(fposmod(x, TERRAIN_STEP)):
+		var base_x: float = floor(x / TERRAIN_STEP) * TERRAIN_STEP
+		return lerpf(_terrain_height(base_x, z), _terrain_height(base_x + TERRAIN_STEP, z), (x - base_x) / TERRAIN_STEP)
+	return _terrain_height(x, z)
+
+static func terrain_step_at(x: float, z: float) -> float:
+	return CANYON_TERRAIN_STEP if x >= -300.0 and x < -100.0 and z >= -500.0 and z < 100.0 else TERRAIN_STEP
+
+static func _terrain_height(x: float, z: float) -> float:
 	var r: float = Vector2(x,z).length()
 	var height: float = -25.0 - 43.0 * smoothstep(35.0,240.0,r)
 	height += 4.0*sin(x*0.023)*cos(z*0.019) + 2.6*sin((x+z)*0.041)
@@ -125,26 +140,36 @@ static func terrain_vertex_height(x: float, z: float) -> float:
 	var across: float = absf(x-canyon_center_x(z))
 	var canyon_across: float = 1.0-smoothstep(CANYON_FLOOR_HALF_WIDTH,CANYON_BANK_HALF_WIDTH,across)
 	height -= 52.0*canyon_along*canyon_across
-	height = clampf(height,-118.0,-17.0)
+	# Ease into the sediment floor instead of hard-clipping the slope at -118m;
+	# a hard maximum creates a sawtooth lighting seam along diagonal grid cells.
+	if height < -114.0:
+		height = -118.0 + 4.0*exp((height+114.0)/4.0)
+	height = minf(height,-17.0)
 	# Two eroded island ridges grow out of the same collision mesh as the gorge.
 	# The deep centre stays open, with broad mouths tapering into the original shelf.
-	var ridge: float = smoothstep(24.0,43.0,across)*(1.0-smoothstep(43.0,CANYON_BANK_HALF_WIDTH,across))
+	# Broad, unequal erosion scallops break up the two parallel walls. They fade
+	# into the sandy channel and the crest, preserving the open swimming lanes.
+	var bank_side: float = signf(x-canyon_center_x(z))
+	var erosion: float = (sin(z*0.057+bank_side*1.9)*1.8 + sin(z*0.113-bank_side)*0.65)
+	var wall_across: float = across + erosion*smoothstep(14.0,25.0,across)*(1.0-smoothstep(36.0,43.0,across))
+	var ridge: float = smoothstep(22.0,43.0,wall_across)*(1.0-smoothstep(43.0,CANYON_BANK_HALF_WIDTH,across))
 	var crest: float = 26.0 + 6.0*sin(z*0.047+x*0.031) + 3.0*cos(z*0.091-x*0.063)
 	return lerpf(height,crest,ridge*canyon_along)
 
 ## Exact interpolation of the two triangles used in each terrain mesh cell.
 ## Ray-cast collision and this API agree, including between grid vertices.
 static func seabed_height(x: float, z: float) -> float:
-	var x0: float = floor(x/TERRAIN_STEP)*TERRAIN_STEP
-	var z0: float = floor(z/TERRAIN_STEP)*TERRAIN_STEP
-	var u: float = (x-x0)/TERRAIN_STEP
-	var v: float = (z-z0)/TERRAIN_STEP
+	var step: float = terrain_step_at(x,z)
+	var x0: float = floor(x/step)*step
+	var z0: float = floor(z/step)*step
+	var u: float = (x-x0)/step
+	var v: float = (z-z0)/step
 	var a: float = terrain_vertex_height(x0,z0)
-	var b: float = terrain_vertex_height(x0+TERRAIN_STEP,z0)
-	var c: float = terrain_vertex_height(x0,z0+TERRAIN_STEP)
+	var b: float = terrain_vertex_height(x0+step,z0)
+	var c: float = terrain_vertex_height(x0,z0+step)
 	if u+v <= 1.0:
 		return a+(b-a)*u+(c-a)*v
-	var d: float = terrain_vertex_height(x0+TERRAIN_STEP,z0+TERRAIN_STEP)
+	var d: float = terrain_vertex_height(x0+step,z0+step)
 	return d+(c-d)*(1.0-u)+(b-d)*(1.0-v)
 
 static func pickup_points() -> Array:

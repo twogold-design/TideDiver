@@ -50,6 +50,7 @@ func _run() -> void:
 	game.start_dive(false, false)
 	_test_depth_properties_and_ascent()
 	_test_actual_camera_depth()
+	_test_canyon_fill()
 	await _test_neutral_gpu_luminance()
 	_test_entry_and_gm_updates()
 	await _test_pause_and_menu_freeze()
@@ -70,7 +71,7 @@ func _test_depth_properties_and_ascent() -> void:
 	for depth: float in [20.0, 50.0, 90.0]:
 		_set_swim_camera_depth(depth)
 		var actual_depth: float = maxf(0.0, -game.camera.global_position.y)
-		_check(absf(actual_depth - depth) < 0.03 and _matches_profile(Lighting.profile(actual_depth)), "A real %.0fm swimming camera immediately receives the corresponding global and local lighting" % depth)
+		_check(absf(actual_depth - depth) < 0.03 and _matches_profile(Lighting.profile(actual_depth,game.camera.global_position)), "A real %.0fm swimming camera immediately receives the corresponding global and local lighting" % depth)
 		snapshots.append(_snapshot())
 	_check(snapshots[0].ambient > snapshots[1].ambient and snapshots[1].ambient > snapshots[2].ambient, "Actual ambient illumination strictly decreases from twenty through fifty to ninety metres")
 	_check(snapshots[0].sun > snapshots[1].sun and snapshots[1].sun > snapshots[2].sun, "Actual directional sunlight strictly decreases from shallow to deep water")
@@ -88,11 +89,25 @@ func _test_actual_camera_depth() -> void:
 	game._update_swim_camera()
 	var deeper: Dictionary = _snapshot()
 	var deeper_camera: float = -game.camera.global_position.y
-	var deeper_matches: bool = _matches_profile(Lighting.profile(maxf(0.0, deeper_camera)))
+	var deeper_matches: bool = _matches_profile(Lighting.profile(maxf(0.0, deeper_camera),game.camera.global_position))
 	game.pitch = -0.8
 	game._update_swim_camera()
 	var shallower_camera: float = -game.camera.global_position.y
-	_check(game.player.position == point and deeper_camera > shallower_camera + 5 and deeper.ambient < game.environment.ambient_light_energy and deeper_matches and _matches_profile(Lighting.profile(maxf(0.0, shallower_camera))), "At unchanged diver depth, moving the following camera vertically changes lighting according to the actual camera position")
+	_check(game.player.position == point and deeper_camera > shallower_camera + 5 and deeper.ambient < game.environment.ambient_light_energy and deeper_matches and _matches_profile(Lighting.profile(maxf(0.0, shallower_camera),game.camera.global_position)), "At unchanged diver depth, moving the following camera vertically changes lighting according to the actual camera position")
+
+func _test_canyon_fill() -> void:
+	var center := Vector3(Ocean.canyon_center_x(-325),-85,-325)
+	var baseline: Dictionary = Lighting.profile(85)
+	var local: Dictionary = Lighting.profile(85,center)
+	_check(float(local.ambient_energy)>float(baseline.ambient_energy)+.1 and float(local.ambient_energy)<.3,"Canyon fill reveals nearby walls without washing out the deep-water mood")
+	_check(Lighting.profile(85,Vector3(300,-85,300))==baseline and Lighting.profile(5,center)==Lighting.profile(5),"Canyon fill leaves other dive sites and surface lighting unchanged")
+	var smooth_fade := true
+	var previous: float = local.ambient_energy
+	for offset in range(1,81):
+		var sample: Dictionary = Lighting.profile(85,center+Vector3.RIGHT*offset)
+		smooth_fade = smooth_fade and absf(float(sample.ambient_energy)-previous)<.015
+		previous = sample.ambient_energy
+	_check(smooth_fade and is_equal_approx(previous,float(baseline.ambient_energy)),"Canyon fill fades continuously back to the ocean lighting across the banks")
 
 func _test_neutral_gpu_luminance() -> void:
 	reference = MeshInstance3D.new()
@@ -165,17 +180,17 @@ func _test_entry_and_gm_updates() -> void:
 	for step in range(32):
 		game._update_entry(0.1)
 		var depth: float = maxf(0.0, -game.camera.global_position.y)
-		var profile: Dictionary = Lighting.profile(depth)
+		var profile: Dictionary = Lighting.profile(depth,game.camera.global_position)
 		var current: float = game.environment.ambient_light_energy
 		bounded = bounded and current >= float(profile.ambient_energy) - 0.001 and current <= 0.381
 		continuous = continuous and absf(current - previous) < 0.05
 		previous = current
-	_check(bounded and continuous and not game.entry_active and _matches_profile(Lighting.profile(maxf(0.0, -game.camera.global_position.y))), "The complete entry camera blends smoothly into its measured underwater lighting and ends with the matching profile")
-	for site: int in [2, 3, 1, 6]:
+	_check(bounded and continuous and not game.entry_active and _matches_profile(Lighting.profile(maxf(0.0, -game.camera.global_position.y),game.camera.global_position)), "The complete entry camera blends smoothly into its measured underwater lighting and ends with the matching profile")
+	for site: int in range(Ocean.DIVE_SITES.size()):
 		game.open_gm_menu()
 		game.gm_select_dive_site(site, true)
 		var depth: float = maxf(0.0, -game.camera.global_position.y)
-		_check(game.state == "dive" and not game.entry_active and _matches_profile(Lighting.profile(depth)), "GM direct visit applies the actual camera's lighting before the next swimming frame at site %d" % site)
+		_check(game.state == "dive" and not game.entry_active and _matches_profile(Lighting.profile(depth,game.camera.global_position)), "GM direct visit applies the actual camera's lighting before the next swimming frame at site %d" % site)
 
 func _test_pause_and_menu_freeze() -> void:
 	_set_swim_camera_depth(75)

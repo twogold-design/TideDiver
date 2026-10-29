@@ -29,7 +29,7 @@ process.env.TMP = process.env.TEMP;
     frameTimes[name]=await page.evaluate(()=>new Promise(resolve=>{
       const samples=[];let last=performance.now();
       const step=now=>{samples.push(now-last);last=now;if(samples.length<121){requestAnimationFrame(step);return;}
-        const sorted=samples.slice(1).sort((a,b)=>a-b);resolve({p95:sorted[Math.floor(sorted.length*.95)],max:Math.max(...sorted)});};
+        const sorted=samples.slice(1).sort((a,b)=>a-b);resolve({p95:sorted[Math.floor(sorted.length*.95)],max:Math.max(...sorted),render:window.tideRenderStats});};
       requestAnimationFrame(step);
     }));
     console.log(name,frameTimes[name]);
@@ -68,6 +68,12 @@ process.env.TMP = process.env.TEMP;
     await page.waitForTimeout(2500);
     await screenshot('canyon-downstream-drift');
     await measureFrames('natural-current');
+    if(process.argv.includes('--canyon-only')){
+      assert.deepEqual(errors,[],'No browser, script or shader errors in the canyon');
+      fs.writeFileSync(path.join(output,'canyon-result.json'),JSON.stringify({frameTimes,errors},null,2));
+      console.log('PASS: Chrome file launch, canyon boat entry, submerged walls and current.');
+      return;
+    }
     await page.keyboard.press('F1');await page.waitForTimeout(250);
     await clickGame(1067,441); // Coral reef, direct arrival.
     await page.waitForFunction(()=>document.pointerLockElement!==null);

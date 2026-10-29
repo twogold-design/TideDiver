@@ -202,9 +202,8 @@ static func _build_seabed(parent: Node3D) -> void:
 	terrain.name = "NaturalSeabed"
 	parent.add_child(terrain)
 	var material: Material = Geology.sand_material()
-	# 49 chunks keep distant geometry out of the renderer. Each collision surface
-	# uses exactly the same four-metre vertices as Ocean.seabed_height().
-	var side: int = 50
+	# Refine only the three canyon chunks; distant shelf geometry stays coarse.
+	# Rendering and collision share Ocean's resolution and stitched edge vertices.
 	for cz: int in range(7):
 		for cx: int in range(7):
 			var vertices := PackedVector3Array()
@@ -212,12 +211,14 @@ static func _build_seabed(parent: Node3D) -> void:
 			var colors := PackedColorArray()
 			var indices := PackedInt32Array()
 			var origin := Vector3(-Ocean.TERRAIN_EXTENT+float(cx)*200.0,0,-Ocean.TERRAIN_EXTENT+float(cz)*200.0)
+			var step: float = Ocean.terrain_step_at(origin.x+1.0,origin.z+1.0)
+			var side: int = int(200.0/step)
 			for iz: int in range(side+1):
 				for ix: int in range(side+1):
-					var x: float = origin.x+float(ix)*Ocean.TERRAIN_STEP
-					var z: float = origin.z+float(iz)*Ocean.TERRAIN_STEP
+					var x: float = origin.x+float(ix)*step
+					var z: float = origin.z+float(iz)*step
 					var h: float = Ocean.terrain_vertex_height(x,z)
-					vertices.append(Vector3(float(ix)*Ocean.TERRAIN_STEP,h,float(iz)*Ocean.TERRAIN_STEP))
+					vertices.append(Vector3(float(ix)*step,h,float(iz)*step))
 					var dx: float = Ocean.terrain_vertex_height(x+1.0,z)-Ocean.terrain_vertex_height(x-1.0,z)
 					var dz: float = Ocean.terrain_vertex_height(x,z+1.0)-Ocean.terrain_vertex_height(x,z-1.0)
 					normals.append(Vector3(-dx,2.0,-dz).normalized())

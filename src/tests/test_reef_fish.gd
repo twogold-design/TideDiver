@@ -126,6 +126,16 @@ func _captures() -> void:
 	game._apply_underwater_lighting(78.0)
 	canyon_clock(7.0)
 	await _capture("canyon-natural-current")
+	game.camera.position = Vector3(Ocean.canyon_center_x(-310),-108,-310)
+	game.player.position = game.camera.position
+	game.camera.look_at(Vector3(Ocean.canyon_center_x(-265),-108,-265))
+	game._apply_underwater_lighting(108.0)
+	await _capture("canyon-sand-and-talus")
+	game.camera.position = Vector3(Ocean.canyon_center_x(-290)+8,-88,-290)
+	game.player.position = game.camera.position
+	game.camera.look_at(Vector3(Ocean.canyon_center_x(-275)+31,-80,-275))
+	game._apply_underwater_lighting(88.0)
+	await _capture("canyon-eroded-wall")
 
 func canyon_clock(time: float) -> void:
 	game.canyon_root.animate(time,game.player.position)

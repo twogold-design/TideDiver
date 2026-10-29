@@ -1297,7 +1297,7 @@ func _update_swim_camera() -> void:
 	environment.fog_density = 0.011 if inside_wreck else lerpf(0.024,0.010,canyon_view)
 
 func _apply_underwater_lighting(depth: float, immersion: float = 1.0) -> Dictionary:
-	var values: Dictionary = DepthLighting.profile(depth)
+	var values: Dictionary = DepthLighting.profile(depth,camera.global_position)
 	DepthLighting.apply(environment,ocean_sun,diver_light,values,immersion)
 	environment.fog_light_color = values.water_color
 	environment.background_color = values.water_color

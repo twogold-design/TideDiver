@@ -21,6 +21,8 @@ static func build(parent: Node3D) -> Node3D:
 	var fan_transforms: Array[Transform3D] = []
 	var rock_colors: Array[Color] = []
 	var fan_colors: Array[Color] = []
+	var wall_transforms: Array[Transform3D] = []
+	var wall_colors: Array[Color] = []
 	var random := RandomNumberGenerator.new()
 	random.seed = 492311
 	var row_count: int = int(ceil(LENGTH / 10.0))
@@ -42,25 +44,45 @@ static func build(parent: Node3D) -> Node3D:
 				var stone_color := Color("637b7b").lerp(Color("a3a78c"),random.randf())
 				rock_colors.append(stone_color.lerp(Color("b5ae94"),smoothstep(-2.0,8.0,world_root.y)*0.5))
 				bank_roots.append(root)
+			# Partly buried rock shoulders give the wall real relief at different
+			# depths. Align their thin axis to the slope rather than floating upright.
 			if row % 2 == 0:
-				var x: float = Ocean.canyon_center_x(z) + bank * 29.0
+				for ledge in range(2):
+					var wall_z: float = z+random.randf_range(-4.0,4.0)
+					var wall_x: float = Ocean.canyon_center_x(wall_z)+bank*(26.0+float(ledge)*7.0+random.randf_range(-1.3,1.3))
+					var root := Vector3(wall_x,Ocean.seabed_height(wall_x,wall_z),wall_z)-origin
+					if root.y+origin.y > -15.0:
+						continue
+					var normal := Vector3(Ocean.seabed_height(wall_x-.5,wall_z)-Ocean.seabed_height(wall_x+.5,wall_z),1.0,Ocean.seabed_height(wall_x,wall_z-.5)-Ocean.seabed_height(wall_x,wall_z+.5)).normalized()
+					var pose := Basis(Quaternion(Vector3.UP,normal))*Basis(Vector3.UP,random.randf_range(-.4,.4))
+					var size := Vector3(random.randf_range(3.0,5.5),random.randf_range(1.3,2.1),random.randf_range(3.0,5.0))
+					wall_transforms.append(Transform3D(pose*Basis.from_scale(size),root-normal*size.y*.48))
+					wall_colors.append(Color("c3ccc5").lerp(Color("b2c2c4"),random.randf()))
+					bank_roots.append(root)
+			# Small, irregular talus groups bridge the foot of the wall and sand.
+			# Keep all decorative stone outside the central swimming/resource lanes.
+			for stone in range(3):
+				var stone_z: float = z + random.randf_range(-3.6,3.6)
+				var x: float = Ocean.canyon_center_x(stone_z) + bank * random.randf_range(18.5,23.5)
+				var root := Vector3(x,Ocean.seabed_height(x,stone_z),stone_z)-origin
+				var normal := Vector3(Ocean.seabed_height(x-.5,stone_z)-Ocean.seabed_height(x+.5,stone_z),1.0,Ocean.seabed_height(x,stone_z-.5)-Ocean.seabed_height(x,stone_z+.5)).normalized()
+				var size: float = random.randf_range(.45,1.7)
+				var pose := Basis(Quaternion(Vector3.UP,normal))*Basis(Vector3.UP,random.randf_range(-PI,PI))
+				rock_transforms.append(Transform3D(pose*Basis.from_scale(Vector3(size,size*.6,size*1.3)),root-normal*size*.12))
+				rock_colors.append(Color("a0b1ac").lerp(Color("c1bca5"),random.randf()))
+				bank_roots.append(root)
+			if row % 3 == 0:
+				var x: float = Ocean.canyon_center_x(z) + bank * random.randf_range(20.5,25.5)
 				var world_root := Vector3(x, Ocean.seabed_height(x,z), z)
 				# Keep the entire fan below the tide line, including its tallest tips.
 				if world_root.y < -4.0:
 					var root: Vector3 = world_root - origin
 					fan_transforms.append(Transform3D(Basis(Vector3.UP, random.randf_range(-PI, PI)).scaled(Vector3.ONE * random.randf_range(0.7, 1.0)), root))
-					fan_colors.append(Color("a8ad91").lerp(Color("b3929b"), random.randf()))
+					fan_colors.append(Color("b8b68b").lerp(Color("b88f85"), random.randf()))
 					bank_roots.append(root)
-	var strata := MeshInstance3D.new()
-	strata.name = "LayeredBanks"
-	strata.mesh = _bank_mesh(origin)
-	strata.material_override = Geology.rock_material()
-	strata.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	strata.visibility_range_end = VIEW_DISTANCE
-	strata.visibility_range_end_margin = 35.0
-	canyon.add_child(strata)
 	var rock: ArrayMesh = Geology.rock_mesh(2)
-	_batch(canyon, "RockShelves", rock, rock_transforms, rock_colors, Geology.rock_material())
+	_batch(canyon, "RockShelves", rock, rock_transforms, rock_colors, Geology.sand_material())
+	_batch(canyon, "ErodedWallOutcrops", Geology.rock_mesh(4), wall_transforms, wall_colors, Geology.sand_material())
 	_batch(canyon, "SparseSeaFans", Coral._coral_mesh(2), fan_transforms, fan_colors, Coral.material())
 	canyon._build_current(origin)
 	canyon.set_meta("world_center", Vector3(Ocean.canyon_center_x(CENTER_Z), Ocean.seabed_height(Ocean.canyon_center_x(CENTER_Z), CENTER_Z), CENTER_Z))
@@ -100,42 +122,6 @@ static func _batch(parent: Node3D, label: String, mesh: Mesh, transforms: Array[
 	visual.visibility_range_end = VIEW_DISTANCE
 	visual.visibility_range_end_margin = 35.0
 	parent.add_child(visual)
-
-static func _bank_mesh(origin: Vector3) -> ArrayMesh:
-	var surface := SurfaceTool.new()
-	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
-	# Copy the terrain's four-metre cells and diagonals exactly. Resampling a finer
-	# bank grid produces crossing triangles and flickering against the real slope.
-	var step: float = Ocean.TERRAIN_STEP
-	var z_start: float = floor((CENTER_Z - Ocean.CANYON_HALF_LENGTH) / step) * step
-	var z_end: float = ceil((CENTER_Z + Ocean.CANYON_HALF_LENGTH) / step) * step
-	var x_min: float = INF
-	var x_max: float = -INF
-	for row in range(int((z_end-z_start)/step)+1):
-		var center: float = Ocean.canyon_center_x(z_start+float(row)*step)
-		x_min = minf(x_min,center-Ocean.CANYON_BANK_HALF_WIDTH-step)
-		x_max = maxf(x_max,center+Ocean.CANYON_BANK_HALF_WIDTH+step)
-	var x_start: float = floor(x_min/step)*step
-	var columns: int = int(ceil((x_max-x_start)/step))
-	for row in range(int((z_end-z_start)/step)):
-		var z: float = z_start + float(row) * step
-		for column in range(columns):
-			var x: float = x_start + float(column) * step
-			var across: float = absf(x + step * 0.5 - Ocean.canyon_center_x(z + step * 0.5))
-			if across < Ocean.CANYON_FLOOR_HALF_WIDTH or across > Ocean.CANYON_BANK_HALF_WIDTH + 1.0:
-				continue
-			var a := Vector3(x, Ocean.terrain_vertex_height(x, z) + 0.045, z) - origin
-			var b := Vector3(x + step, Ocean.terrain_vertex_height(x + step, z) + 0.045, z) - origin
-			var c := Vector3(x, Ocean.terrain_vertex_height(x, z + step) + 0.045, z + step) - origin
-			var d := Vector3(x + step, Ocean.terrain_vertex_height(x + step, z + step) + 0.045, z + step) - origin
-			for point: Vector3 in [a, b, c, b, d, c]:
-				var height: float = point.y + origin.y
-				var band: float = fposmod(floor(height / 3.4), 3.0) / 2.0
-				var color := Color("7b9087").lerp(Color("b3b6a1"), band * 0.65)
-				surface.set_color(color.lerp(Color("bfb59a"),smoothstep(-2.0,7.0,height)*0.55))
-				surface.add_vertex(point)
-	surface.generate_normals()
-	return surface.commit()
 
 func _build_current(origin: Vector3) -> void:
 	var shape := SurfaceTool.new()

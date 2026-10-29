@@ -91,6 +91,18 @@ func _test_terrain() -> void:
 		for hit in [floor_hit, west_hit, east_hit]:
 			terrain_matches = terrain_matches and absf(hit.position.y - Ocean.seabed_height(hit.position.x, hit.position.z)) < 0.03
 	_check(terrain_matches and deep_floor, "Deep canyon collision surfaces agree with the rendered terrain height contract")
+	var refined_matches := true
+	for z: float in [-400.7,-300.01,-299.99,-230.3,-100.01,-99.99,-50.7]:
+		for offset: float in [0.3,18.7,26.1,31.3,43.3]:
+			var x: float = Ocean.canyon_center_x(z)+offset
+			var hit: Dictionary = _terrain_hit(x,z)
+			refined_matches = refined_matches and not hit.is_empty() and absf(hit.position.y-Ocean.seabed_height(x,z)) < .03
+	_check(refined_matches,"Fine canyon collision matches fractional floor, wall and chunk seam samples")
+	var seams_match := true
+	for z: float in [-499.0,-355.0,-301.0,-231.0,-101.0,-1.0,99.0]:
+		for x: float in [-300.0,-100.0]:
+			seams_match = seams_match and absf(Ocean.seabed_height(x-.001,z)-Ocean.seabed_height(x+.001,z)) < .04
+	_check(seams_match,"Two-metre canyon terrain stitches continuously into the four-metre shelf")
 	_check(exposed_banks, "Both mountain ridges rise above the sea along the winding canyon's full core")
 	var corridor_named: bool = true
 	for z: float in [Ocean.CANYON_CENTER.z-Ocean.CANYON_HALF_LENGTH+2.0, Ocean.CANYON_CENTER.z+Ocean.CANYON_HALF_LENGTH-2.0]:
