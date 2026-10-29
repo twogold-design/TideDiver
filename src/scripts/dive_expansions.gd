@@ -44,7 +44,7 @@ static func build(parent: Node3D) -> Node3D:
 			var state: Dictionary = {"point": point, "frame": region.basis, "groups": {}, "bounds": AABB(), "initialized": false, "count": 0}
 			var random := RandomNumberGenerator.new()
 			random.seed = 97121 + site_index * 107 + point_index * 19
-			_populate(state, site_index, point_index, random)
+			_populate(state, str(area.id), point_index, random)
 			for kind: String in state.groups:
 				var entries: Array = state.groups[kind]
 				var batch := MultiMesh.new()
@@ -83,80 +83,72 @@ static func build(parent: Node3D) -> Node3D:
 	root.set_meta("no_collision", true)
 	return root
 
-static func _populate(s: Dictionary, site: int, point: int, random: RandomNumberGenerator) -> void:
+static func _populate(s: Dictionary, site: String, point: int, random: RandomNumberGenerator) -> void:
 	# Coordinates run along the route from the main area, with open sand at x=0.
-	match site * 2 + point:
-		0: # Sea grass follows the slope in separate, low banks.
+	match site + str(point):
+		"tidal_cove0": # Sea grass follows the slope in separate, low banks.
 			_scatter(s, "Seagrass", 28, random, Vector3(0.9, 1.15, 0.9), Color("9fbe95"))
 			_rocks(s, 7, random, Vector3(2.2, 0.8, 2.0), Color("c3c5aa"))
 			_scatter(s, "SeaStar", 4, random, Vector3.ONE * 0.7, Color("dbc1a1"))
-		1: # A shallow reef studded with shells, rather than another reef wall.
+		"tidal_cove1": # A shallow reef studded with shells, rather than another reef wall.
 			_rocks(s, 8, random, Vector3(2.5, 0.7, 2.0), Color("c7c4a9"))
 			_scatter(s, "Scallop", 23, random, Vector3.ONE * 0.8, Color("e1d0b9"))
 			_scatter(s, "Seagrass", 8, random, Vector3.ONE * 0.7, Color("9cb68a"))
-		2: # A stepped fault on one bank, broken stone opposite.
+		"twin_gates0": # A stepped fault on one bank, broken stone opposite.
 			for i in range(6):
 				var h: float = 2.7 + sin(float(i) * 0.7) * 1.0
 				_rock(s, Vector3(-7.5 - float(i % 2) * 1.0, 0, -9.0 + i * 3.5), Vector3(2.2, h, 2.5), 0.2 * i, Color("a6b5aa"))
 				_put(s, "Slab", Vector3(6.0 + float(i % 2), -0.15, -8.0 + i * 3.2), Vector3(2.5, 0.5 + i * 0.12, 2.3), i * 0.31, Color("b5b8a5"))
 			_scatter(s, "TubeSponge", 6, random, Vector3.ONE * 0.75, Color("99bcae"))
-		3: # Weathered column pieces and a collapsed lintel on the west side.
+		"twin_gates1": # Weathered column pieces and a collapsed lintel on the west side.
 			for i in range(3):
 				_put(s, "Column", Vector3(-6.5, -0.1, -7.5 + i * 6.7), Vector3(1.4, 1.5 + i * 0.8, 1.4), i * 0.3, Color("c3bfa9"))
 				_put(s, "Slab", Vector3(6.1, -0.1, -7.0 + i * 6.5), Vector3(3.8, 0.55, 2.8), i * 0.42, Color("b4b8a6"))
 			_put(s, "Slab", Vector3(-7.0, 0.0, 1.8), Vector3(2.7, 0.9, 5.1), -0.32, Color("c6c0aa"))
 			_scatter(s, "Seagrass", 12, random, Vector3.ONE * 0.65, Color("8fa691"))
-		4: # Low glowing moss pads and small hollow sponges.
-			_scatter(s, "Moss", 18, random, Vector3(1.5, 1.0, 1.5), Color("83c8b6"))
-			_rocks(s, 6, random, Vector3(1.8, 0.8, 2.3), Color("94afa8"))
-			_scatter(s, "TubeSponge", 8, random, Vector3.ONE * 0.72, Color("8db9b4"))
-		5: # A deep blue rosette garden remains below the swimming route.
-			_scatter(s, "Flower", 21, random, Vector3.ONE * 1.1, Color("a3b9e1"))
-			_scatter(s, "Moss", 8, random, Vector3(1.2, 0.65, 1.2), Color("8faed1"))
-			_rocks(s, 5, random, Vector3(2.1, 0.7, 2.0), Color("9faebc"))
-		6: # Distinct open cargo frames, with boards lying alongside them.
+		"merchant_wreck0": # Distinct open cargo frames, with boards lying alongside them.
 			for i in range(5):
 				var side: float = -1.0 if i % 2 == 0 else 1.0
 				_put(s, "Cargo", Vector3(side * 6.0, 0, -7.0 + i * 3.5), Vector3.ONE * (0.85 + i * 0.05), i * 0.41, Color("a3a390"))
 			_scatter(s, "Beam", 9, random, Vector3(0.26, 0.24, 3.8), Color("8f8e7b"), 0.35)
 			_scatter(s, "TubeSponge", 6, random, Vector3.ONE * 0.65, Color("c0aa93"))
-		7: # Fallen mast and spars, three exposed ribs and a stranded anchor.
+		"merchant_wreck1": # Fallen mast and spars, three exposed ribs and a stranded anchor.
 			_put(s, "Beam", Vector3(-6.8, 0.1, -1.5), Vector3(0.65, 0.65, 13.0), -0.15, Color("999e89"))
 			for i in range(3):
 				_put(s, "Beam", Vector3(-6.8, 0.4, -6.0 + i * 4.0), Vector3(4.6, 0.3, 0.35), 0.05 * i, Color("b0a58d"))
 				_put(s, "Rib", Vector3(6.0, 0, -6.0 + i * 4.7), Vector3.ONE * 1.0, -0.12, Color("a09b86"))
 			_put(s, "Anchor", Vector3(6.6, 0, 8.0), Vector3.ONE * 1.1, 0.45, Color("8eaaa3"))
 			_scatter(s, "Seagrass", 8, random, Vector3.ONE * 0.75, Color("8cae9b"))
-		8: # Small table corals on a shelf, with separate brain-coral heads.
+		"amber_reef0": # Small table corals on a shelf, with separate brain-coral heads.
 			_rocks(s, 7, random, Vector3(2.8, 0.8, 2.8), Color("c5b49c"))
 			_scatter(s, "TableCoral", 6, random, Vector3.ONE * 0.85, Color("e9c28c"))
 			_scatter(s, "BrainCoral", 5, random, Vector3.ONE * 0.75, Color("d4aa9c"))
-		9: # Sea fans form two loose banks; the middle stays four metres wide.
+		"amber_reef1": # Sea fans form two loose banks; the middle stays four metres wide.
 			for i in range(10):
 				var side: float = -1.0 if i % 2 == 0 else 1.0
 				_put(s, "SeaFan", Vector3(side * (6.0 + float(i % 3) * 0.6), 0, -8.0 + int(i / 2) * 4.0), Vector3.ONE * 0.85, side * 0.32, Color("d8b1cb"))
 			_rocks(s, 6, random, Vector3(1.5, 0.65, 1.5), Color("b6bca3"))
 			_scatter(s, "Seagrass", 10, random, Vector3.ONE * 0.75, Color("a4b69b"))
-		10: # Slim eroded columns stand outside, rather than enclose, the stone forest.
+		"southern_spires0": # Slim eroded columns stand outside, rather than enclose, the stone forest.
 			for i in range(8):
 				var side: float = -1.0 if i % 2 == 0 else 1.0
 				_rock(s, Vector3(side * (6.4 + float(i % 3) * 0.5), 0, -8.5 + int(i / 2) * 5.5), Vector3(1.7, 2.6 + float(i % 3) * 0.75, 1.9), i * 0.7, Color("b7b6a0"))
 			_scatter(s, "Slab", 6, random, Vector3(2.6, 0.5, 2.8), Color("b9b7a3"))
 			_scatter(s, "TubeSponge", 7, random, Vector3.ONE * 0.65, Color("aca694"))
-		11: # One modest sandstone portal sits beside the open sand route.
+		"southern_spires1": # One modest sandstone portal sits beside the open sand route.
 			_gate(s)
 			for i in range(4):
 				_put(s, "Slab", Vector3(6.8, -0.15, -8.0 + i * 5.0), Vector3(3.0, 0.8, 2.5), i * 0.5, Color("c9bf9f"))
 			_scatter(s, "Seagrass", 10, random, Vector3.ONE * 0.7, Color("a4b398"))
 			_scatter(s, "SeaStar", 5, random, Vector3.ONE * 0.7, Color("dfb99a"))
-		12: # An open, crescent-like shell bed at the rim of the atoll.
+		"pearl_atoll0": # An open, crescent-like shell bed at the rim of the atoll.
 			for i in range(22):
 				var side: float = -1.0 if i % 2 == 0 else 1.0
 				var along: float = -9.5 + int(i / 2) * 1.9
 				_put(s, "Scallop", Vector3(side * (5.1 + 2.1 * cos(along * 0.14)), 0, along), Vector3.ONE * (0.75 + float(i % 3) * 0.1), i * 0.43, Color("e9d3c8"))
 			_rocks(s, 6, random, Vector3(1.9, 0.7, 1.7), Color("cec8b1"))
 			_scatter(s, "SeaStar", 6, random, Vector3.ONE * 0.65, Color("d2b6ca"))
-		13: # Pale, low stone terraces leave a moonlit central sand strip.
+		"pearl_atoll1": # Pale, low stone terraces leave a moonlit central sand strip.
 			for i in range(6):
 				var side: float = -1.0 if i % 2 == 0 else 1.0
 				_put(s, "Slab", Vector3(side * 7.0, -0.1, -7.5 + int(i / 2) * 7.0), Vector3(5.1, 0.55 + float(i % 3) * 0.2, 4.3), side * 0.15, Color("ddd8c3"))
@@ -167,7 +159,7 @@ static func _scatter(s: Dictionary, kind: String, count: int, random: RandomNumb
 	for i in range(count):
 		var side: float = -1.0 if i % 2 == 0 else 1.0
 		var offset := Vector3(side * random.randf_range(4.3, 9.1), 0, random.randf_range(-10.0, 10.0))
-		_put(s, kind, offset, scale * random.randf_range(0.78, 1.15), random.randf_range(-yaw_limit, yaw_limit), tint.lerp(Color.WHITE, random.randf_range(0.0, 0.12)), kind in ["Seagrass", "Scallop", "SeaStar", "Moss"])
+		_put(s, kind, offset, scale * random.randf_range(0.78, 1.15), random.randf_range(-yaw_limit, yaw_limit), tint.lerp(Color.WHITE, random.randf_range(0.0, 0.12)), kind in ["Seagrass", "Scallop", "SeaStar"])
 
 static func _rocks(s: Dictionary, count: int, random: RandomNumberGenerator, scale: Vector3, tint: Color) -> void:
 	for i in range(count):
@@ -223,13 +215,9 @@ static func _put(s: Dictionary, kind: String, offset: Vector3, scale: Vector3, y
 static func _material(kind: String) -> Material:
 	if kind in ["Rock", "Slab", "Column"]:
 		return Geology.rock_material()
-	var key: String = "Glow" if kind in ["Moss", "Flower"] else "Life"
+	var key: String = "Life"
 	if not _materials.has(key):
 		var result: StandardMaterial3D = Life.material()
-		if key == "Glow":
-			result.emission_enabled = true
-			result.emission = Color("6aafa9")
-			result.emission_energy_multiplier = 0.28
 		_materials[key] = result
 	return _materials[key]
 
@@ -253,8 +241,6 @@ static func _mesh(kind: String) -> Mesh:
 			"Cargo": _cargo(surface)
 			"Rib": _rib(surface)
 			"Anchor": _anchor(surface)
-			"Moss": _moss(surface)
-			"Flower": _flower(surface)
 			_:
 				push_error("Unknown expansion mesh: " + kind)
 		surface.generate_normals()
@@ -324,25 +310,3 @@ static func _anchor(surface: SurfaceTool) -> void:
 		var a: float = i * TAU / 12.0
 		var b: float = (i + 1) * TAU / 12.0
 		Coral._tube(surface, Vector3(cos(a) * 0.28, 3.2 + sin(a) * 0.28, 0), Vector3(cos(b) * 0.28, 3.2 + sin(b) * 0.28, 0), 0.07, 0.07, color)
-
-static func _moss(surface: SurfaceTool) -> void:
-	Coral._dome(surface, Vector3.ZERO, Vector3(1.1, 0.12, 0.8), Color("5f9d91"))
-	for i in range(7):
-		var a: float = i * 2.399963
-		var base := Vector3(cos(a) * 0.65, 0.06, sin(a) * 0.5)
-		var height: float = 0.22 + float(i % 3) * 0.12
-		Coral._cup(surface, base, height, 0.09, Color("9bd2bb"), 6)
-
-static func _flower(surface: SurfaceTool) -> void:
-	for bloom in range(3):
-		var a: float = bloom * 2.399963
-		var base := Vector3(cos(a) * 0.45, 0, sin(a) * 0.45)
-		var tip: Vector3 = base + Vector3(0.12 * sin(a), 0.65 + bloom * 0.24, 0.10 * cos(a))
-		Coral._tube(surface, base, tip, 0.035, 0.02, Color("659eaa"))
-		for petal in range(7):
-			var angle: float = petal * TAU / 7.0
-			var direction := Vector3(cos(angle), 0, sin(angle))
-			var side := Vector3(-sin(angle), 0, cos(angle)) * 0.13
-			var rim: Vector3 = tip + direction * 0.55 + Vector3.UP * 0.12
-			Coral._triangle(surface, tip, rim - side, rim + Vector3.UP * 0.18, Color("a7c4de"))
-			Coral._triangle(surface, tip, rim + Vector3.UP * 0.18, rim + side, Color("bccadd"))

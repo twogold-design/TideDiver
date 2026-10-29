@@ -118,13 +118,13 @@ func _test_economy_and_distribution() -> void:
 	_check(result.earned == 96 and rescued.inventory_total() == 0 and rescued.total_fish == 0, "Rescue applies the existing35 percent rule to canonical collectible and legacy chest values")
 	var points: Array = Ocean.pickup_points()
 	var types: Dictionary = {}
-	var valid := points.size() == 63
+	var valid := points.size() == 53
 	for point: Dictionary in points:
 		types[point.kind] = int(types.get(point.kind,0))+1
 		valid = valid and not Loot.pickup_info(point.kind).is_empty() and point.position.y >= Ocean.seabed_height(point.position.x,point.position.z)+0.99
 	for id in Loot.ITEMS:
 		valid = valid and types.has(id)
-	_check(valid and types.get("chest",0) == 12 and types.get("oxygen",0) == 31 and types.get("pearl",0) > 0, "The same63 authored points retain air stations, chests and pearls while distributing all four new finds")
+	_check(valid and types.get("chest",0) == 10 and types.get("oxygen",0) == 26 and types.get("pearl",0) > 0, "The remaining 53 outer-ocean points retain air stations, chests, pearls and all four finds")
 
 func _test_actual_pickups() -> void:
 	var game: Node = load("res://scenes/main.tscn").instantiate()
@@ -139,7 +139,7 @@ func _test_actual_pickups() -> void:
 	await physics_frame
 	await process_frame
 	game.start_dive(false,false)
-	_check(game.pickups.size() == 74 and game.fish.size() == 167 and game.pickups[0].kind == "pearl" and game.pickups[9].kind == "oxygen" and game.pickups[10].kind == "oxygen", "The real ocean retains74 pickups,167 fish and the original first pearl and two indexed air stations")
+	_check(game.pickups.size() == 64 and game.fish.size() == 151 and game.pickups[0].kind == "pearl" and game.pickups[9].kind == "oxygen" and game.pickups[10].kind == "oxygen", "The real ocean retains64 pickups,151 fish and the original first pearl and two indexed air stations")
 	for id in Loot.ITEMS:
 		var selected: Dictionary = {}
 		for item: Dictionary in game.pickups:

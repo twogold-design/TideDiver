@@ -79,7 +79,13 @@ func _test_dock_menu_and_rejections() -> void:
 	if not launchers.is_empty():
 		launchers[0].pressed.emit()
 	_check(game.gm_menu_open and game.gm_return_state == "dock" and game.state == "dock" and Input.mouse_mode == Input.MOUSE_MODE_VISIBLE, "The dock GM button opens the menu without beginning a dive")
-	_check(_buttons_containing("船上入水").size() == 7 and _buttons_containing("直达景观").size() == 7, "The real menu offers both launch modes for all seven destinations")
+	_check(_buttons_containing("船上入水").size() == 6 and _buttons_containing("直达景观").size() == 6, "The real menu offers both launch modes for all six destinations")
+	var expected_ids := ["tidal_cove","twin_gates","merchant_wreck","amber_reef","southern_spires","pearl_atoll"]
+	var actual_ids: Array = []
+	for site: Dictionary in Ocean.DIVE_SITES:
+		actual_ids.append(site.id)
+	_check(actual_ids == expected_ids and Ocean.site_index("lantern_garden") == -1, "Only the six retained destinations remain selectable in their intended order")
+	_check(game.ocean_root.get_node_or_null("OuterOcean/lantern_garden") == null and Ocean.zone_for_position(Vector3(35,-82,-360)).is_empty(), "The removed garden has no remaining scene or navigation region")
 	game.gm_select_dive_site(-1, true)
 	game.gm_select_dive_site(Ocean.DIVE_SITES.size(), false)
 	_check(game.gm_menu_open and game.state == "dock" and game.player.position == initial_position and not game.gm_test_active, "Negative and out-of-range indices leave the menu and game unchanged")
@@ -135,8 +141,8 @@ func _test_destination_buttons() -> void:
 	for index in range(Ocean.DIVE_SITES.size()):
 		_key(KEY_F1)
 		var boat_buttons: Array[Button] = _buttons_containing("船上入水")
-		_check(boat_buttons.size() == 7, "All seven boat callbacks remain available for site %d" % index)
-		if boat_buttons.size() != 7:
+		_check(boat_buttons.size() == 6, "All six boat callbacks remain available for site %d" % index)
+		if boat_buttons.size() != 6:
 			return
 		var cargo_before: Array = game.cargo.duplicate(true)
 		var air_before: float = game.oxygen
@@ -174,8 +180,8 @@ func _test_destination_buttons() -> void:
 		game.toggle_pause()
 		_key(KEY_F1)
 		var direct_buttons: Array[Button] = _buttons_containing("直达景观")
-		_check(direct_buttons.size() == 7, "All seven direct-test callbacks remain available for site %d" % index)
-		if direct_buttons.size() != 7:
+		_check(direct_buttons.size() == 6, "All six direct-test callbacks remain available for site %d" % index)
+		if direct_buttons.size() != 6:
 			return
 		cargo_before = game.cargo.duplicate(true)
 		air_before = game.oxygen
@@ -207,7 +213,7 @@ func _harvest_preserved(fish_id: int, pickup_id: int) -> bool:
 func _landmark_visible(index: int) -> bool:
 	if index == 0:
 		return _visible_mesh(game.ocean_root)
-	if index == 5:
+	if Ocean.DIVE_SITES[index].id == "southern_spires":
 		return game.storm_school.is_visible_in_tree() and game.camera.is_position_in_frustum(game.storm_school.global_position)
 	var region: Node3D = game.ocean_root.get_node_or_null("OuterOcean/" + str(Ocean.ZONES[index - 1].id))
 	return region != null and _visible_mesh(region)

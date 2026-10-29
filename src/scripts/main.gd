@@ -18,6 +18,7 @@ const DepthLighting = preload("res://scripts/depth_lighting.gd")
 const Loot = preload("res://scripts/loot_catalog.gd")
 const DiverBubbles = preload("res://scripts/diver_bubbles.gd")
 const MarineLife = preload("res://scripts/marine_life.gd")
+const ReefFish = preload("res://scripts/reef_fish_habitat.gd")
 const SWIMMING_SPECIES := 9
 const COASTAL_FISH_COUNT = 21
 const COASTAL_KINDS = [0,1,3,4,6,2]
@@ -58,6 +59,7 @@ var ocean_sun: DirectionalLight3D
 var diver_light: OmniLight3D
 var diver_bubbles: Node3D
 var marine_life: Node3D
+var reef_fish: Node3D
 var hud: Node2D
 var fish: Array = []
 var pickups: Array = []
@@ -385,10 +387,12 @@ func _setup_world() -> void:
 	ocean_root.add_child(diver_bubbles)
 	diver_bubbles.ignored_bodies.append(player.get_rid())
 	marine_life = MarineLife.build(ocean_root,[player.get_rid()],explorable_wreck)
+	reef_fish = ReefFish.build(ocean_root)
 	_reset_shore_lighting()
 
 func _spawn_population() -> void:
 	marine_life.reset()
+	reef_fish.reset()
 	ray_habitat.reset()
 	canyon_shark.begin_dive(wildlife_rng.randi())
 	for item in fish:
@@ -882,23 +886,21 @@ func _gm_test_pose(index: int) -> Dictionary:
 	var point: Vector3 = Ocean.DIVE_SITES[index].origin + Vector3(0,-9,12)
 	var heading: float = 0.0
 	var tilt: float = -0.12
-	match index:
-		1:
+	match str(Ocean.DIVE_SITES[index].id):
+		"twin_gates":
 			point = Vector3(Ocean.canyon_center_x(-325),-78,-325)
 			var downstream: Vector3 = Ocean.canyon_tangent(point.z)
 			heading = atan2(-downstream.x,-downstream.z)
 			tilt = -0.20
-		2:
-			point = Vector3(35,Ocean.seabed_height(35,-325)+14,-325)
-		3:
+		"merchant_wreck":
 			point = explorable_wreck.to_global(Vector3(0,4.7,23))
 			heading = explorable_wreck.rotation.y
-		4:
+		"amber_reef":
 			point = Vector3(-180,-11,180)
 			tilt = -0.25
-		5:
+		"southern_spires":
 			point = StormSchool.CENTER + Vector3(0,0,37)
-		6:
+		"pearl_atoll":
 			point = Vector3(245,Ocean.seabed_height(245,276)+12,276)
 	# Verify real terrain/landmark collision before placing a player at a viewpoint.
 	if not _open_water(point):
@@ -1318,6 +1320,7 @@ func _animate_ocean(_delta: float) -> void:
 		return
 	canyon_root.animate(clock,player.position)
 	marine_life.animate(clock,player.position)
+	reef_fish.animate(clock,player.position)
 	storm_school.animate(clock,player.position)
 	explorable_wreck.get_node("WreckFishSchool").animate(clock,player.position)
 	canyon_shark.animate(clock,player.position)
@@ -1643,6 +1646,8 @@ func context_hint() -> String:
 			return "%s · 空间不足：需 %d kg，剩余 %d kg" % [data.name,data.weight,remaining]
 		return "%s · 耐久 %d/%d · %d kg | %s" % [data.name,target.hp,data.hp,data.weight,data.hint]
 	var observed: String = marine_life.nearby_species(player.position)
+	if observed.is_empty():
+		observed = reef_fish.nearby_species(player.position,player.get_rid())
 	if not observed.is_empty():
 		return "观察 · %s" % observed
 	return ""

@@ -16,7 +16,7 @@
 | 主流程、潜水、鼠标和自由镜头 | `src/scripts/main.gd` |
 | 鱼群、鱼钩、海底与地形 | `src/scripts/fish_*`、`harpoon.gd`、`ocean_*`、`canyon_art.gd` |
 | 埋沙鳐鱼、中空沉船与局部生态 | `src/scripts/ray_*`、`explorable_wreck.gd`、`wreck_fish_school.gd`、`thresher_shark.gd`、`stonefish_*` |
-| 海床小动物、珊瑚和呼吸气泡 | `src/scripts/marine_life*`、`coral_garden.gd`、`diver_bubbles.gd` |
+| 海床小动物、珊瑚鱼群和呼吸气泡 | `src/scripts/marine_life*`、`reef_fish*`、`coral_garden.gd`、`diver_bubbles.gd` |
 | 餐厅经营和数据规则 | `src/scripts/progression.gd`、`cuisine.gd`、`customer_feedback.gd` |
 | 家具和角色模型 | `src/scripts/furniture_art.gd`、`restaurant_person.gd`、`diver_art.gd` |
 | 游戏内界面 | `src/scripts/hud.gd`、`restaurant_ui.gd`、`layout_ui.gd` |

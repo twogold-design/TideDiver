@@ -80,7 +80,7 @@ func _test_air_switch() -> void:
 	_check(game.oxygen == memory.oxygen_max() and game.notice.contains("免除耗气"),"Jellyfish contact also respects infinite air and explains it")
 	hazard.node.position = hazard_before
 	game.open_gm_menu()
-	game.gm_select_dive_site(4,true)
+	game.gm_select_dive_site(game.Ocean.site_index("amber_reef"),true)
 	_check(game.gm_infinite_air and game.oxygen == memory.oxygen_max(),"Changing GM destinations retains the enabled switch")
 	game.open_gm_menu()
 	_button("无限气瓶量").pressed.emit()

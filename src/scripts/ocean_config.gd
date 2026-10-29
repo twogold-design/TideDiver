@@ -25,13 +25,12 @@ const CANYON_BANK_HALF_WIDTH := 62.0
 const COASTAL_RADIUS := 68.0
 const EXPLORATION_NAMES := [
 	["海草沙坡", "浅礁贝床"], ["岩岸断层", "外围遗迹"],
-	["幽光苔坡", "深蓝花圃"], ["散落货舱", "断桅遗物"],
+	["散落货舱", "断桅遗物"],
 	["珊瑚外礁", "海扇长廊"], ["外缘石柱", "沙谷石门"],
 	["外环贝床", "月光沙台"]
 ]
 const ZONES := [
 	{"id":"twin_gates","name":"双门遗迹 · 潮流大峡谷","center":Vector3(-210,-52,-230),"radius":70.0,"core_radius":42.0,"fish_kind":2},
-	{"id":"lantern_garden","name":"幽蓝灯园","center":Vector3(35,-82,-360),"radius":70.0,"core_radius":44.0,"fish_kind":2},
 	{"id":"merchant_wreck","name":"远航沉船","center":Vector3(310,-52,-130),"radius":74.0,"core_radius":46.0,"fish_kind":1},
 	{"id":"amber_reef","name":"琥珀珊瑚礁","center":Vector3(-180,-29,135),"radius":68.0,"core_radius":40.0,"fish_kind":0},
 	{"id":"southern_spires","name":"南潮石林","center":Vector3(-45,-52,300),"radius":72.0,"core_radius":44.0,"fish_kind":1},
@@ -40,14 +39,19 @@ const ZONES := [
 
 # Boat origins keep the stern jump on the open-water approach to each landmark.
 const DIVE_SITES := [
-	{"name":"潮汐湾近岸", "origin":Vector3(0,0,0)},
-	{"name":"双门遗迹 · 潮流大峡谷", "origin":Vector3(-226,0,-290)},
-	{"name":"幽蓝灯园", "origin":Vector3(35,0,-420)},
-	{"name":"远航沉船", "origin":Vector3(310,0,-190)},
-	{"name":"琥珀珊瑚礁", "origin":Vector3(-180,0,75)},
-	{"name":"南潮石林", "origin":Vector3(-45,0,240)},
-	{"name":"月贝环礁", "origin":Vector3(245,0,180)},
+	{"id":"tidal_cove","name":"潮汐湾近岸", "origin":Vector3(0,0,0)},
+	{"id":"twin_gates","name":"双门遗迹 · 潮流大峡谷", "origin":Vector3(-226,0,-290)},
+	{"id":"merchant_wreck","name":"远航沉船", "origin":Vector3(310,0,-190)},
+	{"id":"amber_reef","name":"琥珀珊瑚礁", "origin":Vector3(-180,0,75)},
+	{"id":"southern_spires","name":"南潮石林", "origin":Vector3(-45,0,240)},
+	{"id":"pearl_atoll","name":"月贝环礁", "origin":Vector3(245,0,180)},
 ]
+
+static func site_index(id: String) -> int:
+	for index in range(DIVE_SITES.size()):
+		if DIVE_SITES[index].id == id:
+			return index
+	return -1
 
 static func exploration_areas() -> Array:
 	var result: Array = [{"id":"tidal_cove","name":"潮汐湾 · 近岸","center":Vector3(0,-22,0),"radius":COASTAL_RADIUS,"core_radius":42.0}]
@@ -148,7 +152,7 @@ static func pickup_points() -> Array:
 	for zone_index in range(ZONES.size()):
 		var zone: Dictionary = ZONES[zone_index]
 		var center: Vector3 = zone.center
-		var relic: String = ["sea_glass","ancient_coin","amber_shard","conch","sea_glass","ancient_coin"][zone_index]
+		var relic: String = ["sea_glass","amber_shard","conch","sea_glass","ancient_coin"][zone_index]
 		for spec: Dictionary in [{"kind":"pearl","x":-9.0,"z":25.0},{"kind":relic,"x":9.0,"z":29.0},{"kind":"chest","x":2.0,"z":35.0}]:
 			var x: float = center.x+float(spec.x)
 			var z: float = center.z+float(spec.z)
@@ -173,7 +177,7 @@ static func pickup_points() -> Array:
 		var points: Array = exploration_points(site)
 		for branch in range(points.size()):
 			var point: Vector3 = points[branch].position + Vector3.UP
-			var kind: String = ["sea_glass","ancient_coin","amber_shard","conch","pearl","sea_glass","ancient_coin"][site] if branch == 0 else ("conch" if site == 0 else "chest")
+			var kind: String = ["sea_glass","ancient_coin","conch","pearl","sea_glass","ancient_coin"][site] if branch == 0 else ("conch" if site == 0 else "chest")
 			result.append({"kind":kind,"position":point,"site_index":site,"exploration":true,"name":points[branch].name})
 		var station: Vector3 = area.center + Vector3(0,0,-float(area.radius)*0.72)
 		if site == 1:

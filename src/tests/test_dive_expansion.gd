@@ -48,10 +48,10 @@ func _run() -> void:
 	for item in game.pickups:
 		if item.has("exploration_site"):
 			added_resources += 1
-	_check(areas.size() == 7 and Ocean.DIVE_SITES.size() == 7, "All seven original dive destinations provide expanded exploration areas")
-	_check(game.fish.size() == 167 and game.fish_population_count() == 167 and game.pickups.size() == 74 and game.pickups.size() == 11 + Ocean.pickup_points().size() and added_resources == 21, "Larger areas add twenty-one resources while keeping the ordinary fish population sparse")
-	_check(expansions != null and int(expansions.get_meta("site_count", 0)) == 7 and int(expansions.get_meta("side_area_count", 0)) == 14, "The actual scene includes fourteen peripheral landmarks across all seven sites")
-	if expansions != null and areas.size() == 7:
+	_check(areas.size() == 6 and Ocean.DIVE_SITES.size() == 6, "All six original dive destinations provide expanded exploration areas")
+	_check(game.fish.size() == 151 and game.fish_population_count() == 151 and game.pickups.size() == 64 and game.pickups.size() == 11 + Ocean.pickup_points().size() and added_resources == 18, "Larger areas add eighteen resources while keeping the ordinary fish population sparse")
+	_check(expansions != null and int(expansions.get_meta("site_count", 0)) == 6 and int(expansions.get_meta("side_area_count", 0)) == 12, "The actual scene includes twelve peripheral landmarks across all six sites")
+	if expansions != null and areas.size() == 6:
 		var ids: Dictionary = {}
 		for site in range(areas.size()):
 			var area: Dictionary = areas[site]
@@ -60,7 +60,7 @@ func _run() -> void:
 			_test_fish_coverage(area)
 			await _test_landmarks(site, area, expansions)
 			_test_peripheral_resources(site, area)
-		_check(ids.size() == 7, "Expanded areas preserve seven distinct destination identities")
+		_check(ids.size() == 6, "Expanded areas preserve six distinct destination identities")
 		_test_gm_and_random_departures()
 		await _test_air_cost()
 	_test_current_isolation()
@@ -215,7 +215,7 @@ func _test_peripheral_resources(site: int, area: Dictionary) -> void:
 	_check(refilled, "The peripheral gas bottle actually restores the original thirty-five units of air: " + str(area.name))
 
 func _test_gm_and_random_departures() -> void:
-	for site in range(7):
+	for site in range(Ocean.DIVE_SITES.size()):
 		game.open_gm_menu()
 		var expected: Dictionary = game._gm_test_pose(site)
 		game.gm_select_dive_site(site, true)
@@ -227,7 +227,7 @@ func _test_gm_and_random_departures() -> void:
 	for departure in range(8):
 		game.state = "dock"
 		game.start_dive(false)
-		valid = valid and game.entry_site_index >= 0 and game.entry_site_index < 7 and game.entry_site_index != previous and game.fish.size() == 167 and game.pickups.size() == 74
+		valid = valid and game.entry_site_index >= 0 and game.entry_site_index < 6 and game.entry_site_index != previous and game.fish.size() == 151 and game.pickups.size() == 64
 		previous = game.entry_site_index
 		visited[previous] = true
 		var landing: Vector3 = game.dive_origin + Vector3(0, -6, 25)

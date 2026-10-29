@@ -45,7 +45,7 @@ func _run() -> void:
 	await physics_frame
 	await process_frame
 	var progress_before: Dictionary = memory._save_data().duplicate(true)
-	_check(game.fish.size() == 167 and game.fish_population_count() == 167, "Ocean scenery leaves the ordinary catchable population at 167")
+	_check(game.fish.size() == 151 and game.fish_population_count() == 151, "Ocean scenery leaves the ordinary catchable population at 151")
 	var storm: Node3D = game.storm_school
 	_check(storm != null and storm.global_position == Vector3(-45, -20, 292), "The fish storm is located at the southern spires")
 	if storm != null:
@@ -106,7 +106,7 @@ func _test_storm(storm: Node3D) -> void:
 	_check(game.projectiles.size() == 1, "Shooting into the decorative vortex launches a real flying hook")
 	for frame in range(50):
 		game._update_projectiles(0.02)
-	_check(independent and game.fish.size() == 167 and game.projectiles.is_empty() and game.target_fish().is_empty() and game.cargo.is_empty() and memory.inventory_total() == 0, "A physical hook crossing the decorative vortex cannot catch or duplicate it into cargo or inventory")
+	_check(independent and game.fish.size() == 151 and game.projectiles.is_empty() and game.target_fish().is_empty() and game.cargo.is_empty() and memory.inventory_total() == 0, "A physical hook crossing the decorative vortex cannot catch or duplicate it into cargo or inventory")
 
 func _test_storm_geometry(storm: Node3D, visual: MultiMeshInstance3D) -> void:
 	var mesh: ArrayMesh = visual.multimesh.mesh as ArrayMesh

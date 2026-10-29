@@ -57,6 +57,10 @@ func _test_fund_and_restore() -> void:
 	_check(progress.coins == 0 and progress.inventory_total() == 0, "Real game starts with zero funds and stock")
 	game.open_restaurant()
 	_check(game.state == "restaurant" and game.restaurant_node.visible and not game.environment.fog_enabled, "Restaurant entrance switches the real world view")
+	_check(_button_disabled("备菜菜单") and _button("备菜菜单").tooltip_text == "请先装修店面", "Unrestored shop disables menu preparation and explains the renovation requirement on hover")
+	game.restaurant_tab = "menu"
+	game.hud.restaurant_ui.rebuild()
+	_check(game.restaurant_tab == "renovation" and _button("精细备料") == null, "An unfinished shop cannot retain a stale preparation tab")
 	_check(_button_disabled("开门营业") and _button_disabled("40 G") and _button_disabled("卖 1 件"), "Empty old shop disables opening, construction and selling")
 	game.start_service()
 	_check(game.state == "restaurant", "Unrestored restaurant cannot start service")
@@ -75,8 +79,11 @@ func _test_fund_and_restore() -> void:
 	game.renovate_shop("kitchen")
 	_check(not progress.renovation.kitchen and progress.coins == 226, "Main renovation action respects prerequisites")
 	game.renovate_shop("clean")
+	_check(_button_disabled("备菜菜单"), "Cleaning alone does not unlock the menu")
 	game.renovate_shop("kitchen")
+	_check(_button_disabled("备菜菜单"), "The menu remains locked until the required tables are finished too")
 	game.renovate_shop("tables")
+	_check(not _button_disabled("备菜菜单") and _button("备菜菜单").tooltip_text.is_empty() and not progress.renovation.sign, "Completing mandatory renovation unlocks the menu and clears the tip without requiring optional upgrades")
 	_check(progress.can_open() and progress.coins == 16 and game.restaurant_node._renovation.tables, "Minimum renovation updates data and actual 3D shop")
 	_check(_button_disabled("开门营业"), "Opening stays disabled until menu is prepared")
 	game.restaurant_tab = "menu"

@@ -167,7 +167,7 @@ func _test_lifecycle_resets() -> void:
 	game._update_entry(3.2)
 	await _sample(["swim_left"])
 	game.open_gm_menu()
-	game.gm_select_dive_site(4, true)
+	game.gm_select_dive_site(game.Ocean.site_index("amber_reef"), true)
 	_check(_is_reset() and not game.entry_active and game.state == "dive", "GM transfer clears the old motion before showing the new dive location")
 	await _sample(["swim_back", "swim_right"])
 	game.state = "dock"

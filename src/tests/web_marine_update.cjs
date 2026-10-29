@@ -24,6 +24,16 @@ process.env.TMP = process.env.TEMP;
     await page.waitForTimeout(250);
   };
   const screenshot = async(name)=>page.screenshot({path:path.join(output,name+'.png')});
+  const frameTimes = {};
+  const measureFrames = async(name)=>{
+    frameTimes[name]=await page.evaluate(()=>new Promise(resolve=>{
+      const samples=[];let last=performance.now();
+      const step=now=>{samples.push(now-last);last=now;if(samples.length<121){requestAnimationFrame(step);return;}
+        const sorted=samples.slice(1).sort((a,b)=>a-b);resolve({p95:sorted[Math.floor(sorted.length*.95)],max:Math.max(...sorted)});};
+      requestAnimationFrame(step);
+    }));
+    console.log(name,frameTimes[name]);
+  };
   const airPixels = async()=>{
     const box = await page.locator('#canvas').boundingBox();
     const scale = Math.min(box.width/1440,box.height/900);
@@ -57,8 +67,9 @@ process.env.TMP = process.env.TEMP;
     await screenshot('canyon-curved-channel');
     await page.waitForTimeout(2500);
     await screenshot('canyon-downstream-drift');
+    await measureFrames('natural-current');
     await page.keyboard.press('F1');await page.waitForTimeout(250);
-    await clickGame(1067,507); // Coral reef, direct arrival.
+    await clickGame(1067,441); // Coral reef, direct arrival.
     await page.waitForFunction(()=>document.pointerLockElement!==null);
     await page.waitForTimeout(3500);
     const firstAir=await airPixels();
@@ -66,12 +77,19 @@ process.env.TMP = process.env.TEMP;
     await page.waitForTimeout(4500);
     const infiniteAir=await airPixels();
     assert(firstAir>190&&Math.abs(firstAir-infiniteAir)<=2,'The actual rendered air gauge stays full while infinite air is enabled');
+    await measureFrames('reef-residents');
     await page.keyboard.press('F1');await page.waitForTimeout(250);
-    await clickGame(1067,573); // Jackfish storm.
+    await clickGame(1067,375); // Real wreck arrival, then swim through the open hold.
+    await page.waitForTimeout(1200);
+    await page.keyboard.down('w');await page.waitForTimeout(1200);await page.keyboard.up('w');
+    await screenshot('wreck-mixed-shoals');
+    await measureFrames('wreck-residents');
+    await page.keyboard.press('F1');await page.waitForTimeout(250);
+    await clickGame(1067,507); // Jackfish storm.
     await page.waitForTimeout(1800);
     await screenshot('jackfish-forward-orbit');
     await page.keyboard.press('F1');await page.waitForTimeout(250);
-    await clickGame(1067,639); // Atoll ecology.
+    await clickGame(1067,573); // Atoll ecology.
     await page.waitForTimeout(1800);
     await screenshot('atoll-life');
     await page.keyboard.press('F1');await page.waitForTimeout(250);
@@ -84,7 +102,7 @@ process.env.TMP = process.env.TEMP;
     assert(normalAir<infiniteAir-5,'Disabling infinite air visibly resumes tank consumption');
     await screenshot('normal-air-restored');
     assert.deepEqual(errors,[],'No browser, script or shader errors');
-    fs.writeFileSync(path.join(output,'result.json'),JSON.stringify({firstAir,infiniteAir,normalAir,errors},null,2));
+    fs.writeFileSync(path.join(output,'result.json'),JSON.stringify({firstAir,infiniteAir,normalAir,frameTimes,errors},null,2));
     console.log('PASS: real GM air toggle, persistent full gauge, normal consumption restored, canyon boat entry and curved channel, coral/storm/atoll views and bubble rendering.');
   }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

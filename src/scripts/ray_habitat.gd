@@ -23,7 +23,7 @@ func _ready() -> void:
 	# Terrain is handled with exact height sampling; buried animals start inside it.
 	for body: Node in get_parent().find_children("TerrainCollision","StaticBody3D",true,false):
 		_movement_exclusions.append(body.get_rid())
-	var terrace: Vector3 = Ocean.exploration_points(6)[1].position
+	var terrace: Vector3 = Ocean.exploration_points(Ocean.site_index("pearl_atoll"))[1].position
 	var offsets: Array[Vector3] = [Vector3(17,0,-3),Vector3(25,0,5),Vector3(32,0,-8),Vector3(18,0,15),Vector3(34,0,14),Vector3(42,0,2)]
 	for index in range(RAY_COUNT):
 		var home: Vector3 = terrace + offsets[index]

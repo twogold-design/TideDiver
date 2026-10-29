@@ -243,10 +243,10 @@ func _test_lifecycle() -> void:
 	_check(item.motion_phase == phase_before and item.node.transform == root_before,"A captured fish cannot continue advancing its live rig")
 	game.finish_dive(false)
 	game.start_dive(false,false)
-	var clean: bool = game.fish.size() == 167 and FishData.SPECIES.size() == 10
+	var clean: bool = game.fish.size() == 151 and FishData.SPECIES.size() == 10
 	for fish: Dictionary in game.fish:
 		clean = clean and fish.alive and not fish.has("motion_phase") and fish.hp == FishData.SPECIES[fish.kind].hp
-	_check(clean,"A new dive creates clean animation state while preserving all 167 catches and ten canonical species")
+	_check(clean,"A new dive creates clean animation state while preserving all 151 catches and ten canonical species")
 
 func _test_animated_aim() -> void:
 	for kind: int in [7,8]:

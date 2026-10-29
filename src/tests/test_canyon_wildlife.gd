@@ -105,7 +105,7 @@ func _run() -> void:
 		await physics_frame
 	game.set_physics_process(false)
 	_check(game.state == "paused" and shark.position == position_before and shark.get_node("Tail").transform == tail_before, "The real pause state freezes the encounter in physics frames")
-	_check(game.fish.size() == 167 and game.fish_population_count() == 167 and game.pickups.size() > 0, "Rare wildlife leaves the ordinary fish population and existing pickups intact")
+	_check(game.fish.size() == 151 and game.fish_population_count() == 151 and game.pickups.size() > 0, "Rare wildlife leaves the ordinary fish population and existing pickups intact")
 	_check(memory._save_data() == before and memory.saves == 0, "Encounter rolls, animation and GM testing never write durable progress")
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	game.free()

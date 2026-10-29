@@ -56,7 +56,7 @@ func _run() -> void:
 		await _test_harpoon_isolation_and_hull()
 		_test_wreck_camera()
 		await _test_pause_and_gm()
-		_check(game.fish.size() == 167 and game.fish_population_count() == 167 and game.pickups.size() == 74, "Decorative rays and three hundred internal fish stay outside the 167 huntable fish and 74 pickups")
+		_check(game.fish.size() == 151 and game.fish_population_count() == 151 and game.pickups.size() == 64, "Decorative rays and three hundred internal fish stay outside the 151 huntable fish and 64 pickups")
 		_check(memory._save_data() == progress_before and memory.saves == 0 and game.cargo.is_empty(), "Exploring and firing through decorative animals neither changes inventory nor writes progress")
 		_test_ray_lifecycle_reset()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -66,7 +66,7 @@ func _run() -> void:
 	quit(0 if failures == 0 else 1)
 
 func _test_ray_initial_state() -> void:
-	var terrace: Vector3 = Ocean.exploration_points(6)[1].position
+	var terrace: Vector3 = Ocean.exploration_points(Ocean.site_index("pearl_atoll"))[1].position
 	_check(rays.rays.size() == 6 and str(rays.get_meta("location_name", "")).contains("月光沙台"), "Exactly six decorative rays inhabit the sand outside Moonlight Sand Terrace")
 	var grounded := true
 	var articulated := true
@@ -240,8 +240,11 @@ func _test_school_geometry_and_rendering() -> void:
 		if child is MultiMeshInstance3D:
 			batches.append(child)
 			count += child.multimesh.instance_count
-	_check(count >= 240 and count <= 360 and count == int(school.get_meta("fish_count", 0)) and batches.size() <= 3, "Hundreds of internal small fish are rendered with at most three actual MultiMesh batches")
-	_check(batches.size() >= 2 and batches[0].multimesh.mesh == batches[1].multimesh.mesh and batches[0].material_override == batches[1].material_override, "The decorative school shares its actual mesh and animated material across batches")
+	_check(count == 300 and count == int(school.get_meta("fish_count", 0)) and batches.size() == 4, "The wreck keeps three hundred fish in four species batches")
+	var meshes: Dictionary = {}
+	for batch: MultiMeshInstance3D in batches:
+		meshes[batch.multimesh.mesh] = true
+	_check(meshes.size() == 4 and batches.all(func(batch): return batch.material_override == batches[0].material_override), "Four distinct silhouettes and markings share one animated material")
 	_check(not _has_collision(school) and bool(school.get_meta("decorative_only", false)), "The internal school adds no collider or huntable fish body")
 	var bounds: AABB = school.get_meta("local_swim_bounds")
 	var radius: float = school.get_meta("max_fish_radius")
@@ -279,7 +282,7 @@ func _test_school_geometry_and_rendering() -> void:
 					visible_fish += 1
 	var frame: Image = root.get_texture().get_image()
 	_check(visible_fish >= 80 and not frame.is_empty(), "A real GPU frame from inside the wreck contains the visible, densely scattered small-fish school")
-	_check(bool(school.get_meta("external_clock_only", false)) and not str(batches[0].material_override.shader.code).contains("TIME"), "Fish transforms and scale shimmer use the paused game clock instead of an independent shader timer")
+	_check(bool(school.get_meta("external_clock_only", false)) and not str(batches[0].material_override.shader.code).contains("TIME"), "Fish transforms and tail animation use the paused game clock instead of an independent shader timer")
 
 func _test_harpoon_isolation_and_hull() -> void:
 	var originals: Array[Dictionary] = []
@@ -361,14 +364,14 @@ func _test_pause_and_gm() -> void:
 	var school_before := _school_snapshot()
 	var clock_before: float = game.clock
 	await _physics_frames(8)
-	_check(game.state == "paused" and _ray_snapshot() == ray_before and _school_snapshot() == school_before and game.clock == clock_before, "The real pause state freezes ray states, all visible joints, fish instances and scale shimmer")
+	_check(game.state == "paused" and _ray_snapshot() == ray_before and _school_snapshot() == school_before and game.clock == clock_before, "The real pause state freezes ray states, all visible joints, fish instances and tail animation")
 	game.toggle_pause()
 	game.open_gm_menu()
 	ray_before = _ray_snapshot()
 	school_before = _school_snapshot()
 	await _physics_frames(8)
 	_check(game.gm_menu_open and game.state == "paused" and _ray_snapshot() == ray_before and _school_snapshot() == school_before, "An open GM menu freezes both decorative animal systems in actual physics frames")
-	game.gm_select_dive_site(6, true)
+	game.gm_select_dive_site(game.Ocean.site_index("pearl_atoll"), true)
 	_check(game.state == "dive" and not game.gm_menu_open and _ray_snapshot() == ray_before, "GM teleport within a dive preserves the existing ray state instead of resetting the habitat")
 
 func _test_ray_lifecycle_reset() -> void:
@@ -397,7 +400,7 @@ func _test_ray_lifecycle_reset() -> void:
 	game._update_swim_camera()
 	var hidden_before_gm: bool = not rig.visible
 	game.open_gm_menu()
-	game.gm_select_dive_site(3, false)
+	game.gm_select_dive_site(game.Ocean.site_index("merchant_wreck"), false)
 	visible_at_start = rig.is_visible_in_tree()
 	game._update_entry(0.75)
 	_check(hidden_before_gm and visible_at_start and game.entry_active and rig.is_visible_in_tree(), "GM boat entry also restores the real diver throughout its jump after a cramped wreck view")

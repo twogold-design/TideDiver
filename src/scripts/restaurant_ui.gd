@@ -47,7 +47,7 @@ func _style(color: Color, border: Color = Color(0.7,0.85,0.8,0.15)) -> StyleBoxF
 	s.border_color = border
 	return s
 
-func _button(text: String, rect: Rect2, action: Callable, primary: bool = false, disabled: bool = false) -> void:
+func _button(text: String, rect: Rect2, action: Callable, primary: bool = false, disabled: bool = false, tip: String = "") -> void:
 	var open_service: bool = text == "开门营业   →"
 	var main_action: bool = text == "自由布置" or text == "开门营业   →"
 	var service_action: bool = game.state in ["service", "service_paused"]
@@ -59,6 +59,13 @@ func _button(text: String, rect: Rect2, action: Callable, primary: bool = false,
 	b.text = text
 	place_control(b, rect, button_anchor)
 	b.disabled = disabled
+	b.tooltip_text = tip
+	if not tip.is_empty():
+		var tooltip_theme := Theme.new()
+		tooltip_theme.default_font = font
+		tooltip_theme.set_font("font","TooltipLabel",font)
+		tooltip_theme.set_font_size("font_size","TooltipLabel",16)
+		b.theme = tooltip_theme
 	b.focus_mode = Control.FOCUS_NONE
 	b.add_theme_font_override("font",font)
 	b.add_theme_font_size_override("font_size",label_size)
@@ -107,11 +114,14 @@ func rebuild() -> void:
 		_button("收好账单 · 继续整备",Rect2(540,611,360,54),func(): game.summary_visible = false; rebuild(),true)
 		return
 	if game.state == "restaurant":
+		var menu_locked: bool = not (game.progress.renovation.clean and game.progress.renovation.kitchen and game.progress.renovation.tables)
+		if menu_locked and game.restaurant_tab == "menu":
+			game.restaurant_tab = "renovation"
 		button_anchor = TOP_LEFT
 		_button("← 返回码头",Rect2(32,30,150,43),game.return_to_dock)
 		button_anchor = CENTER_RIGHT
 		_button("店面装修",Rect2(1050,110,166,42),func(): game.restaurant_tab = "renovation"; rebuild(),game.restaurant_tab == "renovation")
-		_button("备菜菜单",Rect2(1226,110,180,42),func(): game.restaurant_tab = "menu"; rebuild(),game.restaurant_tab == "menu")
+		_button("备菜菜单",Rect2(1226,110,180,42),func(): game.restaurant_tab = "menu"; rebuild(),game.restaurant_tab == "menu",menu_locked,"请先装修店面" if menu_locked else "")
 		button_anchor = CENTER_LEFT
 		var i: int = 0
 		for id in _warehouse_ids():

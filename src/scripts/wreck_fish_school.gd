@@ -1,14 +1,15 @@
 extends Node3D
-## Two quiet silver-blue shoals inside the wreck. Only the caller advances their clock.
+## Four distinct sheltered shoals inside the wreck, driven by the game clock.
+const ReefArt = preload("res://scripts/reef_fish_art.gd")
+const KINDS := ["silver", "squirrel", "snapper", "banner"]
 const FISH_COUNT := 300
-const BATCH_COUNT := 2
+const BATCH_COUNT := 4
 const FISH_PER_BATCH := FISH_COUNT / BATCH_COUNT
-const MAX_FISH_SCALE := 0.64
+const MAX_FISH_SCALE := 0.92
 const MESH_RADIUS := 0.50 # Includes the shader's tail sway in every orientation.
 const BOUNDARY_MARGIN := 0.60
 const DRAW_DISTANCE := 175.0
 static var _shared_mesh: ArrayMesh
-static var _shared_shader: Shader
 
 var _bounds: AABB
 var _visuals: Array[MultiMeshInstance3D] = []
@@ -43,12 +44,11 @@ func setup(swim_bounds: AABB) -> void:
 	if minf(_bounds.size.x, minf(_bounds.size.y, _bounds.size.z * 0.5)) <= BOUNDARY_MARGIN * 2.0 + 0.1:
 		push_error("WreckFishSchool requires at least 1.3m per swimming dimension.")
 		return
-	_material = ShaderMaterial.new()
-	_material.shader = _fish_shader()
-	var mesh: ArrayMesh = _fish_mesh()
+	_material = ReefArt.material()
 	var batch_bounds: Array[AABB] = []
 	for batch_index in range(BATCH_COUNT):
-		var zone := AABB(_bounds.position + Vector3(0, 0, _bounds.size.z * 0.5 * float(batch_index)), Vector3(_bounds.size.x, _bounds.size.y, _bounds.size.z * 0.5))
+		var zone := AABB(_bounds.position + Vector3(0, 0, _bounds.size.z * 0.5 * float(batch_index % 2)), Vector3(_bounds.size.x, _bounds.size.y, _bounds.size.z * 0.5))
+		var mesh: ArrayMesh = _fish_mesh() if batch_index == 0 else ReefArt.mesh(KINDS[batch_index])
 		batch_bounds.append(zone)
 		var batch := MultiMesh.new()
 		batch.transform_format = MultiMesh.TRANSFORM_3D
@@ -57,7 +57,8 @@ func setup(swim_bounds: AABB) -> void:
 		batch.mesh = mesh
 		batch.instance_count = FISH_PER_BATCH
 		var visual := MultiMeshInstance3D.new()
-		visual.name = "SilverBlueShoal%d" % (batch_index + 1)
+		visual.name = KINDS[batch_index].capitalize() + "Shoal"
+		visual.set_meta("species",KINDS[batch_index])
 		visual.position = zone.get_center()
 		visual.multimesh = batch
 		visual.material_override = _material
@@ -88,14 +89,14 @@ func setup(swim_bounds: AABB) -> void:
 				fposmod(seed_value * 0.618034, 1.0),
 				fposmod(seed_value * 0.414214, 1.0),
 				fposmod(seed_value * 0.732051, 1.0)) * TAU)
-			_rates.append(0.17 + 0.07 * fposmod(seed_value * 0.357143, 1.0))
-			_scales.append(0.38 + (MAX_FISH_SCALE - 0.38) * fposmod(seed_value * 0.618034, 1.0))
-			batch.set_instance_color(index, Color("abcddd").lerp(Color("ecf4f6"), fposmod(seed_value * 0.276393, 1.0)))
+			_rates.append((0.17 + 0.07 * fposmod(seed_value * 0.357143, 1.0))*[1.0,0.62,0.85,0.70][batch_index])
+			_scales.append(lerpf(0.38 if batch_index == 0 else 0.64,0.64 if batch_index == 0 else MAX_FISH_SCALE,fposmod(seed_value * 0.618034, 1.0)))
+			batch.set_instance_color(index, Color.WHITE.lerp(Color("b6cfce"),fposmod(seed_value * 0.276393, 1.0)*.12))
 			batch.set_instance_custom_data(index, Color(fposmod(seed_value * 0.618034, 1.0), fposmod(seed_value * 0.414214, 1.0), 0, 1))
 	_update_instances(0.0)
 	set_meta("fish_count", FISH_COUNT)
 	set_meta("draw_batches", BATCH_COUNT)
-	set_meta("triangles_per_fish", mesh.surface_get_array_len(0) / 3)
+	set_meta("species",PackedStringArray(KINDS))
 	set_meta("batch_local_bounds", batch_bounds)
 	set_meta("max_fish_radius", MESH_RADIUS * MAX_FISH_SCALE)
 	set_meta("no_collision", true)
@@ -128,33 +129,6 @@ func _update_instances(time: float) -> void:
 		var batch_index: int = fish_id / FISH_PER_BATCH
 		_batches[batch_index].set_instance_transform(fish_id % FISH_PER_BATCH, Transform3D(basis, point - _visuals[batch_index].position))
 	_last_time = time
-
-static func _fish_shader() -> Shader:
-	if _shared_shader != null:
-		return _shared_shader
-	_shared_shader = Shader.new()
-	_shared_shader.code = """shader_type spatial;
-render_mode cull_disabled;
-uniform float school_clock = 0.0;
-varying vec3 fish_color;
-varying float shimmer;
-void vertex() {
-    float tail = smoothstep(0.10, 0.44, VERTEX.z);
-    VERTEX.x += sin(school_clock * 7.5 + INSTANCE_CUSTOM.r * 6.283185) * tail * 0.035;
-    fish_color = COLOR.rgb;
-    float wave = 0.5 + 0.5 * sin(school_clock * (0.68 + INSTANCE_CUSTOM.g * 0.34) + INSTANCE_CUSTOM.r * 6.283185);
-    shimmer = 0.14 + 0.24 * pow(wave, 7.0);
-}
-void fragment() {
-    ALBEDO = fish_color;
-    METALLIC = 0.30;
-    ROUGHNESS = 0.34;
-    // Pale scales catch a soft, staggered glint; the blue back and eyes stay dark.
-    float pale_scale = smoothstep(0.22, 0.72, dot(fish_color, vec3(0.2126, 0.7152, 0.0722)));
-    EMISSION = fish_color * shimmer * pale_scale;
-}
-"""
-	return _shared_shader
 
 static func _fish_mesh() -> ArrayMesh:
 	if _shared_mesh != null:

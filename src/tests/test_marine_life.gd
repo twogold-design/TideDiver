@@ -60,7 +60,7 @@ func _run() -> void:
 		await _test_rendered_species()
 		await _test_pause_and_reset()
 		_test_capture_isolation()
-		_check(game.fish.size() == 167 and game.fish_population_count() == 167 and game.pickups.size() == 74,"Ambient ecology preserves the original sparse huntable population and existing pickups")
+		_check(game.fish.size() == 151 and game.fish_population_count() == 151 and game.pickups.size() == 64,"Ambient ecology preserves the original sparse huntable population and existing pickups")
 		_check(game.cargo.is_empty() and memory._save_data() == before and memory.saves == 0,"Viewing, animation, GM and firing through ambient animals never change cargo or durable progress")
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	game.free()
@@ -81,9 +81,9 @@ func _test_population_and_resources() -> void:
 		meshes[visual.multimesh.mesh.get_instance_id()] = true
 		materials[visual.material_override.get_instance_id()] = true
 		bounded_batches = bounded_batches and visual.multimesh.instance_count <= 4 and visual.visibility_range_end > 0 and visual.visibility_range_end <= 140 and visual.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_check(actual_count==life.organisms.size() and actual_count==75 and int(life.get_meta("instance_count",0))==actual_count,"The seven habitats hold seventy-five ambient animals in restrained local encounters")
+	_check(actual_count==life.organisms.size() and actual_count==67 and int(life.get_meta("instance_count",0))==actual_count,"The six habitats hold sixty-seven ambient animals in restrained local encounters")
 	_check(meshes.size()==7 and materials.size()==7 and life.batches.size()<=35 and bounded_batches,"Species share seven original meshes and materials with at most four residents per culled batch")
-	_check(int(counts.get("GreenTurtle",0))==2 and int(counts.get("Cuttlefish",0))==6,"Only two turtles and six small cuttlefish occupy the entire ocean")
+	_check(int(counts.get("GreenTurtle",0))==2 and int(counts.get("Cuttlefish",0))==4,"Only two turtles and four small cuttlefish occupy the entire ocean")
 	_check(not _has_collision(life) and bool(life.get_meta("decorative_only",false)),"Ambient animals add no physical obstacles, pickup areas or combat targets")
 	for kind: String in Art.FORMS:
 		var mesh: ArrayMesh = Art.mesh(kind)
@@ -123,7 +123,7 @@ func _test_habitats_and_motion() -> void:
 					ground_min = clearance
 					first_bad = "%s site%d at %s" % [item.kind,item.site,point]
 				above_ground = above_ground and clearance >= -.015
-	_check(present.size()==7 and local,"All seven sites contain localized ecology that stays outside the hollow wreck and its entrances")
+	_check(present.size()==6 and local,"All six sites contain localized ecology that stays outside the hollow wreck and its entrances")
 	_check(clear and above_ground,"Actual animated animal geometry remains above the real seabed and outside solid rock: minimum %.4f, %s" % [ground_min,first_bad])
 	life.animate(0.0,Vector3.ZERO)
 	var first: Array = _snapshot()

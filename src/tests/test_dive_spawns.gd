@@ -47,14 +47,14 @@ func _run() -> void:
 	var progress_before: Dictionary = memory._save_data().duplicate(true)
 	_test_fixed_fixture()
 	await _test_blocked_fish_fallback()
-	_check(Ocean.DIVE_SITES.size() == 7, "Departures offer the cove and all six outer-ocean destinations")
+	_check(Ocean.DIVE_SITES.size() == 6, "Departures offer the cove and all five outer-ocean destinations")
 	var first_sequence: Array[Vector3] = await _sample_departures(SAMPLE_SEEDS[0], 8)
 	var second_sequence: Array[Vector3] = await _sample_departures(SAMPLE_SEEDS[1], 8)
-	await _sample_departures(SAMPLE_SEEDS[2], 8)
+	await _sample_departures(SAMPLE_SEEDS[2], 24)
 	_check(first_sequence != second_sequence, "Independent seeds produce different actual departure positions")
 	var repeated_sequence: Array[Vector3] = await _sample_departures(SAMPLE_SEEDS[0], 8)
 	_check(first_sequence == repeated_sequence, "Entry RNG reproduces departures independently of fish population RNG")
-	_check(seen_sites.size() == Ocean.DIVE_SITES.size(), "Seeded repeated departures actually exercise every candidate site")
+	_check(seen_sites.size() == Ocean.DIVE_SITES.size(), "Seeded repeated departures actually exercise every candidate site: %s" % str(seen_sites.keys()))
 	game.state = "dock"
 	game.start_dive(false)
 	_check(not game.entry_active and game.player.position.is_equal_approx(game.dive_origin + Vector3(0, -6, 14)), "Skipping animation still uses the chosen random site")
@@ -139,7 +139,7 @@ func _sample_departures(seed_value: int, count: int) -> Array[Vector3]:
 	return sequence
 
 func _test_spawn_population(origin: Vector3, context: String) -> void:
-	_check(game.fish.size() == 167 and game.fish.size() == game.fish_population_count(), "Random destination retains exactly 167 ordinary catchable fish: " + context)
+	_check(game.fish.size() == 151 and game.fish.size() == game.fish_population_count(), "Random destination retains exactly 151 ordinary catchable fish: " + context)
 	var landing: Vector3 = origin + Vector3(0, -6, 25)
 	var immediate_spawn: Vector3 = origin + Vector3(0, -6, 14)
 	var safe: bool = true

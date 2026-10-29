@@ -55,7 +55,7 @@ func _run() -> void:
 		_test_terrain()
 		await _test_sites_and_rendering(geology, life)
 		_test_pearl_interaction()
-	_check(game.fish.size() == 167 and game.fish_population_count() == 167, "Decorative seabed life does not add ordinary fish or increase the catchable population")
+	_check(game.fish.size() == 151 and game.fish_population_count() == 151, "Decorative seabed life does not add ordinary fish or increase the catchable population")
 	_check(memory._save_data() == progress_before and memory.saves == 0, "Detail inspection and pearl pickup do not mutate or save durable progress")
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	game.free()
@@ -69,7 +69,7 @@ func _test_batches_and_grounding(geology: Node3D, life: Node3D) -> void:
 	var stone_roots: PackedVector3Array = geology.get_meta("ground_roots", PackedVector3Array())
 	var life_roots: PackedVector3Array = life.get_meta("root_positions", PackedVector3Array())
 	_check(stone_batches.size() == int(geology.get_meta("draw_batches", 0)) and stone_batches.size() > 0 and _instance_count(stone_batches) == stone_roots.size() and stone_roots.size() == int(geology.get_meta("detail_count", 0)), "Actual stone instances and batch counts match the recorded ground roots")
-	_check(life_batches.size() == int(life.get_meta("draw_batches", 0)) and _instance_count(life_batches) == life_roots.size() and life_roots.size() == int(life.get_meta("instance_count", 0)) and int(life.get_meta("site_count", 0)) == 7, "Actual reef-life batches match all recorded instances across seven dive sites")
+	_check(life_batches.size() == int(life.get_meta("draw_batches", 0)) and _instance_count(life_batches) == life_roots.size() and life_roots.size() == int(life.get_meta("instance_count", 0)) and int(life.get_meta("site_count", 0)) == 6, "Actual reef-life batches match all recorded instances across six dive sites")
 	var meshes: Dictionary = {}
 	var stone_meshes: Dictionary = {}
 	var life_meshes: Dictionary = {}
@@ -119,7 +119,7 @@ func _test_batches_and_grounding(geology: Node3D, life: Node3D) -> void:
 			root_index += 1
 	_check(life_grounded and root_index == life_roots.size(), "Every organism's actual instance root matches its metadata and the world seabed")
 	var forms_present: bool = true
-	for site in range(7):
+	for site in range(Ocean.DIVE_SITES.size()):
 		var region: Node = life.get_node_or_null("Site%d" % site)
 		for form in ["Seagrass", "Scallop", "SeaStar", "TubeSponge"]:
 			forms_present = forms_present and region != null and region.get_node_or_null(form) is MultiMeshInstance3D
@@ -165,7 +165,7 @@ func _test_terrain() -> void:
 	_check(materials.size() == 1 and materials.values()[0] is ShaderMaterial and materials.values()[0] == Geology.sand_material(), "The original terrain chunks share the new sand shader without replacing their geometry")
 
 func _test_sites_and_rendering(geology: Node3D, life: Node3D) -> void:
-	for site in range(7):
+	for site in range(Ocean.DIVE_SITES.size()):
 		game.open_gm_menu()
 		game.gm_select_dive_site(site, true)
 		var forward := Vector3(-sin(game.yaw), 0, -cos(game.yaw))

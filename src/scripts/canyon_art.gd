@@ -6,7 +6,7 @@ const Coral = preload("res://scripts/coral_garden.gd")
 const Geology = preload("res://scripts/ocean_geology.gd")
 const CENTER_Z := Ocean.CANYON_CENTER.z
 const LENGTH := Ocean.CANYON_HALF_LENGTH * 2.0
-const TRACE_COUNT := 160
+const TRACE_COUNT := 480
 const TRACE_TRAVEL := 32.0
 const VIEW_DISTANCE := 540.0
 var current_material: ShaderMaterial
@@ -140,20 +140,24 @@ static func _bank_mesh(origin: Vector3) -> ArrayMesh:
 func _build_current(origin: Vector3) -> void:
 	var shape := SurfaceTool.new()
 	shape.begin(Mesh.PRIMITIVE_TRIANGLES)
-	# Crossed ribbons remain readable from the bank, above, and inside the channel.
+	# Soft suspended matter and wisps, with no arrowheads or diagram-like symbols.
 	for axis: Vector3 in [Vector3.RIGHT, Vector3.UP]:
-		for vertex: Vector3 in [-axis * 0.055 + Vector3(0,0,-1.8), axis * 0.055 + Vector3(0,0,-1.8), axis * 0.055 + Vector3(0,0,0.65), -axis * 0.055 + Vector3(0,0,-1.8), axis * 0.055 + Vector3(0,0,0.65), -axis * 0.055 + Vector3(0,0,0.65), -axis * 0.24 + Vector3(0,0,0.42), Vector3(0,0,1.05), axis * 0.24 + Vector3(0,0,0.42)]:
-			shape.add_vertex(vertex)
+		for segment in range(8):
+			var u0: float = float(segment)/8.0
+			var u1: float = float(segment+1)/8.0
+			for uv: Vector2 in [Vector2(u0,0),Vector2(u0,1),Vector2(u1,1),Vector2(u0,0),Vector2(u1,1),Vector2(u1,0)]:
+				shape.set_uv(uv)
+				shape.add_vertex(axis*(uv.y*2.0-1.0)+Vector3(0,0,uv.x*2.0-1.0))
 	var batch := MultiMesh.new()
 	batch.transform_format = MultiMesh.TRANSFORM_3D
 	batch.use_custom_data = true
 	batch.mesh = shape.commit()
 	batch.instance_count = TRACE_COUNT
 	for index in range(TRACE_COUNT):
-		var row: int = int(index / 8)
-		var lane: float = (float(index % 4) - 1.5) * 5.6
+		var row: int = int(index / 16)
+		var lane: float = (float(index % 8) - 3.5) * 2.7+sin(float(index)*2.4)*.5
 		var reach: float = Ocean.CANYON_HALF_LENGTH - TRACE_TRAVEL * 0.5 - 8.0
-		var z: float = CENTER_Z - reach + float(row) * reach * 2.0 / 19.0
+		var z: float = CENTER_Z - reach + float(row) * reach * 2.0 / float(TRACE_COUNT/16-1)
 		var x: float = Ocean.canyon_center_x(z) + lane
 		# Cover each ribbon's complete motion segment before choosing its height.
 		# The floor rises at the mouths, so a fixed depth can pass into the bank.
@@ -161,9 +165,9 @@ func _build_current(origin: Vector3) -> void:
 		for sample in range(17):
 			var sample_z: float = z-TRACE_TRAVEL*0.5+float(sample)*TRACE_TRAVEL/16.0
 			highest_floor = maxf(highest_floor,Ocean.seabed_height(Ocean.canyon_center_x(sample_z)+lane,sample_z))
-		var y: float = minf(-7.0,highest_floor + 10.0 + float(int(index / 4) % 2) * 9.0)
+		var y: float = minf(-7.0,highest_floor + 10.0 + float(int(index / 8) % 2) * 9.0+sin(index*1.7)*2.0)
 		batch.set_instance_transform(index, Transform3D(Basis.IDENTITY, Vector3(x,y,z) - origin))
-		batch.set_instance_custom_data(index, Color(fposmod(float(index) * 0.618034, 1.0), (z - CENTER_Z + Ocean.CANYON_HALF_LENGTH) / LENGTH, 0, float(index % 7) / 7.0))
+		batch.set_instance_custom_data(index, Color(fposmod(float(index) * 0.618034, 1.0), (z - CENTER_Z + Ocean.CANYON_HALF_LENGTH) / LENGTH, float(index%5)/4.0, float(index % 7) / 7.0))
 	var shader := Shader.new()
 	shader.code = """shader_type spatial;
 render_mode unshaded, cull_disabled, depth_draw_never;
@@ -175,6 +179,7 @@ uniform float curve_frequency = 0.018;
 uniform float trace_travel = 32.0;
 uniform float flow_speed = 2.2;
 varying float trace_alpha;
+varying float particle_kind;
 float center_offset(float z) {
     return curve_amplitude * sin((z-canyon_center_z)*curve_frequency);
 }
@@ -199,14 +204,29 @@ void vertex() {
     vec3 tangent = normalize(vec3(slope_at(trace_z),0.0,1.0));
     vec3 right = vec3(tangent.z,0.0,-tangent.x);
     vec3 point = VERTEX;
+    particle_kind = INSTANCE_CUSTOM.b;
+    float wisp = 1.0-step(0.1,particle_kind);
+    float length_scale = mix(0.075+INSTANCE_CUSTOM.a*0.08,1.2+INSTANCE_CUSTOM.a*0.8,wisp);
+    point.xy *= mix(0.065,0.10,wisp);
+    point.z *= length_scale;
+    point.x += wisp*sin(point.z*1.7+flow_clock*0.6+INSTANCE_CUSTOM.r*6.283)*0.11;
+    point.y += sin(flow_clock*0.4+INSTANCE_CUSTOM.r*6.283)*0.15;
     VERTEX = right*point.x + vec3(0.0,point.y,0.0) + tangent*point.z;
     VERTEX += vec3(center_offset(trace_z)-center_offset(base_z),0.0,drift);
     trace_alpha = smoothstep(0.0, 0.12, phase) * (1.0 - smoothstep(0.88, 1.0, phase));
 }
 void fragment() {
-    ALBEDO = vec3(0.42, 0.83, 0.87);
-    EMISSION = ALBEDO * 0.28;
-    ALPHA = trace_alpha * 0.62;
+    float wisp = 1.0-step(0.1,particle_kind);
+    float bubble = step(0.9,particle_kind);
+    vec2 p = UV*2.0-1.0;
+    float radius = length(p);
+    float speck = 1.0-smoothstep(0.2,0.95,radius);
+    float ring = (1.0-smoothstep(0.78,1.0,radius))*smoothstep(0.48,0.74,radius);
+    float ribbon = pow(max(0.0,1.0-p.x*p.x),1.6)*pow(max(0.0,1.0-abs(p.y)),2.0);
+    float softness = mix(mix(speck,ring,bubble),ribbon,wisp);
+    ALBEDO = mix(vec3(0.60,0.73,0.70),vec3(0.57,0.78,0.81),bubble);
+    EMISSION = ALBEDO * 0.12;
+    ALPHA = trace_alpha * softness * mix(0.58,0.32,wisp);
 }
 """
 	current_material = ShaderMaterial.new()

@@ -76,7 +76,7 @@ process.env.TEMP=path.join(work,'temp'); process.env.TMP=process.env.TEMP;
       console.log('Longest tasks',events.filter(e=>e.dur>100000).sort((a,b)=>b.dur-a.dur).slice(0,20).map(e=>({name:e.name,ms:e.dur/1000,args:e.args})));
     }
     if(process.argv.includes('--all-sites')){
-      for(let site=0;site<7;site++){
+      for(let site=0;site<6;site++){
         await page.keyboard.press('F1'); await page.waitForTimeout(350);
         await measure(`site-${site}`,890,243+site*66,[.5,.5]);
       }

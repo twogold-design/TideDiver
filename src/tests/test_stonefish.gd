@@ -48,8 +48,8 @@ func _run() -> void:
 	var before: Dictionary = memory._save_data().duplicate(true)
 	var actual: Array[Dictionary] = _stonefish()
 	_check(FishData.SPECIES.size() == 10 and FishData.SPECIES[9].id == "stonefish" and FishData.SPECIES[9].behavior == "camouflage", "Stonefish is the tenth canonical catch with stationary camouflage behavior")
-	_check(actual.size() == 14 and game.stonefish_count == actual.size() and game.fish.size() == 167 and game.fish_population_count() == 167, "Fourteen stonefish replace ordinary population slots while retaining exactly 167 huntable fish")
-	if actual.size() == 14:
+	_check(actual.size() == 12 and game.stonefish_count == actual.size() and game.fish.size() == 151 and game.fish_population_count() == 151, "Twelve stonefish replace ordinary population slots while retaining exactly 151 huntable fish")
+	if actual.size() == 12:
 		_test_natural_homes(actual)
 		await _test_grounded_idle_and_rendering(actual[0])
 		_test_natural_physical_capture(actual[0])
@@ -96,8 +96,8 @@ func _test_natural_homes(actual: Array[Dictionary]) -> void:
 		clear = clear and _sphere_clear(center, 0.12)
 		for destination: Dictionary in Ocean.DIVE_SITES:
 			entry_safe = entry_safe and home.distance_to(destination.origin + Vector3(0, -6, 25)) > 20.0
-	var balanced: bool = sites.size() == 7
-	for site in range(7):
+	var balanced: bool = sites.size() == 6
+	for site in range(Ocean.DIVE_SITES.size()):
 		balanced = balanced and int(sites.get(site, 0)) == 2
 	_check(grounded, "Every real stonefish starts motionless on its actual sloping seabed instead of floating above it")
 	_check(rock_neighbors and balanced, "Two stonefish per dive site occupy the edges of actual rock geometry")
@@ -274,7 +274,7 @@ func _test_pause_and_gm() -> void:
 	game.open_gm_menu()
 	var air_before: float = game.oxygen
 	var position_before: Vector3 = target.node.position
-	game.gm_select_dive_site(4, true)
+	game.gm_select_dive_site(game.Ocean.site_index("amber_reef"), true)
 	_check(game.state == "dive" and target.state == before.state and target.node.position == position_before and game.oxygen == air_before, "GM transfer preserves the current stonefish exposure, its home position and the remaining air")
 
 func _test_inactive_damage_guards() -> void:
@@ -334,14 +334,14 @@ func _test_fresh_dive_and_new_game() -> void:
 	var reset := true
 	for item: Dictionary in _stonefish():
 		reset = reset and item.alive and item.hp == FishData.SPECIES[9].hp and item.state == "camouflaged" and item.node.position.is_equal_approx(item.home) and absf(item.home.y - Ocean.seabed_height(item.home.x, item.home.z) - 0.035) < 0.015
-	_check(_stonefish().size() == 14 and reset and game.fish.size() == 167 and game.poison_timer == 0 and game.hurt_cooldown == 0, "A fresh dive restores fourteen healthy rock-edge stonefish and clears old contact effects without increasing population")
+	_check(_stonefish().size() == 12 and reset and game.fish.size() == 151 and game.poison_timer == 0 and game.hurt_cooldown == 0, "A fresh dive restores twelve healthy rock-edge stonefish and clears old contact effects without increasing population")
 	game.toggle_pause()
 	game.request_new_game()
 	game.confirm_new_game()
 	reset = true
 	for item: Dictionary in _stonefish():
 		reset = reset and item.state == "camouflaged" and item.alive
-	_check(game.state == "dock" and _stonefish().size() == 14 and reset and memory.inventory.get("stonefish", -1) == 0 and game.poison_timer == 0, "Confirmed new game resets both stonefish encounters and captured warehouse stock")
+	_check(game.state == "dock" and _stonefish().size() == 12 and reset and memory.inventory.get("stonefish", -1) == 0 and game.poison_timer == 0, "Confirmed new game resets both stonefish encounters and captured warehouse stock")
 
 func _snapshot(item: Dictionary) -> Dictionary:
 	return {"state":item.state,"timer":item.timer,"pose":_pose(item.node),"air":game.oxygen,"poison":game.poison_timer,"immunity":game.hurt_cooldown,"clock":game.clock}

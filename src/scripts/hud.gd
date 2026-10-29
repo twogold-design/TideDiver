@@ -249,7 +249,6 @@ func _draw_gm_menu() -> void:
 	var descriptions: Array[String] = [
 		"浅水鱼群与近岸采集，适合试游和捕鱼。",
 		"深切峡谷与双门遗迹，体验顺流 / 逆流。",
-		"发光海植与深水鱼群，留意气瓶量。",
 		"沉船结构与宝藏，检查遮挡与鱼叉弹道。",
 		"大片鹿角、桌状珊瑚与海扇，沿通道游览。",
 		"420 条杰克鱼旋游风暴，观赏鱼不进入背包。",
@@ -369,7 +368,7 @@ func _draw_hud() -> void:
 	draw_line(Vector2(720,61),Vector2(720,72),GOLD,2)
 	_center(Vector2(720,102),game.ocean_zone_name(),19,LIGHT)
 	if not game.current_hint.is_empty():
-		_center(Vector2(720,137), "峡谷水流 向南 ↓ · %s · %.1f m/s" % [game.current_hint,game.drift_current.length()], 16, MINT)
+		_center(Vector2(720,137), "峡谷水流 · %s · %.1f m/s" % [game.current_hint,game.drift_current.length()], 16, MINT)
 	if game.ocean_edge_distance() < 18:
 		_center(Vector2(720,137),"前方洋流增强 · 请转向海域内部",18,GOLD)
 	_draw_ocean_map()

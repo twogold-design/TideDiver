@@ -407,18 +407,6 @@ static func _outer_wreck(parent: Node3D) -> void:
 static func _region_ground(region: Node3D, x: float, z: float, lift: float = 0.0) -> Vector3:
 	return Vector3(x,Ocean.seabed_height(region.position.x+x,region.position.z+z)-region.position.y+lift,z)
 
-static func _outer_garden(parent: Node3D) -> void:
-	var stem: StandardMaterial3D = _mat(Color("365b73"))
-	var light: StandardMaterial3D = _mat(Color("63cbd5"),0.75)
-	for i: int in range(22):
-		var angle: float = float(i)*2.399
-		var radius: float = 7.0+float(i%5)*4.5
-		var p: Vector3 = _region_ground(parent,cos(angle)*radius,sin(angle)*radius-7)
-		var height: float = 2.5+float(i%5)*1.4
-		_branch(parent,p,p+Vector3(sin(angle)*1.8,height,cos(angle)*1.4),0.14,stem)
-		_sphere(parent,p+Vector3(sin(angle)*1.8,height,cos(angle)*1.4),Vector3(0.6,1.15,0.6),light,7)
-		_weed(parent,p,3.4,Color("4a8398"))
-
 static func _outer_spires(parent: Node3D) -> void:
 	# Eroded slabs follow two banks of an open gully; the passage remains clear.
 	for i: int in range(8):
@@ -475,8 +463,6 @@ static func _build_outer_ocean(parent: Node3D) -> void:
 					var p: Vector3 = _region_ground(region,-22+float(i)*8,-17,0.8)
 					_box(region,p,Vector3(3,1.6,2.5),_mat(Color("6d898b")))
 					_solid_box(region,p,Vector3(3,1.6,2.5))
-			"lantern_garden":
-				_outer_garden(region)
 			"merchant_wreck":
 				preload("res://scripts/explorable_wreck.gd").build(region)
 				for i: int in range(7):

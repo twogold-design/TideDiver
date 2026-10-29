@@ -222,7 +222,7 @@ func _aim_at(item: Dictionary) -> void:
 func _test_population_and_seabed() -> void:
 	game.start_dive(false, false)
 	_check(Ocean.X_MAX-Ocean.X_MIN >= 1000 and Ocean.Z_MAX-Ocean.Z_MIN >= 1000 and Ocean.Y_MIN <= -120, "Playable ocean spans a kilometre in both directions and reaches 120 metres")
-	_check(game.fish.size() == 167, "Sparse ocean and entry schools create exactly 167 ordinary catchable fish")
+	_check(game.fish.size() == 151, "Sparse ocean and entry schools create exactly 151 ordinary catchable fish")
 	var kinds: Dictionary = {}
 	var valid: bool = true
 	var deepest: float = 0.0
