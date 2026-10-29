@@ -19,6 +19,9 @@ const Loot = preload("res://scripts/loot_catalog.gd")
 const DiverBubbles = preload("res://scripts/diver_bubbles.gd")
 const MarineLife = preload("res://scripts/marine_life.gd")
 const ReefFish = preload("res://scripts/reef_fish_habitat.gd")
+const ReefPlants = preload("res://scripts/reef_vegetation.gd")
+const CoralGarden = preload("res://scripts/coral_garden.gd")
+var reef_plants: Node3D
 const SWIMMING_SPECIES := 9
 const COASTAL_FISH_COUNT = 21
 const COASTAL_KINDS = [0,1,3,4,6,2]
@@ -349,6 +352,7 @@ func _setup_world() -> void:
 	ocean_root = Node3D.new()
 	add_child(ocean_root)
 	Art.build_world(ocean_root)
+	reef_plants = ReefPlants.build(ocean_root)
 	canyon_root = ocean_root.get_node("OuterOcean/twin_gates/TidalCanyon")
 	explorable_wreck = ocean_root.get_node("OuterOcean/merchant_wreck/ExplorableWreck")
 	ray_habitat = SandRays.new()
@@ -393,6 +397,9 @@ func _setup_world() -> void:
 func _spawn_population() -> void:
 	marine_life.reset()
 	reef_fish.reset()
+	reef_plants.animate(0.0,reef_plants.global_position)
+	CoralGarden.animate(0.0)
+	ReefPlants.animate_shared(0.0)
 	ray_habitat.reset()
 	canyon_shark.begin_dive(wildlife_rng.randi())
 	for item in fish:
@@ -447,7 +454,8 @@ func _spawn_population() -> void:
 	_spread_background_fish()
 	_spawn_entry_fish()
 	for point in Ocean.pickup_points():
-		_add_pickup(point.position,point.kind)
+		var pickup_position: Vector3 = explorable_wreck.to_global(point.wreck_local) if point.has("wreck_local") else point.position
+		_add_pickup(pickup_position,point.kind)
 		if point.get("exploration",false):
 			pickups[-1]["exploration_site"] = point.site_index
 			pickups[-1]["location_name"] = point.name
@@ -893,7 +901,7 @@ func _gm_test_pose(index: int) -> Dictionary:
 			heading = atan2(-downstream.x,-downstream.z)
 			tilt = -0.20
 		"merchant_wreck":
-			point = explorable_wreck.to_global(Vector3(0,4.7,23))
+			point = explorable_wreck.to_global(Vector3(0,6,36))
 			heading = explorable_wreck.rotation.y
 		"amber_reef":
 			point = Vector3(-180,-11,180)
@@ -1321,6 +1329,9 @@ func _animate_ocean(_delta: float) -> void:
 	canyon_root.animate(clock,player.position)
 	marine_life.animate(clock,player.position)
 	reef_fish.animate(clock,player.position)
+	reef_plants.animate(clock,player.position)
+	CoralGarden.animate(clock)
+	ReefPlants.animate_shared(clock)
 	storm_school.animate(clock,player.position)
 	explorable_wreck.get_node("WreckFishSchool").animate(clock,player.position)
 	canyon_shark.animate(clock,player.position)

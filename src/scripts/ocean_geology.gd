@@ -304,7 +304,7 @@ static func _detail_clear(point: Vector3, center: Vector3, site: int) -> bool:
 	if site == 1 and absf(point.z - Ocean.CANYON_CENTER.z) < Ocean.CANYON_HALF_LENGTH:
 		if absf(point.x - Ocean.canyon_center_x(point.z)) < 20.0:
 			return false
-	if Ocean.DIVE_SITES[site].id == "merchant_wreck" and absf(point.x - 310.0) < 12.0 and absf(point.z + 133.0) < 22.0:
+	if Ocean.DIVE_SITES[site].id == "merchant_wreck" and absf(point.x - 310.0) < 25.0 and absf(point.z + 133.0) < 39.0:
 		return false
 	if Ocean.DIVE_SITES[site].id == "amber_reef":
 		var lane: float = -180.0 + sin((point.z - 135.0 + 6.0) * 0.055) * 6.0

@@ -98,6 +98,7 @@ process.env.TMP = process.env.TEMP;
     await clickGame(1067,573); // Atoll ecology.
     await page.waitForTimeout(1800);
     await screenshot('atoll-life');
+    await measureFrames('atoll-lagoon');
     await page.keyboard.press('F1');await page.waitForTimeout(250);
     await clickGame(500,739); // Disable through the same visible button.
     await screenshot('gm-air-disabled');

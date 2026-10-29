@@ -22,7 +22,7 @@ var _scales := PackedFloat32Array()
 var _material: ShaderMaterial
 var _last_time := -INF
 
-func setup(swim_bounds: AABB) -> void:
+func setup(swim_bounds: AABB, compartments: Array = []) -> void:
 	# setup is safe before add_child(), and repeated calls replace the old batches.
 	for visual: MultiMeshInstance3D in _visuals:
 		remove_child(visual)
@@ -40,7 +40,7 @@ func setup(swim_bounds: AABB) -> void:
 	set_meta("fish_count", 0)
 	set_meta("draw_batches", 0)
 	set_meta("local_swim_bounds", _bounds)
-	# The intended hold is 7.8 x 4.8 x 18m. Reject boxes too small for these fish.
+	# Reject compartment boxes too small for the fish and their turning clearance.
 	if minf(_bounds.size.x, minf(_bounds.size.y, _bounds.size.z * 0.5)) <= BOUNDARY_MARGIN * 2.0 + 0.1:
 		push_error("WreckFishSchool requires at least 1.3m per swimming dimension.")
 		return
@@ -48,6 +48,8 @@ func setup(swim_bounds: AABB) -> void:
 	var batch_bounds: Array[AABB] = []
 	for batch_index in range(BATCH_COUNT):
 		var zone := AABB(_bounds.position + Vector3(0, 0, _bounds.size.z * 0.5 * float(batch_index % 2)), Vector3(_bounds.size.x, _bounds.size.y, _bounds.size.z * 0.5))
+		if compartments.size() == BATCH_COUNT:
+			zone = compartments[batch_index]
 		var mesh: ArrayMesh = _fish_mesh() if batch_index == 0 else ReefArt.mesh(KINDS[batch_index])
 		batch_bounds.append(zone)
 		var batch := MultiMesh.new()

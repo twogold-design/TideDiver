@@ -212,9 +212,10 @@ func _test_ray_wide_body_clearance() -> void:
 	rays.reset()
 
 func _test_wreck_routes_and_walls() -> void:
+	_check(wreck.get_meta("hull_length",0)>=60 and wreck.get_meta("hull_width",0)>=18 and wreck.get_meta("compartments",[]).size()==5,"The enlarged steel transport has a sixty-metre hull and five distinct explorable areas")
 	_check(bool(wreck.get_meta("hollow", false)) and wreck.get_meta("entrances", []).size() >= 5, "The distant wreck is a hollow structure with bow, stern, two side and upper entrances")
-	var center: Vector3 = wreck.to_global(Vector3(0, 4.7, 0))
-	var starts: Array[Vector3] = [Vector3(0, 4.7, -19), Vector3(0, 4.7, 19), Vector3(-9, 4.7, 0), Vector3(9, 4.7, 0), Vector3(0, 13, 0)]
+	var center: Vector3 = wreck.to_global(Vector3(0, 6, 0))
+	var starts: Array[Vector3] = [Vector3(0, 6, -34), Vector3(0, 6, 36), Vector3(-12, 6, 0), Vector3(12, 6, 0), Vector3(0, 13, 0)]
 	for index in range(starts.size()):
 		var start: Vector3 = wreck.to_global(starts[index])
 		_check(_sphere_clear(start, 0.65) and not game.player.test_move(Transform3D(Basis.IDENTITY, start), center - start), "The actual diver physics body can swim fully through wreck entrance %d into the hold" % index)
@@ -223,12 +224,26 @@ func _test_wreck_routes_and_walls() -> void:
 	for index in range(1, route.size()):
 		clear_route = clear_route and not game.player.test_move(Transform3D(Basis.IDENTITY, route[index - 1]), route[index] - route[index - 1])
 	_check(clear_route, "The real diver physics body traverses the internal bow-to-stern passage")
-	var start: Vector3 = wreck.to_global(Vector3(0, 4.7, 7.5))
-	var finish: Vector3 = wreck.to_global(Vector3(9, 4.7, 7.5))
+	var bridge_route: Array = wreck.get_meta("bridge_route",[])
+	bridge_route.append(wreck.to_global(Vector3(0,17,12)))
+	bridge_route.append(wreck.to_global(Vector3(0,21,12)))
+	var bridge_clear := bridge_route.size()>=6
+	for index in range(1,bridge_route.size()):
+		bridge_clear = bridge_clear and not game.player.test_move(Transform3D(Basis.IDENTITY,bridge_route[index-1]),bridge_route[index]-bridge_route[index-1])
+	_check(bridge_clear,"The diver can leave the cargo hold, enter the bridge and ascend through both real roof hatches")
+	var loot_clear := true
+	var interior_loot := 0
+	for item: Dictionary in game.pickups:
+		if wreck.contains_point(item.node.position,0) and item.kind != "oxygen":
+			interior_loot += 1
+			loot_clear = loot_clear and _sphere_clear(item.node.position+Vector3.UP*.7,.6)
+	_check(interior_loot>=3 and loot_clear,"Three original collectibles now occupy reachable positions inside the cargo and machinery spaces")
+	var start: Vector3 = wreck.to_global(Vector3(0, 6, 9))
+	var finish: Vector3 = wreck.to_global(Vector3(12, 6, 9))
 	var collision := KinematicCollision3D.new()
 	var blocked: bool = game.player.test_move(Transform3D(Basis.IDENTITY, start), finish - start, collision)
-	_check(blocked and collision.get_collider() != null and str(collision.get_collider().name) == "HullPlankingCollision", "Intact hull planking remains a real wall beside the open entrances")
-	for part: String in ["HullPlanking", "CurvedRibs", "DeckAndCabin"]:
+	_check(blocked and collision.get_collider() != null and str(collision.get_collider().name) == "HullPlatingCollision", "Intact hull planking remains a real wall beside the open entrances")
+	for part: String in ["HullPlating", "SteelFrames", "DeckAndBridge", "Bulkheads", "EngineRoom", "DeckEquipment"]:
 		var body: Node = wreck.get_node_or_null(part + "Collision")
 		var visual: MeshInstance3D = wreck.get_node_or_null(part)
 		_check(body != null and visual != null and body.get_child(0).shape is ConcavePolygonShape3D and body.get_child(0).shape.backface_collision and body.get_child(0).shape.get_faces().size() == visual.mesh.get_faces().size(), "Visible wreck geometry and double-sided physical collision agree for " + part)
@@ -250,7 +265,7 @@ func _test_school_geometry_and_rendering() -> void:
 	var radius: float = school.get_meta("max_fish_radius")
 	var initial_positions: Array[Vector3] = []
 	for time: float in [0.0, 31.0, 93.25]:
-		school.animate(time, wreck.to_global(Vector3(0, 4.7, 0)))
+		school.animate(time, wreck.to_global(Vector3(0, 6, 0)))
 		await process_frame
 		await RenderingServer.frame_post_draw
 		var inside := true
@@ -311,10 +326,10 @@ func _test_harpoon_isolation_and_hull() -> void:
 	target.kind = 0
 	target.hp = 1
 	target.armor = false
-	target.node.position = wreck.to_global(Vector3(8, 4.7, 7.5))
+	target.node.position = wreck.to_global(Vector3(12, 6, 9))
 	target.node.basis = Basis.IDENTITY
 	target.previous_position = target.node.position
-	game.player.position = wreck.to_global(Vector3(0, 4.7, 7.5))
+	game.player.position = wreck.to_global(Vector3(0, 6, 9))
 	var direction: Vector3 = (target.node.position - game.player.position).normalized()
 	game.yaw = atan2(-direction.x, -direction.z)
 	game.camera.position = game.player.position
@@ -328,7 +343,7 @@ func _test_harpoon_isolation_and_hull() -> void:
 	var impact_in_wall := false
 	for index in range(effects_before, game.effects.size()):
 		var local: Vector3 = wreck.to_local(game.effects[index].node.position)
-		impact_in_wall = impact_in_wall or (local.x > 4 and local.x < 6.5 and local.z > 6.0 and local.z < 9.0)
+		impact_in_wall = impact_in_wall or (local.x > 7 and local.x < 9.5 and local.z > 8.0 and local.z < 10.0)
 	_check(launched and game.projectiles.is_empty() and impact_in_wall and target.hp == 1 and target.alive and game.cargo.is_empty(), "A real flying hook strikes intact hull planking and cannot capture the ordinary fish behind it")
 	for index in range(game.fish.size()):
 		var item: Dictionary = game.fish[index]
@@ -342,7 +357,7 @@ func _test_wreck_camera() -> void:
 	var clear := true
 	var unobstructed := true
 	var contained := true
-	for point: Vector3 in [Vector3(0,4.7,-12),Vector3(0,4.7,0),Vector3(0,4.7,12),Vector3(4.1,4.7,6),Vector3(-4.1,4.7,6)]:
+	for point: Vector3 in [Vector3(0,6,-24),Vector3(0,6,0),Vector3(0,6,24),Vector3(7.2,6,9),Vector3(-7.2,6,9)]:
 		game.player.position = wreck.to_global(point)
 		for angle: float in [0.0, PI * 0.5, PI, PI * 1.5]:
 			game.yaw = wreck.rotation.y + angle
@@ -356,7 +371,7 @@ func _test_wreck_camera() -> void:
 
 func _test_pause_and_gm() -> void:
 	rays.advance(0.02, rays.rays[0].home + Vector3(0, 3, 4))
-	game.player.position = wreck.to_global(Vector3(0, 4.7, 0))
+	game.player.position = wreck.to_global(Vector3(0, 6, 0))
 	game.player.velocity = Vector3.ZERO
 	game._physics_process(0.02)
 	game.toggle_pause()
@@ -375,7 +390,7 @@ func _test_pause_and_gm() -> void:
 	_check(game.state == "dive" and not game.gm_menu_open and _ray_snapshot() == ray_before, "GM teleport within a dive preserves the existing ray state instead of resetting the habitat")
 
 func _test_ray_lifecycle_reset() -> void:
-	game.player.position = wreck.to_global(Vector3(4.1, 4.7, 7.5))
+	game.player.position = wreck.to_global(Vector3(7.8, 6, 9))
 	game.yaw = wreck.rotation.y + PI * 0.5
 	game.pitch = 0
 	game._update_swim_camera()
@@ -394,7 +409,7 @@ func _test_ray_lifecycle_reset() -> void:
 	game._update_entry(0.75)
 	_check(visible_at_start and game.entry_active and rig.is_visible_in_tree(), "Boat entry restores the actual diver model after the previous wreck camera hid it")
 	game._update_entry(3.2)
-	game.player.position = wreck.to_global(Vector3(4.1, 4.7, 7.5))
+	game.player.position = wreck.to_global(Vector3(7.8, 6, 9))
 	game.yaw = wreck.rotation.y + PI * 0.5
 	game.pitch = 0
 	game._update_swim_camera()

@@ -2,12 +2,14 @@ extends Node3D
 ## Local reef residents: paired anemonefish and small schools over the coral banks.
 const Ocean = preload("res://scripts/ocean_config.gd")
 const Art = preload("res://scripts/reef_fish_art.gd")
+const Plants = preload("res://scripts/reef_vegetation.gd")
 const KINDS := ["clown","chromis","butterfly","tang","anthias"]
 const NAMES := ["小丑鱼","蓝绿雀鲷","蝴蝶鱼","蓝吊","金花鲈"]
 var residents: Array[Dictionary] = []
 var hosts: Array[Vector3] = []
 var batches: Array[MultiMeshInstance3D] = []
 var _material: ShaderMaterial
+var _host_material: ShaderMaterial
 var _last_time := -INF
 
 static func build(parent: Node3D) -> Node3D:
@@ -36,11 +38,9 @@ func _populate() -> void:
 	for index in range(hosts.size()):
 		host_batch.set_instance_transform(index,Transform3D(Basis.IDENTITY,hosts[index]))
 	host_visual.multimesh = host_batch
-	var host_material := StandardMaterial3D.new()
-	host_material.vertex_color_use_as_albedo = true
-	host_material.roughness = .9
-	host_material.cull_mode = BaseMaterial3D.CULL_DISABLED
-	host_visual.material_override = host_material
+	_host_material = Plants._material()
+	host_visual.material_override = _host_material
+	host_visual.extra_cull_margin = .1
 	host_visual.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	host_visual.visibility_range_end = 85.0
 	add_child(host_visual)
@@ -105,6 +105,7 @@ func animate(time: float, viewer: Vector3) -> void:
 		return
 	_last_time = time
 	_material.set_shader_parameter("school_clock",time)
+	_host_material.set_shader_parameter("plant_clock",time)
 	for fish: Dictionary in residents:
 		var angle: float = time*fish.speed+fish.phase
 		var point: Vector3 = fish.home+Vector3(cos(angle)*fish.radius,sin(angle*1.3)*.10,sin(angle)*fish.radius*.65)

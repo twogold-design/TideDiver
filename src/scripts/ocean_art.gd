@@ -421,20 +421,7 @@ static func _outer_spires(parent: Node3D) -> void:
 		_weed(parent,p+Vector3.UP*height*0.62,1.7,MINT)
 
 static func _outer_atoll(parent: Node3D) -> void:
-	var shell: StandardMaterial3D = _life_material(Color("dec5cf"))
-	var pearl: StandardMaterial3D = _mat(Color("e0ecd3"),0.35)
-	for i: int in range(12):
-		var angle: float = float(i)*TAU/12.0
-		var pos: Vector3 = _region_ground(parent,cos(angle)*23.0,sin(angle)*19.0-8,0.3)
-		var base: Vector3 = pos-Vector3(0,0,1.0)
-		var lower: MeshInstance3D = _mesh(parent,ReefLife.shell_valve_mesh(),base,shell)
-		lower.rotation.z = PI
-		lower.scale = Vector3(3,0.8,3)
-		_sphere(parent,base+Vector3(0,0.7,1.3),Vector3.ONE*0.60,pearl,20)
-		var lid: MeshInstance3D = _mesh(parent,ReefLife.shell_valve_mesh(),base+Vector3.UP*0.1,shell)
-		lid.scale = Vector3(3,0.9,3)
-		lid.rotation.x = -0.65
-		_weed(parent,pos+Vector3(3,0,0),2.1,MINT)
+	preload("res://scripts/atoll_art.gd").build(parent)
 
 static func _set_outer_visibility(root: Node) -> void:
 	for child in root.get_children():
@@ -479,6 +466,8 @@ static func _build_outer_ocean(parent: Node3D) -> void:
 		# Low peripheral stones blend the landmark into its natural shelf.
 		for i: int in range(4):
 			var p: Vector3 = _region_ground(region,-27+float(i)*18,-25,0.65)
+			if str(zone.id) == "merchant_wreck" and absf(p.x)<25 and absf(p.z+3)<38:
+				continue
 			if index == 0:
 				var world: Vector3 = region.to_global(p)
 				var cross_slope: float = absf(Ocean.seabed_height(world.x-2.6,world.z)-Ocean.seabed_height(world.x+2.6,world.z))

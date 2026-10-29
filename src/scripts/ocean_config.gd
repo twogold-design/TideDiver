@@ -131,8 +131,15 @@ static func _terrain_height(x: float, z: float) -> float:
 	height -= 25.0*exp(-pow(channel/30.0,2.0))*smoothstep(40.0,190.0,r)
 	height -= 15.0*exp(-Vector2(x-35.0,z+360.0).length_squared()/6400.0)
 	height += 24.0*exp(-Vector2(x+180.0,z-135.0).length_squared()/7800.0)
-	var atoll_radius: float = Vector2(x-245.0,z-240.0).length()
-	height += 22.0*exp(-pow((atoll_radius-28.0)/31.0,2.0))
+	var atoll_delta := Vector2(x-245.0,z-240.0)
+	var atoll_radius: float = atoll_delta.length()
+	var atoll_angle: float = atan2(atoll_delta.y,atoll_delta.x)
+	var reef_radius: float = 30.0+sin(atoll_angle*3.0+.8)*4.0+cos(atoll_angle*5.0)*2.0
+	var channel_angle: float = absf(wrapf(atoll_angle-PI*.5,-PI,PI))
+	var reef_bank: float = smoothstep(.18,.55,channel_angle)
+	height += 17.0*exp(-pow(atoll_radius/54.0,4.0))
+	height += 7.0*exp(-pow((atoll_radius-reef_radius)/11.0,2.0))*reef_bank
+	height -= 1.5*exp(-atoll_radius*atoll_radius/300.0)
 	# Low stone ridges around the southern gorge, never a perimeter cage.
 	height += 11.0*sin(x*0.075)*exp(-Vector2(x+45.0,z-300.0).length_squared()/4900.0)
 	# A deep, navigable gorge is local to the twin-gate dive site.
@@ -183,7 +190,10 @@ static func pickup_points() -> Array:
 			var z: float = center.z+float(spec.z)
 			if zone_index == 0:
 				x = canyon_center_x(z)+float(spec.x)
-			result.append({"kind":spec.kind,"position":Vector3(x,seabed_height(x,z)+1.0,z)})
+			var record := {"kind":spec.kind,"position":Vector3(x,seabed_height(x,z)+1.0,z)}
+			if zone.id == "merchant_wreck":
+				record["wreck_local"] = Vector3(-2.2,1.35,-19) if spec.kind == "pearl" else (Vector3(2.2,1.35,4) if spec.kind != "chest" else Vector3(1.8,1.35,20))
+			result.append(record)
 		# Stations stand clear of landmarks at fish depth, with a shallower route tank.
 		var ox: float = center.x-14.0
 		var oz: float = center.z+32.0

@@ -17,6 +17,7 @@
 | 鱼群、鱼钩、海底与地形 | `src/scripts/fish_*`、`harpoon.gd`、`ocean_*`、`canyon_art.gd` |
 | 埋沙鳐鱼、中空沉船与局部生态 | `src/scripts/ray_*`、`explorable_wreck.gd`、`wreck_fish_school.gd`、`thresher_shark.gd`、`stonefish_*` |
 | 海床小动物、珊瑚鱼群和呼吸气泡 | `src/scripts/marine_life*`、`reef_fish*`、`coral_garden.gd`、`diver_bubbles.gd` |
+| 环礁地貌、贝床与水流植物 | `src/scripts/atoll_art.gd`、`reef_vegetation.gd`、`ocean_config.gd` |
 | 餐厅经营和数据规则 | `src/scripts/progression.gd`、`cuisine.gd`、`customer_feedback.gd` |
 | 家具和角色模型 | `src/scripts/furniture_art.gd`、`restaurant_person.gd`、`diver_art.gd` |
 | 游戏内界面 | `src/scripts/hud.gd`、`restaurant_ui.gd`、`layout_ui.gd` |

@@ -1,6 +1,7 @@
 extends SceneTree
 const Ocean = preload("res://scripts/ocean_config.gd")
 const Art = preload("res://scripts/reef_fish_art.gd")
+const Coral = preload("res://scripts/coral_garden.gd")
 class MemoryProgression extends "res://scripts/progression.gd":
 	func load_game() -> void:
 		pass
@@ -82,6 +83,8 @@ func _run() -> void:
 	check(traces.multimesh.instance_count == 480 and traces.multimesh.mesh.surface_get_arrays(0)[Mesh.ARRAY_TEX_UV].size() > 0,"Natural current uses batched soft-edged ribbons, suspended matter and bubbles")
 	canyon.animate(12.0,Ocean.CANYON_CENTER)
 	check(canyon.current_material.get_shader_parameter("flow_clock") == 12.0 and not canyon.current_material.shader.code.contains("TIME"),"Natural current respects the simulation clock and pause")
+	await _test_vegetation()
+	_test_atoll()
 	if "--capture-habitats" in OS.get_cmdline_user_args():
 		await _captures()
 	game.free()
@@ -94,6 +97,79 @@ func _capture(label: String) -> void:
 	await process_frame
 	await RenderingServer.frame_post_draw
 	check(root.get_texture().get_image().save_png("user://"+label+".png") == OK,"Capture "+label)
+
+func _test_vegetation() -> void:
+	var meadow: Node3D = game.reef_plants
+	check(meadow.roots.size()==235 and meadow.get_child_count()==2,"The actual reef has 235 rooted grass and ribbon-algae clumps in only two draw batches")
+	var grounded := true
+	var lane_clear := true
+	for point: Vector3 in meadow.roots:
+		grounded = grounded and absf(point.y-Ocean.seabed_height(point.x,point.z))<.001
+		var local: Vector3 = point-meadow.global_position
+		lane_clear = lane_clear and absf(local.x-sin((local.z+6)*.055)*6.0)>6.9
+	check(grounded and lane_clear,"Plant roots meet the seabed and leave the central sand route and clownfish hosts open")
+	check(meadow.find_children("*","CollisionObject3D",true,false).is_empty(),"Decorative vegetation does not obstruct movement or fishing hooks")
+	var fan: Mesh = Coral._coral_mesh(2)
+	var hard: Mesh = Coral._coral_mesh(0)
+	check(fan.surface_get_arrays(0)[Mesh.ARRAY_TEX_UV2][0].x==1 and hard.surface_get_arrays(0)[Mesh.ARRAY_TEX_UV2][0].x==0,"Only soft sea fans carry the coral bending mask; hard branching coral remains rigid")
+	game.player.position = meadow.roots[0]+Vector3.UP*3
+	game._animate_ocean(0)
+	game.toggle_pause()
+	var clock_before: float = meadow.sway_material.get_shader_parameter("plant_clock")
+	var fan_before: float = Coral.material().get_shader_parameter("reef_clock")
+	var host_before: float = game.reef_fish._host_material.get_shader_parameter("plant_clock")
+	game._physics_process(3.0)
+	check(meadow.sway_material.get_shader_parameter("plant_clock")==clock_before and Coral.material().get_shader_parameter("reef_clock")==fan_before and game.reef_fish._host_material.get_shader_parameter("plant_clock")==host_before,"Pause freezes grass, sea fans and anemone tentacles on the actual game clock")
+	game.toggle_pause()
+	var leaves: MultiMeshInstance3D = meadow.get_node("RibbonAlgae")
+	var target: Vector3 = meadow.global_transform*leaves.multimesh.get_instance_transform(0).origin+Vector3.UP*.7
+	game.hud.visible = false
+	game.player.visible = false
+	game.camera.position = target+Vector3(2.0,1.2,3.0)
+	game.camera.look_at(target)
+	game._apply_underwater_lighting(-game.camera.position.y)
+	meadow.animate(0,target)
+	await process_frame
+	await RenderingServer.frame_post_draw
+	var before: Image = root.get_texture().get_image()
+	meadow.animate(4.0,target)
+	await process_frame
+	await RenderingServer.frame_post_draw
+	var after: Image = root.get_texture().get_image()
+	var changed := 0
+	for y in range(before.get_height()/4,before.get_height()*3/4,3):
+		for x in range(before.get_width()/4,before.get_width()*3/4,3):
+			var a: Color = before.get_pixel(x,y)
+			var b: Color = after.get_pixel(x,y)
+			if absf(a.r-b.r)+absf(a.g-b.g)+absf(a.b-b.b)>.025:
+				changed += 1
+	check(changed>60,"Real GPU frames show rooted leaves bending as the plant clock advances (%d changed samples)" % changed)
+	meadow.animate(4,Vector3(450,-20,450))
+	check(not meadow.visible,"Reef vegetation is culled when the diver visits another area")
+	game.hud.visible = true
+	game.player.visible = true
+
+func _test_atoll() -> void:
+	var atoll: Node3D = game.ocean_root.get_node("OuterOcean/pearl_atoll/NaturalAtoll")
+	var grounded := true
+	var channel_clear := true
+	for point: Vector3 in atoll.get_meta("roots"):
+		grounded = grounded and absf(point.y-Ocean.seabed_height(point.x,point.z))<.001
+		var local: Vector3 = point-atoll.global_position
+		channel_clear = channel_clear and absf(wrapf(atan2(local.z,local.x)-PI*.5,-PI,PI))>=.48
+	check(grounded and channel_clear,"Atoll shell beds and plants meet the actual seabed and leave the southern lagoon entrance clear")
+	check(atoll.find_children("*","CollisionObject3D",true,false).is_empty(),"Small atoll decorations do not introduce invisible movement or fishing barriers")
+	var leaves: MultiMeshInstance3D = atoll.get_node("LagoonGrass")
+	if game.state == "paused":
+		game.toggle_pause()
+	game._animate_ocean(0)
+	var clock_before: float = leaves.material_override.get_shader_parameter("plant_clock")
+	game.toggle_pause()
+	game._physics_process(2.0)
+	check(leaves.material_override.get_shader_parameter("plant_clock")==clock_before,"Atoll vegetation freezes with the real game pause")
+	game.toggle_pause()
+	game._physics_process(.25)
+	check(leaves.material_override.get_shader_parameter("plant_clock")>clock_before,"Atoll vegetation resumes when the game clock advances")
 
 func _captures() -> void:
 	root.size = Vector2i(1440,900)
@@ -111,6 +187,16 @@ func _captures() -> void:
 	game.camera.position = host+Vector3(10,7,12)
 	game.camera.look_at(host+Vector3(7,3,-2))
 	await _capture("reef-community")
+	var garden: Node3D = game.ocean_root.get_node("OuterOcean/amber_reef/CoralGarden")
+	for form: String in ["Staghorn","TableCoral","BrainCoral","SeaFan"]:
+		var visual: MultiMeshInstance3D = garden.get_node(form)
+		var target: Vector3 = visual.global_transform*visual.multimesh.get_instance_transform(0).origin+Vector3.UP*.6
+		game.player.position = target
+		game.camera.position = target+Vector3(2.7,1.7,3.2)
+		game.camera.look_at(target)
+		game._animate_ocean(0)
+		game._apply_underwater_lighting(-game.camera.position.y)
+		await _capture("reef-detail-"+form.to_lower())
 	var wreck: Node3D = game.explorable_wreck
 	game.player.position = wreck.to_global(Vector3(0,4.7,7))
 	game.camera.position = game.player.position
@@ -118,6 +204,28 @@ func _captures() -> void:
 	game._animate_ocean(0)
 	game._apply_underwater_lighting(-game.camera.position.y)
 	await _capture("wreck-mixed-fish")
+	game.player.position = wreck.to_global(Vector3(22,22,42))
+	game.camera.position = game.player.position
+	game.camera.look_at(wreck.to_global(Vector3(0,10,0)))
+	game._animate_ocean(0)
+	game._apply_underwater_lighting(-game.camera.position.y)
+	await _capture("wreck-steel-overview")
+	game.camera.position = wreck.to_global(Vector3(0,6,14))
+	game.player.position = game.camera.position
+	game.camera.look_at(wreck.to_global(Vector3(4.7,4,23)))
+	game._apply_underwater_lighting(-game.camera.position.y)
+	await _capture("wreck-engine-room")
+	game.camera.position = wreck.to_global(Vector3(0,13,7))
+	game.player.position = game.camera.position
+	game.camera.look_at(wreck.to_global(Vector3(0,15,14)))
+	game._apply_underwater_lighting(-game.camera.position.y)
+	await _capture("wreck-bridge")
+	game.camera.position = Vector3(245,Ocean.seabed_height(245,276)+16,282)
+	game.player.position = game.camera.position
+	game.camera.look_at(Vector3(245,Ocean.seabed_height(245,240)+5,240))
+	game._animate_ocean(0)
+	game._apply_underwater_lighting(-game.camera.position.y)
+	await _capture("atoll-lagoon")
 	game.player.position = Vector3(Ocean.canyon_center_x(-325),-78,-325)
 	game.camera.position = game.player.position
 	game.camera.look_at(game.player.position+Ocean.canyon_tangent(-325)*15.0+Vector3(0,-3,0))
