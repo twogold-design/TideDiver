@@ -5,6 +5,8 @@ const ITEMS := {
 	"ancient_coin":{"id":"ancient_coin","name":"古硬币","value":48,"weight":1,"kind":"ancient_coin"},
 	"amber_shard":{"id":"amber_shard","name":"琥珀碎片","value":75,"weight":1,"kind":"amber_shard"},
 	"conch":{"id":"conch","name":"海螺","value":40,"weight":2,"kind":"conch"},
+	"captain_astrolabe":{"id":"captain_astrolabe","name":"船长的星海罗盘","value":480,"weight":3,"kind":"captain_astrolabe"},
+	"seagrass":{"id":"seagrass","name":"鲜海草","value":16,"weight":1,"kind":"seagrass"},
 }
 const COASTAL_KINDS := ["pearl","sea_glass","conch","ancient_coin","pearl","amber_shard","sea_glass"]
 const CHEST_TABLE := [

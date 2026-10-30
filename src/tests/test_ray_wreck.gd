@@ -56,7 +56,7 @@ func _run() -> void:
 		await _test_harpoon_isolation_and_hull()
 		_test_wreck_camera()
 		await _test_pause_and_gm()
-		_check(game.fish.size() == 151 and game.fish_population_count() == 151 and game.pickups.size() == 64, "Decorative rays and three hundred internal fish stay outside the 151 huntable fish and 64 pickups")
+		_check(game.fish.size() == 171 and game.fish_population_count() == 171 and game.pickups.size() == 65, "Decorative rays and three hundred internal fish stay outside the 171 huntable fish and 64 pickups")
 		_check(memory._save_data() == progress_before and memory.saves == 0 and game.cargo.is_empty(), "Exploring and firing through decorative animals neither changes inventory nor writes progress")
 		_test_ray_lifecycle_reset()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE

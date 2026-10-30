@@ -48,7 +48,7 @@ func _run() -> void:
 	_test_water_entry()
 	game.state = "dock"
 	game.start_dive(false, false)
-	_check(game.state == "dive" and game.fish.size() == game.fish_population_count() and game.pickups.size() == 11 + game.Ocean.pickup_points().size(), "Starting a dive creates complete population")
+	_check(game.state == "dive" and game.fish.size() == game.fish_population_count() and game.pickups.size() == 12 + game.Ocean.pickup_points().size(), "Starting a dive creates complete population")
 	await physics_frame
 	await process_frame
 	_test_3d_controls_and_geometry()
@@ -203,7 +203,7 @@ func _test_restart() -> void:
 	var all_fish_alive: bool = game.fish.size() == game.fish_population_count()
 	for item in game.fish:
 		all_fish_alive = all_fish_alive and item.alive and item.node.visible and item.hp == game.FishData.SPECIES[item.kind].hp
-	var all_pickups_active: bool = game.pickups.size() == 11 + game.Ocean.pickup_points().size()
+	var all_pickups_active: bool = game.pickups.size() == 12 + game.Ocean.pickup_points().size()
 	for item in game.pickups:
 		all_pickups_active = all_pickups_active and item.active and item.node.visible
 	_check(all_fish_alive and all_pickups_active and game.hazards.size() == 7 + game.Ocean.ZONES.size(), "New dive regenerates fish, pickups, oxygen, and hazards")

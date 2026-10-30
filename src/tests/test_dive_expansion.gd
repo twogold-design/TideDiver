@@ -49,7 +49,7 @@ func _run() -> void:
 		if item.has("exploration_site"):
 			added_resources += 1
 	_check(areas.size() == 6 and Ocean.DIVE_SITES.size() == 6, "All six original dive destinations provide expanded exploration areas")
-	_check(game.fish.size() == 151 and game.fish_population_count() == 151 and game.pickups.size() == 64 and game.pickups.size() == 11 + Ocean.pickup_points().size() and added_resources == 18, "Larger areas add eighteen resources while keeping the ordinary fish population sparse")
+	_check(game.fish.size() == 171 and game.fish_population_count() == 171 and game.pickups.size() == 65 and game.pickups.size() == 12 + Ocean.pickup_points().size() and added_resources == 18, "Larger areas add eighteen resources while keeping the ordinary fish population sparse")
 	_check(expansions != null and int(expansions.get_meta("site_count", 0)) == 6 and int(expansions.get_meta("side_area_count", 0)) == 12, "The actual scene includes twelve peripheral landmarks across all six sites")
 	if expansions != null and areas.size() == 6:
 		var ids: Dictionary = {}
@@ -227,7 +227,7 @@ func _test_gm_and_random_departures() -> void:
 	for departure in range(8):
 		game.state = "dock"
 		game.start_dive(false)
-		valid = valid and game.entry_site_index >= 0 and game.entry_site_index < 6 and game.entry_site_index != previous and game.fish.size() == 151 and game.pickups.size() == 64
+		valid = valid and game.entry_site_index >= 0 and game.entry_site_index < 6 and game.entry_site_index != previous and game.fish.size() == 171 and game.pickups.size() == 65
 		previous = game.entry_site_index
 		visited[previous] = true
 		var landing: Vector3 = game.dive_origin + Vector3(0, -6, 25)

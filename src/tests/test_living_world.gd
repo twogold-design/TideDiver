@@ -50,7 +50,7 @@ func _inside_ocean(point: Vector3) -> bool:
 	return point.x >= Ocean.X_MIN and point.x <= Ocean.X_MAX and point.z >= Ocean.Z_MIN and point.z <= Ocean.Z_MAX and point.y >= Ocean.Y_MIN and point.y <= Ocean.Y_MAX
 func _test_outer_ocean() -> void:
 	game.start_dive(false, false)
-	_check(game.fish.size() == game.fish_population_count() and game.pickups.size() == 11 + Ocean.pickup_points().size() and game.hazards.size() == 7 + Ocean.ZONES.size(), "Expanded playable ocean contains complete fish, pickup and hazard populations")
+	_check(game.fish.size() == game.fish_population_count() and game.pickups.size() == 12 + Ocean.pickup_points().size() and game.hazards.size() == 7 + Ocean.ZONES.size(), "Expanded playable ocean contains complete fish, pickup and hazard populations")
 	for zone in Ocean.ZONES:
 		var center: Vector3 = zone.center
 		var nearby_fish: int = 0
@@ -225,5 +225,5 @@ func _test_next_service_and_new_game() -> void:
 	_check(game.service_feedback.is_empty() and game.service_reviews == {"satisfied":0,"okay":0,"lost":0} and game.service_summary.is_empty(), "New game removes all last-run feedback, review counts and bill state")
 	_check(game.orders.is_empty() and game.restaurant_node._customers.is_empty(), "New game removes all old customer orders and characters")
 	_check(game.restaurant_node._reactions.is_empty() and game.restaurant_node._reacting_ids.is_empty(), "New game clears all reaction actors and their duplicate-suppression IDs")
-	_check(game.fish.size() == game.fish_population_count() and game.pickups.size() == 11 + Ocean.pickup_points().size() and game.hazards.size() == 7 + Ocean.ZONES.size() and game.cargo.is_empty(), "New game repopulates the expanded ocean without old harvested state")
+	_check(game.fish.size() == game.fish_population_count() and game.pickups.size() == 12 + Ocean.pickup_points().size() and game.hazards.size() == 7 + Ocean.ZONES.size() and game.cargo.is_empty(), "New game repopulates the expanded ocean without old harvested state")
 

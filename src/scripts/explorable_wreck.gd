@@ -5,6 +5,7 @@ const School = preload("res://scripts/wreck_fish_school.gd")
 const SWIM_BOUNDS := AABB(Vector3(-5.0, 2.0, -25.0), Vector3(10.0, 7.0, 50.0))
 const INTERIOR_BOUNDS := AABB(Vector3(-8.0, 0.8, -29.0), Vector3(16.0, 19.0, 58.0))
 const LOCAL_ENTRANCES := [Vector3(0, 6, -32), Vector3(0, 6, 32), Vector3(-10, 6, 0), Vector3(10, 6, 0), Vector3(0, 13, 0)]
+const TREASURE_LOCAL := Vector3(3.3, 16.82, 12.7)
 static var _steel: ShaderMaterial
 static var _shared_meshes: Dictionary = {}
 
@@ -70,7 +71,13 @@ static func build(parent: Node3D) -> Node3D:
 	root.set_meta("collision_matches_mesh", true)
 	root.set_meta("compartments",PackedStringArray(["前货舱","中部货舱","后货舱","机舱","上层船桥"]))
 	root.set_meta("bridge_route",[root._world_position(Vector3(0,6,0)),root._world_position(Vector3(0,12,0)),root._world_position(Vector3(0,13,8)),root._world_position(Vector3(0,13,12))])
+	root.set_meta("treasure_name", "船长的星海罗盘")
+	root.set_meta("treasure_route",[root._world_position(Vector3(0,6,0)),root._world_position(Vector3(0,12,0)),root._world_position(Vector3(0,13,8)),root._world_position(Vector3(0,13,12)),root._world_position(Vector3(0,17,12)),root._world_position(Vector3(1.3,17,12.7))])
 	return root
+
+func treasure_position() -> Vector3:
+	# Clear of the chart table even at the low point of the pickup's gentle bob.
+	return _world_position(TREASURE_LOCAL)
 
 func contains_point(world: Vector3, margin: float = 2.0) -> bool:
 	# The small approach margin lets the following camera shorten before a doorway.

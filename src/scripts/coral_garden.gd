@@ -3,7 +3,8 @@ extends RefCounted
 const Ocean = preload("res://scripts/ocean_config.gd")
 const FORM_NAMES = ["Staghorn", "TableCoral", "SeaFan", "BrainCoral"]
 const PALETTE = [Color("d48e78"), Color("ceb176"), Color("ac94bb"), Color("ce9aaa"), Color("80b7a3"), Color("d0b990"), Color("8bbac2"), Color("b5a2cf")]
-const FOOTPRINT = Rect2(-45.0, -43.5, 90.0, 75.0)
+const FOOTPRINT = Rect2(-62.0, -53.0, 124.0, 110.0)
+const PATCH_COUNT := 540
 static var _meshes: Dictionary = {}
 static var _materials: Dictionary = {}
 
@@ -17,32 +18,33 @@ static func build(parent: Node3D) -> void:
 	var transforms: Array[Array] = [[], [], [], []]
 	var colors: Array[Array] = [[], [], [], []]
 	var positions := PackedVector3Array()
-	# Uneven reef patches with mixed ages, not rows of equally sized ornaments.
+	# Overlapping banks stretch beyond the inner reef. Closely spaced colonies
+	# make a continuous canopy while the winding sand channel stays open.
 	var clusters: Array[Vector2] = []
 	for side: float in [-1.0,1.0]:
-		for row in range(4):
-			clusters.append(Vector2(side*random.randf_range(16.0,32.0),-33.0+float(row)*19.0))
+		for row in range(6):
+			clusters.append(Vector2(side*random.randf_range(21.0,43.0),-43.0+float(row)*18.0))
 	var attempts := 0
-	while positions.size() < 150 and attempts < 6000:
+	while positions.size() < PATCH_COUNT and attempts < 16000:
 		attempts += 1
 		var center: Vector2 = clusters[random.randi_range(0,clusters.size()-1)]
-		var x: float = center.x+random.randfn(0,8.0)
-		var z: float = center.y+random.randfn(0,7.0)
+		var x: float = center.x+random.randfn(0,12.0)
+		var z: float = center.y+random.randfn(0,10.0)
 		if attempts%4 == 0:
-			x = random.randf_range(-43.0,43.0)
-			z = random.randf_range(-41.0,30.0)
+			x = random.randf_range(FOOTPRINT.position.x+2.0,FOOTPRINT.end.x-2.0)
+			z = random.randf_range(FOOTPRINT.position.y+2.0,FOOTPRINT.end.y-2.0)
 		if not FOOTPRINT.grow(-1.0).has_point(Vector2(x,z)) or absf(x-sin((z+6.0)*.055)*6.0)<8.6:
 			continue
 		var clear := true
 		for other: Vector3 in positions:
-			if Vector2(x-other.x,z-other.z).length_squared()<5.0:
+			if Vector2(x-other.x,z-other.z).length_squared()<3.24:
 				clear = false
 				break
 		if not clear:
 			continue
 		var point := Vector3(x,Ocean.seabed_height(origin.x+x,origin.z+z)-origin.y,z)
 		var form: int = positions.size()%FORM_NAMES.size()
-		var size: float = random.randf_range(.55,1.17)
+		var size: float = random.randf_range(.75,1.40)
 		var scale := Vector3(size*random.randf_range(.8,1.12),size*random.randf_range(.75,1.12),size)
 		var dx: float = (Ocean.seabed_height(origin.x+x+.4,origin.z+z)-Ocean.seabed_height(origin.x+x-.4,origin.z+z))/.8
 		var dz: float = (Ocean.seabed_height(origin.x+x,origin.z+z+.4)-Ocean.seabed_height(origin.x+x,origin.z+z-.4))/.8

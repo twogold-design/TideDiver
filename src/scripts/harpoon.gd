@@ -2,7 +2,7 @@ extends RefCounted
 ## Visible ballistic hook with swept collision against scenery and moving fish bodies.
 const SPEED := 24.0
 const GRAVITY := Vector3(0,-0.8,0)
-const BODIES := [Vector3(0.30,0.42,0.70),Vector3(0.34,0.42,0.95),Vector3(0.46,0.52,0.75),Vector3(0.16,0.20,0.65),Vector3(0.55,0.55,0.60),Vector3(0.34,0.42,0.70),Vector3(0.46,0.55,1.5),Vector3(0.30,0.32,1.85),Vector3(0.55,0.52,2.1),Vector3(0.5,0.25,0.85)]
+const BODIES := [Vector3(0.30,0.42,0.70),Vector3(0.34,0.42,0.95),Vector3(0.46,0.52,0.75),Vector3(0.16,0.20,0.65),Vector3(0.55,0.55,0.60),Vector3(0.34,0.42,0.70),Vector3(0.46,0.55,1.5),Vector3(0.30,0.32,1.85),Vector3(0.55,0.52,2.1),Vector3(0.5,0.25,0.85),Vector3(0.27,0.38,0.92),Vector3(0.44,0.48,1.10),Vector3(0.20,0.62,0.68),Vector3(0.25,0.28,2.05)]
 
 static func material(color: Color) -> StandardMaterial3D:
 	var mat := StandardMaterial3D.new()

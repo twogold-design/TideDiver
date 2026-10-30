@@ -46,6 +46,8 @@ static func build(parent: Node3D) -> Node3D:
 				roots.append(point - origin)
 			var visual := MultiMeshInstance3D.new()
 			visual.name = FORMS[form]
+			if form == 0:
+				visual.set_meta("harvestable_plant",true)
 			visual.multimesh = batch
 			visual.material_override = shared_material
 			visual.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF

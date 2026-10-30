@@ -72,6 +72,10 @@ static func build(parent: Node3D) -> Node3D:
 			batch.set_instance_color(index,colors[index])
 		var visual := MultiMeshInstance3D.new()
 		visual.name = ["LimestoneRim","LivingShellBeds","ScatteredValves","EncrustedCoral","SeaFans","LagoonGrass","RibbonAlgae"][kind]
+		if kind in [5,6]:
+			visual.set_meta("harvestable_plant",true)
+		if kind in [5,6]:
+			visual.set_meta("harvestable_plant",true)
 		visual.multimesh = batch
 		visual.material_override = material
 		visual.visibility_range_end = 165.0

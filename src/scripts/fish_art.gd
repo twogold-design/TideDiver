@@ -99,20 +99,20 @@ static func _build_model(kind: int) -> Node3D:
 		_build_moray(root)
 		_rig(root,0.0,false)
 		return root
-	var colors: Array[String] = ["e99a42","3c9ba8","65488d","a9d5dc","a8a566","c96043","286ba2","7d9170","688b9d"]
-	var widths: Array[float] = [0.28,0.32,0.42,0.13,0.52,0.29,0.43,0.25,0.53]
-	var heights: Array[float] = [0.40,0.39,0.47,0.17,0.52,0.38,0.52,0.25,0.48]
-	var lengths: Array[float] = [0.65,0.92,0.70,0.60,0.55,0.65,1.45,1.5,1.85]
+	var colors: Array[String] = ["e99a42","3c9ba8","65488d","a9d5dc","a8a566","c96043","286ba2","7d9170","688b9d","77715b","74a9ac","bf6855","c2d6dd","879fa7"]
+	var widths: Array[float] = [0.28,0.32,0.42,0.13,0.52,0.29,0.43,0.25,0.53,0.5,0.24,0.41,0.17,0.22]
+	var heights: Array[float] = [0.40,0.39,0.47,0.17,0.52,0.38,0.52,0.25,0.48,0.25,0.35,0.45,0.59,0.25]
+	var lengths: Array[float] = [0.65,0.92,0.70,0.60,0.55,0.65,1.45,1.5,1.85,0.85,0.87,1.05,0.63,1.65]
 	var w: float = widths[kind]
 	var h: float = heights[kind]
 	var length: float = lengths[kind]
 	var body := _material(colors[kind])
 	var pale := _material("e0e9d2")
-	var fin := _material("efbd50" if kind in [0,6] else colors[kind])
+	var fin := _material("efbd50" if kind in [0,6,10] else colors[kind])
 	_ellipsoid(root,Vector3.ZERO,Vector3(w,h,length),body,"Body")
 	_ellipsoid(root,Vector3(0,-h*0.43,-length*0.08),Vector3(w*0.89,h*0.58,length*0.88),pale,"Belly")
 	_eyes(root,w*0.82,h*0.23,-length*0.62,kind in [2,4])
-	_tail(root,length*0.82,h*(1.5 if kind in [3,6,8] else 1.0),length*0.56,fin)
+	_tail(root,length*0.82,h*(1.5 if kind in [3,6,8,13] else 1.0),length*0.56,fin)
 	for side: float in [-1.0,1.0]:
 		var wing: float = 1.05 if kind == 8 else (0.7 if kind == 6 else 0.42)
 		var joint := Node3D.new()
@@ -123,6 +123,37 @@ static func _build_model(kind: int) -> Node3D:
 	if kind != 4:
 		_fin(root,Vector3(0,h*0.8,-length*0.3),Vector3(0,h+(0.7 if kind == 8 else 0.28),length*0.02),Vector3(0,h*0.7,length*0.6),fin,"DorsalFin")
 	match kind:
+		13:
+			_ellipsoid(root,Vector3(0,-.015,-1.48),Vector3(.15,.12,.58),body,"Snout")
+			_ellipsoid(root,Vector3(0,-.09,-1.76),Vector3(.13,.018,.28),_material("263c49"),"Mouth")
+			var jaw := Node3D.new()
+			jaw.name = "Jaw"
+			jaw.position = Vector3(0,-.075,-1.35)
+			root.add_child(jaw)
+			_ellipsoid(jaw,Vector3(0,-.04,-.40),Vector3(.13,.05,.39),pale,"LowerJaw")
+			for side: float in [-1.0,1.0]:
+				for i in range(6):
+					var z: float = -.69+float(i)*.10
+					_fin(jaw,Vector3(side*.10,0,z),Vector3(side*.10,.055,z+.02),Vector3(side*.10,0,z+.04),pale,"Tooth")
+				for i in range(7):
+					_ellipsoid(root,Vector3(side*w*.94,.04,-.75+i*.25),Vector3(.018,.15,.035),_material("506c76"),"DarkBar")
+			_fin(root,Vector3(0,h*.65,.70),Vector3(0,h+.16,.88),Vector3(0,h*.55,1.13),fin,"RearDorsal")
+		10:
+			for side: float in [-1.0,1.0]:
+				_ellipsoid(root,Vector3(side*w*.94,0.04,-0.02),Vector3(0.025,0.065,length*.91),fin,"YellowLateralLine")
+		11:
+			var blue_spot := _material("80c8d9")
+			for side: float in [-1.0,1.0]:
+				for i in range(12):
+					var z: float = -.65+float(i%4)*.36
+					var y: float = (float(i/4)-1.0)*.20
+					var skin_x: float = w*sqrt(maxf(.1,1.0-pow(z/length,2)-pow(y/h,2)))
+					_ellipsoid(root,Vector3(side*skin_x,y,z),Vector3(.024,.032,.040),blue_spot,"BlueSpot")
+			_ellipsoid(root,Vector3(0,-.04,-.88),Vector3(.28,.19,.24),body,"Snout")
+		12:
+			for side: float in [-1.0,1.0]:
+				_ellipsoid(root,Vector3(side*w*.98,.05,-.07),Vector3(.018,.29,.34),_material("e3eeeb"),"SilverFlank")
+			_fin(root,Vector3(0,-h*.7,-length*.35),Vector3(0,-h-.18,length*.3),Vector3(0,-h*.3,length*.8),fin,"AnalFin")
 		0:
 			for z: float in [-0.24,0.12,0.37]:
 				_ellipsoid(root,Vector3(0,0,z),Vector3(w*1.02,h*0.96,0.045),_material("9d5534"),"Band")

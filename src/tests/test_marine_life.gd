@@ -60,7 +60,7 @@ func _run() -> void:
 		await _test_rendered_species()
 		await _test_pause_and_reset()
 		_test_capture_isolation()
-		_check(game.fish.size() == 151 and game.fish_population_count() == 151 and game.pickups.size() == 64,"Ambient ecology preserves the original sparse huntable population and existing pickups")
+		_check(game.fish.size() == 171 and game.fish_population_count() == 171 and game.pickups.size() == 65,"Ambient ecology preserves the original sparse huntable population and existing pickups")
 		_check(game.cargo.is_empty() and memory._save_data() == before and memory.saves == 0,"Viewing, animation, GM and firing through ambient animals never change cargo or durable progress")
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	game.free()

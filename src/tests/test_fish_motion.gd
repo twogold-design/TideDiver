@@ -61,7 +61,7 @@ func _tail(item: Dictionary) -> Node3D:
 	return item.node.get_node("Motion/Tail" if item.kind == 7 else "Motion/BodyFlex/Tail")
 
 func _test_rigs_and_hunting_frame() -> void:
-	for kind in range(9):
+	for kind in FishData.SWIMMING_KINDS:
 		var node: Node3D = Art.build(kind)
 		var item: Dictionary = {"node":node,"kind":kind,"phase":0.2,"state":"charge","direction":Vector3.FORWARD,"hp":FishData.SPECIES[kind].hp}
 		var before: Transform3D = node.transform
@@ -142,7 +142,7 @@ func _test_real_swimming() -> void:
 	_disable_fish()
 	game.player.position = Vector3(200,-12,250)
 	var cadences: Dictionary = {}
-	for kind in range(9):
+	for kind in FishData.SWIMMING_KINDS:
 		var item: Dictionary = _fixture(kind,Vector3(200,-12,200))
 		item.state = "flee"
 		item.timer = 10.0
@@ -191,7 +191,7 @@ func _test_turn_and_continuity() -> void:
 	item.alive = false
 
 func _test_attack_poses() -> void:
-	for kind: int in [7,8]:
+	for kind: int in [7,8,13]:
 		_disable_fish()
 		game.player.position = Vector3(200,-12,200)
 		game.oxygen = 100.0
@@ -213,7 +213,7 @@ func _test_attack_poses() -> void:
 		_check(item.state == "charge" and rig.position.z < 0.0 and charge_jaw < windup_jaw-0.20 and item.direction == committed,"The actual lunge streams forward with a wider jaw while retaining its committed attack direction: "+FishData.SPECIES[kind].id)
 		game.player.position = item.node.position+Vector3(0.2,0,0)
 		Brain.advance(game,item,0.01)
-		var damage: float = 12.0 if kind == 7 else 18.0
+		var damage: float = 12.0 if kind in [7,13] else 18.0
 		_check(game.oxygen == 100.0-damage and item.state == "recover" and item.timer == 3.5 and item.attack_cooldown == 5.0,"Animated attack still applies one canonical contact hit and the original recovery/cooldown: "+FishData.SPECIES[kind].id)
 		game.player.position = Vector3(200,-12,250)
 		for frame in range(45):
@@ -243,13 +243,13 @@ func _test_lifecycle() -> void:
 	_check(item.motion_phase == phase_before and item.node.transform == root_before,"A captured fish cannot continue advancing its live rig")
 	game.finish_dive(false)
 	game.start_dive(false,false)
-	var clean: bool = game.fish.size() == 151 and FishData.SPECIES.size() == 10
+	var clean: bool = game.fish.size() == 171 and FishData.SPECIES.size() == 14
 	for fish: Dictionary in game.fish:
 		clean = clean and fish.alive and not fish.has("motion_phase") and fish.hp == FishData.SPECIES[fish.kind].hp
-	_check(clean,"A new dive creates clean animation state while preserving all 151 catches and ten canonical species")
+	_check(clean,"A new dive creates clean animation state while preserving all 171 catches and fourteen canonical species")
 
 func _test_animated_aim() -> void:
-	for kind: int in [7,8]:
+	for kind: int in [7,8,13]:
 		var all_hits := true
 		for state: String in ["windup","charge","recover"]:
 			_disable_fish()

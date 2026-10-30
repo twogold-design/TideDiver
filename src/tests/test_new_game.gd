@@ -179,7 +179,7 @@ func _test_scene_confirmation() -> void:
 	_check(game.state == "restaurant" and not game.progress.can_open() and game.progress.furniture_items().is_empty(), "Restarted restaurant returns to the abandoned shop")
 	game.return_to_dock()
 	game.start_dive(false, false)
-	_check(game.state == "dive" and game.oxygen == 100.0 and game.fish.size() == game.fish_population_count() and game.pickups.size() == 11 + game.Ocean.pickup_points().size(), "Restarted player can immediately begin a fresh playable dive")
+	_check(game.state == "dive" and game.oxygen == 100.0 and game.fish.size() == game.fish_population_count() and game.pickups.size() == 12 + game.Ocean.pickup_points().size(), "Restarted player can immediately begin a fresh playable dive")
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	game.free()
 	await process_frame

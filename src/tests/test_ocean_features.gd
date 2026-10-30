@@ -45,7 +45,7 @@ func _run() -> void:
 	await physics_frame
 	await process_frame
 	var progress_before: Dictionary = memory._save_data().duplicate(true)
-	_check(game.fish.size() == 151 and game.fish_population_count() == 151, "Ocean scenery leaves the ordinary catchable population at 151")
+	_check(game.fish.size() == 171 and game.fish_population_count() == 171, "Ocean scenery leaves the ordinary catchable population at 171")
 	var storm: Node3D = game.storm_school
 	_check(storm != null and storm.global_position == Vector3(-45, -20, 292), "The fish storm is located at the southern spires")
 	if storm != null:
@@ -106,7 +106,7 @@ func _test_storm(storm: Node3D) -> void:
 	_check(game.projectiles.size() == 1, "Shooting into the decorative vortex launches a real flying hook")
 	for frame in range(50):
 		game._update_projectiles(0.02)
-	_check(independent and game.fish.size() == 151 and game.projectiles.is_empty() and game.target_fish().is_empty() and game.cargo.is_empty() and memory.inventory_total() == 0, "A physical hook crossing the decorative vortex cannot catch or duplicate it into cargo or inventory")
+	_check(independent and game.fish.size() == 171 and game.projectiles.is_empty() and game.target_fish().is_empty() and game.cargo.is_empty() and memory.inventory_total() == 0, "A physical hook crossing the decorative vortex cannot catch or duplicate it into cargo or inventory")
 
 func _test_storm_geometry(storm: Node3D, visual: MultiMeshInstance3D) -> void:
 	var mesh: ArrayMesh = visual.multimesh.mesh as ArrayMesh
@@ -140,8 +140,8 @@ func _test_storm_geometry(storm: Node3D, visual: MultiMeshInstance3D) -> void:
 func _test_coral(garden: Node3D) -> void:
 	var positions: PackedVector3Array = garden.get_meta("patch_positions", PackedVector3Array())
 	var forms: PackedStringArray = garden.get_meta("forms", PackedStringArray())
-	_check(int(garden.get_meta("patch_count", 0)) == 150 and positions.size() == 150, "The actual garden records all 150 coral patches")
-	_check(garden.get_meta("footprint", Rect2()) == Rect2(-45, -43.5, 90, 75) and float(garden.get_meta("channel_width", 0)) == 7.0, "Garden metadata preserves the broad footprint and open sand lane")
+	_check(int(garden.get_meta("patch_count", 0)) == 540 and positions.size() == 540, "The actual garden contains 540 closely spaced coral colonies")
+	_check(garden.get_meta("footprint", Rect2()) == Rect2(-62, -53, 124, 110) and float(garden.get_meta("channel_width", 0)) == 7.0, "The expanded reef retains its open sand lane")
 	var unmatched: Array[Vector3] = []
 	unmatched.assign(positions)
 	var batches: int = 0
@@ -196,7 +196,14 @@ func _test_coral(garden: Node3D) -> void:
 		named_forms = named_forms and form in forms and actual_forms.has(form)
 	_check(named_forms and instance_count == positions.size() and instance_count > 100 and metadata_matches and unmatched.is_empty(), "Rendered batches match all recorded patches and contain all four named coral forms")
 	_check(aligned, "Every actual coral instance root meets the real world seabed height")
-	_check(maximum.x - minimum.x > 80 and maximum.y - minimum.y > 65, "The real coral placement spans more than eighty by sixty-five metres")
+	_check(maximum.x - minimum.x > 115 and maximum.y - minimum.y > 100, "The real coral canopy spans more than 115 by 100 metres")
+	var close_colonies := 0
+	for index in range(positions.size()):
+		for other in range(positions.size()):
+			if index != other and Vector2(positions[index].x-positions[other].x,positions[index].z-positions[other].z).length_squared()<12.25:
+				close_colonies += 1
+				break
+	_check(close_colonies>positions.size()*0.75,"Most colonies grow within 3.5 metres of a neighbour, forming dense connected banks")
 	_check(_collision_nodes(garden) == 0, "The visual coral garden adds no collision objects or shapes")
 	_check(lane_clear, "The rendered organic colonies leave a continuous seven-metre sand lane rather than only clearing their roots")
 	_check(bounded_geometry and materials.size() == 1, "Four detailed coral meshes share one material and stay within a bounded per-colony geometry budget")

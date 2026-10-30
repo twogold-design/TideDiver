@@ -21,13 +21,15 @@ const MarineLife = preload("res://scripts/marine_life.gd")
 const ReefFish = preload("res://scripts/reef_fish_habitat.gd")
 const ReefPlants = preload("res://scripts/reef_vegetation.gd")
 const CoralGarden = preload("res://scripts/coral_garden.gd")
+const DiverKnife = preload("res://scripts/diver_knife.gd")
+var diver_knife = DiverKnife.new()
 var reef_plants: Node3D
-const SWIMMING_SPECIES := 9
+const SWIMMING_SPECIES := 13
 const COASTAL_FISH_COUNT = 21
-const COASTAL_KINDS = [0,1,3,4,6,2]
+const COASTAL_KINDS = [0,1,3,4,6,2,10,12]
 const ENTRY_SCHOOL_KINDS = [0,1,3,4,6]
 const ENTRY_FISH_PER_SCHOOL = 2
-const OUTER_FISH_PER_ZONE = 16
+const OUTER_FISH_PER_ZONE = 20
 const Harpoon = preload("res://scripts/harpoon.gd")
 const Cuisine = preload("res://scripts/cuisine.gd")
 const TRANSIT_SCHOOLS = 8
@@ -392,9 +394,12 @@ func _setup_world() -> void:
 	diver_bubbles.ignored_bodies.append(player.get_rid())
 	marine_life = MarineLife.build(ocean_root,[player.get_rid()],explorable_wreck)
 	reef_fish = ReefFish.build(ocean_root)
+	diver_knife.setup(player.get_child(0))
 	_reset_shore_lighting()
 
 func _spawn_population() -> void:
+	diver_knife.reset()
+	reef_plants.reset_harvests()
 	marine_life.reset()
 	reef_fish.reset()
 	reef_plants.animate(0.0,reef_plants.global_position)
@@ -441,7 +446,7 @@ func _spawn_population() -> void:
 
 	for zone_index in range(Ocean.ZONES.size()):
 		for i in range(OUTER_FISH_PER_ZONE):
-			var kind: int = (i+zone_index*2) % SWIMMING_SPECIES
+			var kind: int = FishData.SWIMMING_KINDS[(i+zone_index*2) % SWIMMING_SPECIES]
 			_add_fish(kind,Ocean.fish_home(zone_index,i))
 	# Scattered travelling schools connect the bay to distant habitats.
 	for school in range(TRANSIT_SCHOOLS):
@@ -459,6 +464,7 @@ func _spawn_population() -> void:
 		if point.get("exploration",false):
 			pickups[-1]["exploration_site"] = point.site_index
 			pickups[-1]["location_name"] = point.name
+	_add_pickup(explorable_wreck.treasure_position(),"captain_astrolabe")
 	for zone in Ocean.ZONES:
 		var node: Node3D = _jellyfish()
 		var pos: Vector3 = Ocean.hazard_home(Ocean.ZONES.find(zone))
@@ -737,6 +743,7 @@ func confirm_new_game() -> void:
 	player.velocity = Vector3.ZERO
 	dive_origin = Vector3.ZERO
 	diver_motion.reset()
+	diver_knife.reset()
 	entry_site_index = -1
 	boat.position = Vector3(0,0.3,14)
 	player.position = Vector3(0,-6,14)
@@ -791,6 +798,7 @@ func start_dive(animate_entry: bool = true, random_entry: bool = true, site_over
 	player.rotation = Vector3.ZERO
 	player.position = dive_origin + (Vector3(0,2.4,17.5) if animate_entry else Vector3(0,-6,14))
 	diver_motion.reset()
+	diver_knife.reset()
 	player.visible = true
 	player.get_child(0).visible = true
 	yaw = 0
@@ -864,6 +872,7 @@ func gm_select_dive_site(index: int, direct: bool = false) -> void:
 	player.rotation = Vector3.ZERO
 	drift_current = Vector3.ZERO
 	diver_motion.reset()
+	diver_knife.reset()
 	player.get_child(0).visible = true
 	current_hint = ""
 	catch_timer = 0.0
@@ -938,6 +947,7 @@ func finish_dive(rescued: bool = false) -> void:
 	var depleted: bool = rescued and oxygen <= 0.0
 	gm_test_active = false
 	diver_motion.reset()
+	diver_knife.reset()
 	drift_current = Vector3.ZERO
 	current_hint = ""
 	entry_active = false
@@ -1057,6 +1067,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		pitch = clampf(pitch - event.relative.y * 0.0022, -1.25, 1.10)
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		shoot()
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_RIGHT:
+		diver_knife.swing(self)
 
 func _physics_process(delta: float) -> void:
 	if state == "rescuing":
@@ -1074,6 +1086,7 @@ func _physics_process(delta: float) -> void:
 			_update_entry(delta)
 		else:
 			_update_dive(delta)
+			diver_knife.advance(self,delta)
 			_update_projectiles(delta)
 			if state == "dive":
 				var effort: float = 1.0 if Input.is_action_pressed("boost") else minf(0.5,player.velocity.length()/12.0)
@@ -1149,7 +1162,7 @@ func _update_entry(delta: float) -> void:
 		entry_active = false
 		camera.fov = 66
 		environment.fog_density = 0.024
-		tell("WASD 游泳 · Q 下潜 / E 上浮 · 左键发射鱼叉", 7)
+		tell("WASD 游泳 · Q 下潜 / E 上浮 · 左键鱼叉 · 右键小刀割海草", 7)
 
 func _play_splash() -> void:
 	if muted:
@@ -1499,6 +1512,9 @@ func nearest_pickup() -> Dictionary:
 		if item.active:
 			var d: float = player.position.distance_to(item.node.position)
 			if d < distance:
+				var ray := PhysicsRayQueryParameters3D.create(player.position,item.node.position,1,[player.get_rid()])
+				if not get_world_3d().direct_space_state.intersect_ray(ray).is_empty():
+					continue
 				best = item
 				distance = d
 	return best
@@ -1534,7 +1550,7 @@ func interact() -> void:
 			_show_capacity_warning(info,"未能采集")
 			return
 		cargo.append(info)
-		_show_loot_feedback("采集成功",[info],0.0)
+		_show_loot_feedback("发现沉船秘宝" if kind == "captain_astrolabe" else "采集成功",[info],0.0)
 	_pickup_feedback(kind,item.node.position)
 	item.active = false
 	item.node.visible = false
@@ -1649,6 +1665,8 @@ func context_hint() -> String:
 			return "F  补充气瓶量"
 		var info: Dictionary = Loot.pickup_info(item.kind)
 		return "F  采集%s" % info.get("name","物品")
+	if not reef_plants.target(self).is_empty():
+		return "右键  小刀切割海草 · 1 kg" if weight()<progress.capacity() else "海草 · 背包已满，返航入库后再收割"
 	var target: Dictionary = target_fish()
 	if not target.is_empty():
 		var data: Dictionary = FishData.SPECIES[target.kind]

@@ -47,8 +47,8 @@ func _run() -> void:
 	DirAccess.make_dir_recursive_absolute(output)
 	var before: Dictionary = memory._save_data().duplicate(true)
 	var actual: Array[Dictionary] = _stonefish()
-	_check(FishData.SPECIES.size() == 10 and FishData.SPECIES[9].id == "stonefish" and FishData.SPECIES[9].behavior == "camouflage", "Stonefish is the tenth canonical catch with stationary camouflage behavior")
-	_check(actual.size() == 12 and game.stonefish_count == actual.size() and game.fish.size() == 151 and game.fish_population_count() == 151, "Twelve stonefish replace ordinary population slots while retaining exactly 151 huntable fish")
+	_check(FishData.SPECIES.size() == 14 and FishData.SPECIES[9].id == "stonefish" and FishData.SPECIES[9].behavior == "camouflage", "Stonefish is the tenth canonical catch with stationary camouflage behavior")
+	_check(actual.size() == 12 and game.stonefish_count == actual.size() and game.fish.size() == 171 and game.fish_population_count() == 171, "Twelve stonefish replace ordinary population slots while retaining exactly 171 huntable fish")
 	if actual.size() == 12:
 		_test_natural_homes(actual)
 		await _test_grounded_idle_and_rendering(actual[0])
@@ -334,7 +334,7 @@ func _test_fresh_dive_and_new_game() -> void:
 	var reset := true
 	for item: Dictionary in _stonefish():
 		reset = reset and item.alive and item.hp == FishData.SPECIES[9].hp and item.state == "camouflaged" and item.node.position.is_equal_approx(item.home) and absf(item.home.y - Ocean.seabed_height(item.home.x, item.home.z) - 0.035) < 0.015
-	_check(_stonefish().size() == 12 and reset and game.fish.size() == 151 and game.poison_timer == 0 and game.hurt_cooldown == 0, "A fresh dive restores twelve healthy rock-edge stonefish and clears old contact effects without increasing population")
+	_check(_stonefish().size() == 12 and reset and game.fish.size() == 171 and game.poison_timer == 0 and game.hurt_cooldown == 0, "A fresh dive restores twelve healthy rock-edge stonefish and clears old contact effects without increasing population")
 	game.toggle_pause()
 	game.request_new_game()
 	game.confirm_new_game()

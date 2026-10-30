@@ -4,6 +4,7 @@ const Loot = preload("res://scripts/loot_catalog.gd")
 const Art = preload("res://scripts/loot_art.gd")
 const P = preload("res://scripts/progression.gd")
 const Ocean = preload("res://scripts/ocean_config.gd")
+const SEABED_ITEMS := ["sea_glass","ancient_coin","amber_shard","conch"]
 class MemoryProgression extends "res://scripts/progression.gd":
 	var saves := 0
 	func load_game() -> void:
@@ -37,7 +38,7 @@ func _test_rewards_and_claims() -> void:
 		var info: Dictionary = Loot.pickup_info(id)
 		registered = registered and info.id == id and info.weight > 0 and info.value > 0 and P.GOODS[id] == Loot.ITEMS[id]
 		expected_value += int(info.value)
-	_check(registered and Loot.ITEMS.size() == 4 and expected_value == 187, "All four collectible identities have one canonical positive weight and sell value")
+	_check(registered and Loot.ITEMS.size() == 6 and expected_value == 683, "Seabed finds, the captain's treasure and harvested grass have canonical weights and sale values")
 	var seen: Dictionary = {}
 	var lengths: Dictionary = {}
 	var valid := true
@@ -92,11 +93,11 @@ func _test_economy_and_distribution() -> void:
 		old_compatible = old_compatible and memory.inventory.get(id,-1) == 0
 	_check(old_compatible and P.GOODS.chest.value == 90 and P.RECIPES.size() == 3, "V4 saves keep old fish, chest value and recipes while new collectible stock begins at zero")
 	var cargo: Array = []
-	for id in Loot.ITEMS:
+	for id in SEABED_ITEMS:
 		cargo.append({"id":id,"value":999999})
 	var result: Dictionary = memory.complete_dive(cargo,false,42)
 	var stored: bool = result.count == 4 and memory.total_fish == 0 and cargo.is_empty()
-	for id in Loot.ITEMS:
+	for id in SEABED_ITEMS:
 		stored = stored and memory.inventory[id] == 1
 	_check(stored and memory.inventory.orange == 2 and memory.inventory.chest == 1, "All four finds enter the ordinary warehouse without counting as fish or altering previous stock")
 	var restored := MemoryProgression.new()
@@ -104,14 +105,14 @@ func _test_economy_and_distribution() -> void:
 	restored._apply_save_data(memory._save_data().duplicate(true))
 	_check(restored.inventory == memory.inventory and restored._save_data().version == 4, "The unchanged save format round-trips new collectible inventory")
 	var value := 0
-	for id in Loot.ITEMS:
+	for id in SEABED_ITEMS:
 		value += restored.sell(id,1)
 	_check(value == 187 and restored.coins == 286 and restored.inventory.orange == 2 and restored.inventory.chest == 1, "Selling the new finds pays canonical187G and leaves original fish and legacy treasure intact")
 	_check(restored.sell("chest",1) == 90 and restored.inventory.chest == 0, "A chest stored by an older game can still be sold for its original90G")
 	var rescued := MemoryProgression.new()
 	rescued.persistence_enabled = false
 	cargo.clear()
-	for id in Loot.ITEMS:
+	for id in SEABED_ITEMS:
 		cargo.append({"id":id,"value":999999})
 	cargo.append({"id":"chest"})
 	result = rescued.complete_dive(cargo,true,42)
@@ -122,7 +123,7 @@ func _test_economy_and_distribution() -> void:
 	for point: Dictionary in points:
 		types[point.kind] = int(types.get(point.kind,0))+1
 		valid = valid and not Loot.pickup_info(point.kind).is_empty() and point.position.y >= Ocean.seabed_height(point.position.x,point.position.z)+0.99
-	for id in Loot.ITEMS:
+	for id in SEABED_ITEMS:
 		valid = valid and types.has(id)
 	_check(valid and types.get("chest",0) == 10 and types.get("oxygen",0) == 26 and types.get("pearl",0) > 0, "The remaining 53 outer-ocean points retain air stations, chests, pearls and all four finds")
 
@@ -139,8 +140,8 @@ func _test_actual_pickups() -> void:
 	await physics_frame
 	await process_frame
 	game.start_dive(false,false)
-	_check(game.pickups.size() == 64 and game.fish.size() == 151 and game.pickups[0].kind == "pearl" and game.pickups[9].kind == "oxygen" and game.pickups[10].kind == "oxygen", "The real ocean retains64 pickups,151 fish and the original first pearl and two indexed air stations")
-	for id in Loot.ITEMS:
+	_check(game.pickups.size() == 65 and game.fish.size() == game.fish_population_count() and game.pickups[0].kind == "pearl" and game.pickups[9].kind == "oxygen" and game.pickups[10].kind == "oxygen", "The real ocean includes65 pickups, the expected huntable fish and the original first pearl and two indexed air stations")
+	for id in SEABED_ITEMS:
 		var selected: Dictionary = {}
 		for item: Dictionary in game.pickups:
 			if item.kind == id and item.active:
@@ -186,6 +187,7 @@ func _test_actual_pickups() -> void:
 		game.interact()
 		_check(game.cargo == collected and memory.saves == 0, "Re-interacting cannot duplicate the opened chest or save transient loot state")
 	_test_actual_feedback(game,memory)
+	_test_actual_treasure(game,memory)
 	game.free()
 	await process_frame
 
@@ -240,3 +242,32 @@ func _test_actual_feedback(game: Node, memory: MemoryProgression) -> void:
 	_check(game.state == "dock" and game.loot_feedback_timer == 0.0 and game.loot_feedback.is_empty(),"Returning to shore clears transient reward feedback")
 	game.start_dive(false,false)
 	_check(game.loot_feedback_timer == 0.0 and game.loot_feedback_title.is_empty() and game.loot_feedback_note.is_empty(),"A fresh dive begins without a previous dive's result card")
+
+func _test_actual_treasure(game: Node, memory: MemoryProgression) -> void:
+	var treasures: Array = game.pickups.filter(func(item: Dictionary) -> bool: return item.kind == "captain_astrolabe")
+	_check(treasures.size() == 1, "Each dive has exactly one special captain's treasure")
+	if treasures.size() != 1:
+		return
+	var treasure: Dictionary = treasures[0]
+	var wreck: Node3D = game.explorable_wreck
+	_check(treasure.home.is_equal_approx(wreck.treasure_position()) and wreck.contains_point(treasure.home,0), "The captain's astrolabe is inside the wreck on the upper bridge chart table")
+	var route: Array = wreck.get_meta("treasure_route",[])
+	var traversable: bool = route.size() >= 5
+	for index in range(1,route.size()):
+		traversable = traversable and not game.player.test_move(Transform3D(Basis.IDENTITY,route[index-1]),route[index]-route[index-1])
+	_check(traversable, "The actual diver can swim from the hold through the bridge to the special treasure")
+	game.player.position = route[-1]
+	game.cargo = [{"id":"orange","weight":memory.capacity()}]
+	game.interact()
+	_check(treasure.active and treasure.node.visible and game.cargo.size() == 1 and game.capacity_warning_timer > 0, "A full bag leaves the special treasure available and reports its weight")
+	game.cargo.clear()
+	game.interact()
+	_check(game.cargo.size() == 1 and game.cargo[0] == Loot.pickup_info("captain_astrolabe") and not treasure.active and not treasure.node.visible, "Collecting the named special treasure grants its canonical 3kg and 480G item once")
+	game.interact()
+	_check(game.cargo.size() == 1, "A second interaction cannot duplicate the special treasure")
+	game.finish_dive(false)
+	_check(memory.inventory.get("captain_astrolabe",0) == 1, "Returning to shore stores the special treasure in the ordinary warehouse")
+	var restored := MemoryProgression.new()
+	restored.persistence_enabled = false
+	restored._apply_save_data(memory._save_data().duplicate(true))
+	_check(restored.inventory.get("captain_astrolabe",0) == 1 and restored.sell("captain_astrolabe",1) == 480, "The special treasure survives save reload and sells for its canonical value")

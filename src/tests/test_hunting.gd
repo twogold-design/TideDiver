@@ -65,7 +65,7 @@ func _test_catalog_and_persistence() -> void:
 	var actual_ids: Array[String] = []
 	for species in FishData.SPECIES:
 		actual_ids.append(species.id)
-	_check(actual_ids == ["orange","blue","lantern","sardine","puffer","lionfish","tuna","moray","reef_shark","stonefish"], "Hunting preserves every original species index and adds stonefish as the tenth catch")
+	_check(actual_ids == ["orange","blue","lantern","sardine","puffer","lionfish","tuna","moray","reef_shark","stonefish","yellowtail_snapper","coral_grouper","silver_pomfret","barracuda"], "Hunting preserves all ten original indices and adds four distinct catchable species")
 	var ids: Dictionary = {}
 	var cargo: Array = []
 	var total_value: int = 0
@@ -132,7 +132,7 @@ func _test_warehouse_pagination() -> void:
 		progress.inventory[id] = 1
 	game.open_restaurant()
 	var ui: Node = game.hud.restaurant_ui
-	_check(ui._warehouse_page_count() == 4 and ui.warehouse_page == 0 and ui._warehouse_ids() == ["orange","blue","lantern","pearl","chest"], "Warehouse first page preserves original fish and valuables while new finds extend its pages")
+	_check(ui._warehouse_page_count() == 5 and ui.warehouse_page == 0 and ui._warehouse_ids() == ["orange","blue","lantern","pearl","chest"], "Warehouse first page preserves original fish and valuables while new catches and finds extend to five pages")
 	_check(_button_named(ui,"上一页").disabled, "First page cannot navigate below zero")
 	_press_named(ui,"下一页")
 	_check(ui.warehouse_page == 1 and ui._warehouse_ids() == ["sardine","puffer","lionfish","tuna","moray"], "Real next-page callback exposes five new catches")
@@ -140,7 +140,7 @@ func _test_warehouse_pagination() -> void:
 	_press_named(ui,"卖 1 件")
 	_check(progress.inventory.sardine == 0 and progress.inventory.puffer == 1 and progress.inventory.orange == 1 and progress.coins == before + 24, "Second-page sale callback is bound to displayed sardine rather than an old row")
 	_press_named(ui,"下一页")
-	_check(ui.warehouse_page == 2 and ui._warehouse_ids() == ["reef_shark","stonefish","sea_glass","ancient_coin","amber_shard"] and not _button_named(ui,"下一页").disabled, "Third page exposes the remaining fish and three distinct seabed collectibles")
+	_check(ui.warehouse_page == 2 and ui._warehouse_ids() == ["reef_shark","stonefish","yellowtail_snapper","coral_grouper","silver_pomfret"] and not _button_named(ui,"下一页").disabled, "Third page exposes the remaining fish and three new catches")
 	_press_named(ui,"全卖")
 	_check(progress.inventory.reef_shark == 0 and progress.coins == before + 204, "Last-page sale pays reef shark value exactly once")
 	_check(_button_named(ui,"全卖").disabled, "Sold-out last-page row cannot be sold again")
@@ -150,10 +150,11 @@ func _test_warehouse_pagination() -> void:
 		stonefish_sale.pressed.emit()
 	_check(progress.inventory.stonefish == 0 and progress.coins == before + 204 + P.GOODS.stonefish.value, "The actual stonefish sale callback consumes its own stock at its canonical price")
 	var expected_coins: int = progress.coins
-	for id in Loot.ITEMS:
-		if id == "conch":
+	var new_goods: Array = ["yellowtail_snapper","coral_grouper","silver_pomfret","barracuda"]
+	new_goods.append_array(Loot.ITEMS.keys())
+	for id in new_goods:
+		while not ui._warehouse_ids().has(id) and ui.warehouse_page < ui._warehouse_page_count()-1:
 			_press_named(ui,"下一页")
-			_check(ui.warehouse_page == 3 and ui._warehouse_ids() == ["conch"] and _button_named(ui,"下一页").disabled, "The final page exposes the collectible shell and has a real navigation boundary")
 		var sale: Button = _warehouse_row_button(ui,id,"全卖")
 		_check(sale != null and not sale.disabled and progress.inventory[id] == 1, "The actual warehouse has an enabled, distinct sale row for " + id)
 		if sale != null and not sale.disabled:
@@ -161,7 +162,7 @@ func _test_warehouse_pagination() -> void:
 		expected_coins += int(P.GOODS[id].value)
 		_check(progress.inventory[id] == 0 and progress.coins == expected_coins and progress.inventory.orange == 1, "The collectible's own callback pays its exact canonical value and preserves other stock: " + id)
 	ui._change_warehouse_page(100)
-	_check(ui.warehouse_page == 3, "Page overflow clamps safely")
+	_check(ui.warehouse_page == 4 and _button_named(ui,"下一页").disabled, "Final page holds the special treasure and harvested grass and cannot advance further")
 	ui._change_warehouse_page(-100)
 	_check(ui.warehouse_page == 0, "Page underflow clamps safely")
 	var seen: Dictionary = {}
@@ -222,7 +223,7 @@ func _aim_at(item: Dictionary) -> void:
 func _test_population_and_seabed() -> void:
 	game.start_dive(false, false)
 	_check(Ocean.X_MAX-Ocean.X_MIN >= 1000 and Ocean.Z_MAX-Ocean.Z_MIN >= 1000 and Ocean.Y_MIN <= -120, "Playable ocean spans a kilometre in both directions and reaches 120 metres")
-	_check(game.fish.size() == 151, "Sparse ocean and entry schools create exactly 151 ordinary catchable fish")
+	_check(game.fish.size() == 171, "Sparse ocean and entry schools create exactly 171 ordinary catchable fish")
 	var kinds: Dictionary = {}
 	var valid: bool = true
 	var deepest: float = 0.0
@@ -372,7 +373,7 @@ func _fly_hook() -> void:
 	for frame in range(50):
 		game._update_projectiles(0.02)
 func _test_predators_and_poison() -> void:
-	for kind: int in [7,8]:
+	for kind: int in [7,8,13]:
 		_disable_fish()
 		game.player.position = Vector3(200,-8,200)
 		game.oxygen = 100
@@ -390,7 +391,7 @@ func _test_predators_and_poison() -> void:
 		_check(predator.direction.is_equal_approx(charge_direction), "Charge direction remains committed so lateral dodging works: " + FishData.SPECIES[kind].id)
 		game.player.position = predator.node.position+Vector3(0.2,0,0)
 		game._update_fish(predator,0.01)
-		var damage: float = 12.0 if kind == 7 else 18.0
+		var damage: float = 12.0 if kind in [7,13] else 18.0
 		_check(game.oxygen == 100-damage and predator.state == "recover" and predator.attack_cooldown > 0, "Predator contact damages oxygen once then recovers: " + FishData.SPECIES[kind].id)
 		var oxygen_before: float = game.oxygen
 		game.take_hunt_damage(damage,false,"Duplicate contact")

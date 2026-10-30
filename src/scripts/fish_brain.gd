@@ -2,7 +2,7 @@ extends RefCounted
 ## Local reactive fish simulation. Only the game physics clock advances behaviour.
 const FishData = preload("res://scripts/fish_catalog.gd")
 const Ocean = preload("res://scripts/ocean_config.gd")
-const SWIM_CADENCE := [4.7,5.8,3.5,10.0,3.4,3.0,7.6,5.0,4.4]
+const SWIM_CADENCE := [4.7,5.8,3.5,10.0,3.4,3.0,7.6,5.0,4.4,0.0,6.4,3.9,7.0,8.2]
 
 static func prepare(item: Dictionary) -> void:
 	if item.has("state"):
@@ -81,7 +81,7 @@ static func advance(game: Node, item: Dictionary, delta: float) -> void:
 			item.timer = 1.15
 		elif item.state == "charge":
 			if distance < float(data.radius)+1.0 and _clear(game,node.position,game.player.position):
-				game.take_hunt_damage(18.0 if behavior == "predator" else 12.0,false,data.name)
+				game.take_hunt_damage(float(data.get("attack_damage",18.0 if behavior == "predator" else 12.0)),false,data.name)
 				item.timer = 0.0
 			if item.timer <= 0:
 				item.state = "recover"
@@ -118,7 +118,7 @@ static func advance(game: Node, item: Dictionary, delta: float) -> void:
 		"windup":
 			speed = 0.1
 		"charge":
-			speed = 14.0 if behavior == "predator" else 11.0
+			speed = float(data.get("charge_speed",14.0 if behavior == "predator" else 11.0))
 		"recover":
 			speed *= 0.35
 		"inflate":

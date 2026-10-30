@@ -57,6 +57,8 @@ static func build(parent: Node3D) -> Node3D:
 					batch.set_instance_color(index, entries[index].color)
 				var visual := MultiMeshInstance3D.new()
 				visual.name = kind
+				if kind == "Seagrass":
+					visual.set_meta("harvestable_plant",true)
 				visual.multimesh = batch
 				visual.material_override = _material(kind)
 				visual.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF

@@ -4,6 +4,7 @@ const Ocean = preload("res://scripts/ocean_config.gd")
 const Coral = preload("res://scripts/coral_garden.gd")
 var sway_material: ShaderMaterial
 var roots := PackedVector3Array()
+var harvests: Array[Dictionary] = []
 var _last_time := -INF
 static var _shared_material: ShaderMaterial
 
@@ -22,6 +23,8 @@ static func build(parent: Node3D) -> Node3D:
 	parent.add_child(meadow)
 	meadow.position = Vector3(-180,0,135)
 	meadow._populate()
+	meadow._register_plants(meadow)
+	meadow._register_plants(parent,meadow)
 	return meadow
 
 func _populate() -> void:
@@ -74,10 +77,89 @@ func _populate() -> void:
 		visual.visibility_range_end_margin = 14.0
 		visual.extra_cull_margin = .8
 		add_child(visual)
-	set_meta("decorative_only",true)
+		visual.set_meta("harvestable_plant",true)
+	set_meta("decorative_only",false)
 	set_meta("instance_count",roots.size())
 	set_meta("draw_batches",2)
 	animate(0,global_position)
+
+func _register_plants(node: Node, skip: Node = null) -> void:
+	if node == skip:
+		return
+	if node.get_meta("harvestable_plant",false):
+		if node is MultiMeshInstance3D:
+			for index in range(node.multimesh.instance_count):
+				_register_plant(node,node.multimesh.get_instance_transform(index),index)
+		elif node is MeshInstance3D:
+			_register_plant(node,node.transform,-1)
+	for child: Node in node.get_children():
+		_register_plants(child,skip)
+
+func _register_plant(visual: GeometryInstance3D, pose: Transform3D, index: int) -> void:
+	var batched: bool = index>=0
+	var mesh: Mesh = visual.multimesh.mesh if batched else visual.mesh
+	var world: Transform3D = visual.global_transform*pose if batched else visual.global_transform
+	var bounds: AABB = mesh.get_aabb()
+	var probes := PackedVector3Array()
+	# Probe the visible leaves as well as the stem, including tall or tilted grass.
+	for height: float in [.25,.55,.85]:
+		probes.append(world*Vector3(bounds.get_center().x,bounds.position.y+bounds.size.y*height,bounds.get_center().z))
+	var plant := {"visual":visual,"index":index,"pose":pose,"position":probes[1],"probes":probes,"active":true}
+	if batched:
+		plant["batch"] = visual.multimesh
+	harvests.append(plant)
+
+func _set_plant_pose(plant: Dictionary, pose: Transform3D) -> void:
+	if plant.index>=0:
+		plant.batch.set_instance_transform(plant.index,pose)
+	else:
+		plant.visual.transform = pose
+
+func reset_harvests() -> void:
+	for plant: Dictionary in harvests:
+		plant.active = true
+		_set_plant_pose(plant,plant.pose)
+
+func cut(plant: Dictionary) -> bool:
+	if not harvests.has(plant) or not plant.active:
+		return false
+	plant.active = false
+	var stump: Transform3D = plant.pose
+	stump.basis *= Basis.from_scale(Vector3(1,.14,1))
+	_set_plant_pose(plant,stump)
+	return true
+
+func target(game: Node) -> Dictionary:
+	var origin: Vector3 = game.camera.project_ray_origin(game.get_viewport().get_visible_rect().size*.5)
+	var direction: Vector3 = game.camera.project_ray_normal(game.get_viewport().get_visible_rect().size*.5)
+	var best: Dictionary = {}
+	var best_score := INF
+	var forward := Vector3(-sin(game.yaw),0,-cos(game.yaw))
+	for plant: Dictionary in harvests:
+		if not plant.active or game.player.position.distance_squared_to(plant.position)>64.0:
+			continue
+		for point: Vector3 in plant.probes:
+			var reach: Vector3 = point-game.player.position
+			var distance: float = reach.length()
+			if distance>3.0:
+				continue
+			var horizontal := Vector3(reach.x,0,reach.z)
+			if horizontal.length()>.8 and horizontal.normalized().dot(forward)<-.15:
+				continue
+			var offset: Vector3 = point-origin
+			var along: float = offset.dot(direction)
+			var score: float = distance+(offset-direction*along).length()*.2
+			if along<=0 or score>=best_score:
+				continue
+			var ray := PhysicsRayQueryParameters3D.create(game.player.position,point,1,[game.player.get_rid()])
+			if not game.get_world_3d().direct_space_state.intersect_ray(ray).is_empty():
+				continue
+			var sight := PhysicsRayQueryParameters3D.create(origin,point,1,[game.player.get_rid()])
+			if not game.get_world_3d().direct_space_state.intersect_ray(sight).is_empty():
+				continue
+			best = plant
+			best_score = score
+	return best
 
 func animate(time: float, viewer: Vector3) -> void:
 	visible = Vector2(viewer.x-global_position.x,viewer.z-global_position.z).length()<160.0

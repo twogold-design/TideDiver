@@ -450,7 +450,7 @@ func _draw_hud() -> void:
 	_draw_depth_gauge()
 	region(BOTTOM_CENTER)
 	_panel(Rect2(290,768,1035,43),Color(0.025,0.12,0.16,0.85))
-	_text(Vector2(308,794),"WASD 游泳   Q / E 潜浮   Shift 冲刺   Ctrl 慢游   左键 / 空格 鱼叉 · 20m   F 互动   Esc 暂停",15,MUTED)
+	_text(Vector2(308,794),"WASD 游泳  Q/E 潜浮  Shift 冲刺  Ctrl 慢游  左键/空格 鱼叉  右键 小刀  F 互动  Esc 暂停",15,MUTED)
 	region(BOTTOM_LEFT)
 	_text(Vector2(42,882),"M  音效开关   ·   F1  GM 自选潜点",12,MUTED)
 	region(BOTTOM_RIGHT)

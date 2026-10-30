@@ -54,8 +54,8 @@ func _run() -> void:
 	await _test_swimming()
 	await _test_pause_and_entry()
 	var garden: Node = game.ocean_root.get_node_or_null("OuterOcean/amber_reef/CoralGarden")
-	_check(game.fish.size() == 151 and game.fish_population_count() == 151 and Ocean.DIVE_SITES.size() == 6, "Canyon updates retain all six departure sites and the sparse ordinary fish population")
-	_check(game.storm_school != null and int(game.storm_school.get_meta("fish_count", 0)) == 420 and garden != null and int(garden.get_meta("patch_count", 0)) == 150, "The actual ocean still contains the fish storm and the full coral garden")
+	_check(game.fish.size() == 171 and game.fish_population_count() == 171 and Ocean.DIVE_SITES.size() == 6, "Canyon updates retain all six departure sites and the sparse ordinary fish population")
+	_check(game.storm_school != null and int(game.storm_school.get_meta("fish_count", 0)) == 420 and garden != null and int(garden.get_meta("patch_count", 0)) == 540, "The actual ocean still contains the fish storm and the expanded coral garden")
 	_check(memory._save_data() == progress_before and memory.saves == 0, "Current, movement, pause and entry tests do not mutate or save player progress")
 	_release_actions()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE

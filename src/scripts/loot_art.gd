@@ -1,6 +1,6 @@
 extends RefCounted
 ## Small shared meshes for seabed finds and a genuinely hinged, hollow chest.
-const KINDS := ["sea_glass","ancient_coin","amber_shard","conch"]
+const KINDS := ["sea_glass","ancient_coin","amber_shard","conch","captain_astrolabe","seagrass"]
 static var _meshes: Dictionary = {}
 static var _materials: Dictionary = {}
 
@@ -24,6 +24,9 @@ static func build(kind: String) -> Node3D:
 		root.set_meta("open",false)
 	else:
 		_visual(root,"Relic",_mesh(kind),kind)
+		if kind == "captain_astrolabe":
+			_visual(root,"StarCrystal",_mesh("StarCrystal"),"star_glow")
+			root.set_meta("special_treasure",true)
 	root.set_meta("decorative_collision",false)
 	return root
 
@@ -60,6 +63,13 @@ static func _material(kind: String) -> StandardMaterial3D:
 			result.roughness = 0.5
 		elif kind == "amber_shard":
 			result.roughness = 0.3
+		elif kind == "captain_astrolabe":
+			result.metallic = 0.72
+			result.roughness = 0.32
+		elif kind == "star_glow":
+			result.emission_enabled = true
+			result.emission = Color("8bdfdf")
+			result.emission_energy_multiplier = 0.7
 		_materials[kind] = result
 	return _materials[kind]
 
@@ -82,6 +92,20 @@ static func _mesh(kind: String) -> ArrayMesh:
 			_tube(surface,Vector3(-0.10,0.23,-0.22),Vector3(0.08,0.45,-0.19),0.012,Color("826331"))
 			_tube(surface,Vector3(0.02,0.37,-0.21),Vector3(0.12,0.36,-0.20),0.010,Color("826331"))
 		"conch": _conch(surface)
+		"captain_astrolabe": _astrolabe(surface)
+		"StarCrystal":
+			_gem(surface,Vector3(0,.64,0),Vector3(.30,.43,.30),Color("a5e4dc"),0.0)
+		"seagrass":
+			for strand in range(8):
+				var x: float = (float(strand)-3.5)*.065
+				for segment in range(5):
+					var a: float = float(segment)*.18
+					var b: float = a+.18
+					var start := Vector3(x+sin(a*4+strand)*.08,a,.04*strand)
+					var finish := Vector3(x+sin(b*4+strand)*.08,b,.04*strand)
+					_triangle(surface,start-Vector3.RIGHT*.04,finish-Vector3.RIGHT*.025,start+Vector3.RIGHT*.04,Color("739866"))
+					_triangle(surface,start+Vector3.RIGHT*.04,finish-Vector3.RIGHT*.025,finish+Vector3.RIGHT*.025,Color("9dbb7b"))
+			_tube(surface,Vector3(-.3,.32,.13),Vector3(.3,.32,.13),.035,Color("c5b48a"))
 		"ChestBase": _chest_base(surface)
 		"ChestLid": _chest_lid(surface)
 		"ChestContents":
@@ -92,6 +116,28 @@ static func _mesh(kind: String) -> ArrayMesh:
 	var result: ArrayMesh = surface.commit()
 	_meshes[kind] = result
 	return result
+
+static func _astrolabe(surface: SurfaceTool) -> void:
+	# A brass navigation instrument with concentric engraved rings and a compass rose.
+	_coin(surface,Vector3(0,.10,0),.65)
+	for ring in range(3):
+		var radius: float = .36+float(ring)*.13
+		for side in range(48):
+			var a: float = float(side)*TAU/48.0
+			var b: float = float(side+1)*TAU/48.0
+			_tube(surface,Vector3(cos(a)*radius,.25,sin(a)*radius),Vector3(cos(b)*radius,.25,sin(b)*radius),.025,Color("dbc285"))
+	for spoke in range(8):
+		var angle: float = float(spoke)*TAU/8.0
+		var length: float = .48 if spoke%2 == 0 else .30
+		var forward := Vector3(cos(angle),0,sin(angle))
+		var side := Vector3(-sin(angle),0,cos(angle))*.09
+		var center := Vector3(0,.28,0)
+		_triangle(surface,center-side,center+forward*length,center+side,Color("e8d19a") if spoke%2 == 0 else Color("79a8a1"))
+	for side in range(40):
+		var a: float = float(side)*TAU/40.0
+		var b: float = float(side+1)*TAU/40.0
+		_tube(surface,Vector3(cos(a)*.65,.73+sin(a)*.65,0),Vector3(cos(b)*.65,.73+sin(b)*.65,0),.035,Color("bfa46a"))
+	_tube(surface,Vector3(0,.2,0),Vector3(0,.48,0),.06,Color("cfb579"))
 
 static func _gem(surface: SurfaceTool, center: Vector3, size: Vector3, tint: Color, phase: float) -> void:
 	for side in range(7):

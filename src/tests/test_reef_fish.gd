@@ -38,6 +38,14 @@ func _run() -> void:
 	var clown_pairs := {}
 	var safe := true
 	var corals: Node3D = game.ocean_root.get_node("OuterOcean/amber_reef/CoralGarden")
+	# Colony transforms are static; read them once rather than synchronizing the
+	# rendering thread for every resident at every animation sample.
+	var coral_bounds: Array[AABB] = []
+	for colony: MultiMeshInstance3D in corals.get_children():
+		var mesh_bounds: AABB = colony.multimesh.mesh.get_aabb()
+		for i in range(colony.multimesh.instance_count):
+			var coral_pose: Transform3D = colony.global_transform*colony.multimesh.get_instance_transform(i)
+			coral_bounds.append((coral_pose*mesh_bounds).grow(.25))
 	var visible_motion := false
 	var snapshot: Array = []
 	for time: float in [0.0,5.0,23.0,100.0]:
@@ -54,11 +62,8 @@ func _run() -> void:
 				if time == 0:
 					clown_pairs[fish.host] = int(clown_pairs.get(fish.host,0))+1
 			# Coral is visual geometry, so use its actual transformed mesh bounds.
-			for colony: MultiMeshInstance3D in corals.get_children():
-				for i in range(colony.multimesh.instance_count):
-					var coral_pose: Transform3D = colony.global_transform*colony.multimesh.get_instance_transform(i)
-					var coral_bounds: AABB = coral_pose*colony.multimesh.mesh.get_aabb()
-					safe = safe and not coral_bounds.grow(.25).has_point(point)
+			for bounds: AABB in coral_bounds:
+				safe = safe and not bounds.has_point(point)
 		if snapshot.is_empty():
 			snapshot = poses
 		else:

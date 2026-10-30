@@ -118,6 +118,7 @@ static func _weed(parent: Node3D, pos: Vector3, size: float, color: Color) -> vo
 	if parent.to_global(pos).y+size > -0.5:
 		return
 	var plant: MeshInstance3D = _mesh(parent, ReefLife.mesh("Seagrass"), pos, _life_material(color))
+	plant.set_meta("harvestable_plant",true)
 	plant.scale = Vector3(size*0.45,size/1.5,size*0.45)
 
 static func _reef(parent: Node3D, pos: Vector3, size: float, seed_value: int) -> void:
