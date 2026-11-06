@@ -199,6 +199,12 @@ func _disable_fish() -> void:
 func _fixture(kind: int, position: Vector3) -> Dictionary:
 	for item in game.fish:
 		if item.kind == kind and not item.alive:
+			# This fixture tests the generic open-water brain. Natural den encounters
+			# (including head-only capture and wall-blocked bites) have their own suite.
+			if item.has("den"):
+				item.erase("den")
+				item.node.remove_meta("harpoon_radii")
+				item.node.remove_meta("harpoon_center")
 			item.alive = true
 			item.node.visible = true
 			item.node.position = position

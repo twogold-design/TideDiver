@@ -17,6 +17,7 @@ var entry_lens: ColorRect
 const SandRays = preload("res://scripts/ray_habitat.gd")
 const CanyonShark = preload("res://scripts/thresher_shark.gd")
 const StonefishHabitat = preload("res://scripts/stonefish_habitat.gd")
+const MorayHabitat = preload("res://scripts/moray_habitat.gd")
 const DepthLighting = preload("res://scripts/depth_lighting.gd")
 const Loot = preload("res://scripts/loot_catalog.gd")
 const DiverBubbles = preload("res://scripts/diver_bubbles.gd")
@@ -49,6 +50,7 @@ var ray_habitat: Node3D
 var explorable_wreck: Node3D
 var canyon_shark: Node3D
 var stonefish_count: int = 0
+var crevice_habitat: Node3D
 var _camera_probe: SphereShape3D
 var boat: Node3D
 var dive_origin: Vector3 = Vector3.ZERO
@@ -113,6 +115,7 @@ var capture_clock: float = 0.0
 var capture_name: String = "gameplay"
 var smoke_mode: bool = false
 var sound_player: AudioStreamPlayer
+var splash_player: AudioStreamPlayer
 var muted: bool = false
 var restaurant_node: Node3D
 var ocean_root: Node3D
@@ -486,6 +489,9 @@ func _spawn_population() -> void:
 		ocean_root.add_child(node)
 		hazards.append({"node":node,"home":pos,"phase":rng.randf_range(0,TAU)})
 	stonefish_count = StonefishHabitat.populate(self)
+	if not is_instance_valid(crevice_habitat):
+		crevice_habitat = MorayHabitat.create(self)
+	crevice_habitat.populate(self)
 func fish_population_count() -> int:
 	return COASTAL_FISH_COUNT+OUTER_FISH_PER_ZONE*Ocean.ZONES.size()+TRANSIT_SCHOOLS*TRANSIT_FISH_PER_SCHOOL+ENTRY_SCHOOL_KINDS.size()*ENTRY_FISH_PER_SCHOOL+Ocean.atoll_fish_spawns().size()
 
@@ -785,6 +791,7 @@ func start_dive(animate_entry: bool = true, random_entry: bool = true, site_over
 		return
 	if site_override < -1 or site_override >= Ocean.DIVE_SITES.size():
 		return
+	splash_player.stop()
 	harvest_result_visible = false
 	gm_test_active = false
 	diver_bubbles.reset()
@@ -867,6 +874,7 @@ func _consume_air(amount: float) -> void:
 func gm_select_dive_site(index: int, direct: bool = false) -> void:
 	if not gm_menu_open or index < 0 or index >= Ocean.DIVE_SITES.size():
 		return
+	splash_player.stop()
 	var from_dock: bool = gm_return_state == "dock"
 	gm_menu_open = false
 	if from_dock:
@@ -1087,6 +1095,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		diver_knife.swing(self)
 
 func _physics_process(delta: float) -> void:
+	_sync_entry_audio()
 	entry_lens.update_view(entry_time,camera.position.y,state == "dive" and entry_active)
 	if state == "rescuing":
 		_update_rescue(delta)
@@ -1181,8 +1190,21 @@ func _update_entry(delta: float) -> void:
 func _play_splash() -> void:
 	if muted:
 		return
-	sound_player.stream = preload("res://assets/audio/dive_splash.wav")
-	sound_player.play()
+	# Its underwater tail must continue when a fish hook or damage cue plays.
+	if splash_player.stream_paused:
+		splash_player.stream_paused = false
+	splash_player.play()
+
+func _sync_entry_audio() -> void:
+	if not is_instance_valid(splash_player):
+		return
+	if muted or state not in ["dive","paused"]:
+		splash_player.stop()
+	var should_pause: bool = state == "paused"
+	# Web sample playback restarts its AudioBufferSource when unpaused, even if
+	# it was already playing. Reapplying false every frame loops the silent lead-in.
+	if splash_player.stream_paused != should_pause:
+		splash_player.stream_paused = should_pause
 
 func _capture_feedback(kind: int, location: Vector3) -> void:
 	_clear_loot_feedback()
@@ -1396,6 +1418,8 @@ func _animate_ocean(_delta: float) -> void:
 	canyon_root.animate(clock,player.position)
 	marine_life.animate(clock,player.position)
 	reef_fish.animate(clock,player.position)
+	if is_instance_valid(crevice_habitat):
+		crevice_habitat.animate(clock,player.position)
 	reef_plants.animate(clock,player.position)
 	CoralGarden.animate(clock)
 	ReefPlants.animate_shared(clock)
@@ -1421,7 +1445,10 @@ func _animate_ocean(_delta: float) -> void:
 		item.node.position = item.home + Vector3(sin(clock*0.3+item.phase)*1.5,sin(clock*0.7+item.phase)*1.0,0)
 
 func _update_fish(item: Dictionary, delta: float) -> void:
-	FishBrain.advance(self,item,delta)
+	if item.has("den"):
+		MorayHabitat.advance(self,item,delta)
+	else:
+		FishBrain.advance(self,item,delta)
 
 func take_hunt_damage(amount: float, poison: bool, source: String) -> void:
 	if state != "dive" or entry_active or hurt_cooldown > 0:
@@ -1434,6 +1461,8 @@ func take_hunt_damage(amount: float, poison: bool, source: String) -> void:
 	hunt_warning = "%s · 气瓶量 -%d%s" % [source,int(amount),"，中毒6秒，保持距离" if poison else "，侧游避开下一次冲刺"]
 	if source == "石头鱼":
 		hunt_warning = "石头鱼毒棘刺伤 · 气瓶量 -%d · 中毒6秒，请远离岩石边缘" % int(amount)
+	elif source == "岩洞海鳗":
+		hunt_warning = "海鳗咬击 · 气瓶量 -%d · 退离洞口，保持距离用鱼叉捕获" % int(amount)
 	if gm_infinite_air:
 		hunt_warning = "%s · GM 无限气瓶量已免除耗气%s" % [source," · 中毒6秒" if poison else ""]
 	hunt_warning_timer = 3.0
@@ -1743,7 +1772,9 @@ func context_hint() -> String:
 		if int(data.weight) > remaining:
 			return "%s · 空间不足：需 %d kg，剩余 %d kg" % [data.name,data.weight,remaining]
 		return "%s · 耐久 %d/%d · %d kg | %s" % [data.name,target.hp,data.hp,data.weight,data.hint]
-	var observed: String = marine_life.nearby_species(player.position)
+	var observed: String = crevice_habitat.observation(self) if is_instance_valid(crevice_habitat) else ""
+	if observed.is_empty():
+		observed = marine_life.nearby_species(player.position)
 	if observed.is_empty():
 		observed = reef_fish.nearby_species(player.position,player.get_rid())
 	if not observed.is_empty():
@@ -1759,6 +1790,11 @@ func _setup_sound() -> void:
 	sound_player = AudioStreamPlayer.new()
 	sound_player.volume_db = -18
 	add_child(sound_player)
+	splash_player = AudioStreamPlayer.new()
+	splash_player.name = "EntrySplashAudio"
+	splash_player.stream = preload("res://assets/audio/dive_splash.wav")
+	splash_player.volume_db = -18
+	add_child(splash_player)
 
 func _play_tone(freq: float, duration: float) -> void:
 	if muted or not is_instance_valid(sound_player):

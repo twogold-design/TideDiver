@@ -315,8 +315,18 @@ func _test_water_entry() -> void:
 	_check(game.entry_active and game.player.position.y > 0.6, "Dive begins standing on the boat above water")
 	game.muted = false
 	game._play_splash()
-	_check(is_equal_approx(game.sound_player.stream.get_length(), 1.2), "Entry plays a full splash and bubble tail")
+	_check(absf(game.splash_player.stream.get_length()-4.2809598214) < 0.001 and game.splash_player.stream.stereo and game.splash_player.stream.mix_rate == 44800, "Entry plays the supplied full stereo splash and underwater tail at its original sample rate")
+	game._play_tone(270,0.08)
+	_check(game.splash_player.playing and game.splash_player.stream != game.sound_player.stream, "Fish-hook and feedback tones do not cut off the entry sound")
+	game.toggle_pause()
+	game._sync_entry_audio()
+	_check(game.splash_player.stream_paused, "Pausing freezes the entry audio with the dive")
+	game.toggle_pause()
+	game._sync_entry_audio()
+	_check(not game.splash_player.stream_paused and game.splash_player.playing, "Resuming continues the existing entry audio")
 	game.muted = true
+	game._sync_entry_audio()
+	_check(not game.splash_player.playing, "Muting stops the active splash tail")
 	var air_before: float = game.oxygen
 	game.shoot()
 	game.interact()

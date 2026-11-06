@@ -81,10 +81,10 @@ func _test_fixed_fixture() -> void:
 		if item.kind == 9:
 			coastal_stonefish += 1
 			stonefish_grounded = stonefish_grounded and item.state == "camouflaged" and absf(item.home.y - Ocean.seabed_height(item.home.x, item.home.z) - 0.035) < 0.015
-	var complete: bool = coastal_kinds.size() == 9 and coastal_stonefish == 2 and stonefish_grounded
-	for kind in [0, 1, 2, 3, 4, 6, 10, 12]:
+	var complete: bool = coastal_kinds.size() == 10 and coastal_stonefish == 2 and stonefish_grounded
+	for kind in [0, 1, 2, 3, 4, 6, 7, 10, 12]:
 		complete = complete and coastal_kinds.has(kind)
-	_check(complete, "The coast retains six original plus two new swimming species and adds exactly two grounded, camouflaged stonefish")
+	_check(complete, "The coast retains eight swimming species and two grounded stonefish, with one catchable rock-den moray")
 
 func _test_blocked_fish_fallback() -> void:
 	var candidate := Vector3(200, -8, 200)

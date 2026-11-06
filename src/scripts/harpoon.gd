@@ -80,7 +80,7 @@ static func step(game: Node, shot: Dictionary, delta: float) -> bool:
 		var inverse: Basis = item.node.global_basis.inverse()
 		var default_center := Vector3(0,0,0.65) if int(item.kind) == 7 else Vector3.ZERO
 		var center: Vector3 = item.node.get_meta("harpoon_center",default_center)
-		var size: Vector3 = BODIES[item.kind]+Vector3.ONE*0.035
+		var size: Vector3 = item.node.get_meta("harpoon_radii",BODIES[item.kind])+Vector3.ONE*0.035
 		var previous: Vector3 = item.get("previous_position",item.node.position)
 		var a: Vector3 = (inverse*(start-previous)-center)/size
 		var b: Vector3 = (inverse*(end-item.node.position)-center)/size

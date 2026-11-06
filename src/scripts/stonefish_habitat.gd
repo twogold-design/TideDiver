@@ -13,6 +13,9 @@ static func populate(game: Node) -> int:
 		game.set_meta("stonefish_candidates",_build_candidates(game))
 	var sites: Array = game.get_meta("stonefish_candidates")
 	var placed := 0
+	var clearance := CylinderShape3D.new()
+	clearance.radius = 1.05
+	clearance.height = 0.54
 	for site in range(Ocean.DIVE_SITES.size()):
 		var candidates: Array = sites[site]
 		if candidates.is_empty():
@@ -23,6 +26,9 @@ static func populate(game: Node) -> int:
 		for index in range(candidates.size()):
 			var candidate: Dictionary = candidates[(start+index)%candidates.size()]
 			var point: Vector3 = candidate.position
+			# Dens built after the first population can occupy cached rock-edge homes.
+			if not _safe_home(game,point,clearance):
+				continue
 			if not selected.is_empty() and point.distance_to(selected[0]) < 7.0:
 				continue
 			var slot: int = [17,20][selected.size()] if site == 0 else game.COASTAL_FISH_COUNT+(site-1)*game.OUTER_FISH_PER_ZONE+[12,15][selected.size()]
