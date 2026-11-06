@@ -76,7 +76,7 @@ func _run() -> void:
 		_check(fish.alive and fish.hp == game.FishData.SPECIES[fish.kind].hp,"New dive resets fish health and catch state")
 	var first: int = game.effects.size()
 	game._spawn_entry_water()
-	_check(game.effects.size()-first == 42,"All splash droplets remain present")
+	_check(game.effects.size()-first == 44,"Splash droplets, trailing bubbles and two surface ripples remain present")
 	_check(game.effects[first].node.mesh == game.effects[first+4].node.mesh,"Droplets reuse geometry")
 	_check(game.effects[first].node != game.effects[first+4].node,"Droplet motion remains independent")
 	_check(is_equal_approx(preload("res://assets/audio/dive_splash.wav").get_length(),1.2),"Original splash duration is preserved")

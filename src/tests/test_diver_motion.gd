@@ -1,6 +1,7 @@
 extends SceneTree
 ## Actual local controls, joint poses and movement measured in physics frames.
 const Ocean = preload("res://scripts/ocean_config.gd")
+const DiverArt = preload("res://scripts/diver_art.gd")
 const CALM := Vector3(400, -20, 400)
 const ACTIONS = ["swim_left", "swim_right", "swim_forward", "swim_back", "ascend", "descend", "boost", "stealth"]
 const JOINT_PATHS = {"leg_left":"LegLeft", "leg_right":"LegRight", "knee_left":"LegLeft/KneeLeft", "knee_right":"LegRight/KneeRight", "arm_left":"ArmLeft", "arm_right":"ArmRight"}
@@ -163,8 +164,10 @@ func _test_lifecycle_resets() -> void:
 	game.start_dive(true, false)
 	_check(_is_reset() and game.entry_active, "Beginning boat entry clears the previous swimming pose and stroke phase")
 	await _advance_frames(12)
-	_check(_is_reset() and game.entry_active, "The boat-entry animation does not advance old directional joint motion")
+	_check(game.diver_motion.motion_input.is_zero_approx() and game.diver_motion.phase==0.0 and game.entry_active and joints.knee_left.rotation.x<-.05 and _joint_transforms(rig)!=neutral_pose, "Boat entry bends real knees while keeping stale directional input and swimming phase reset")
 	game._update_entry(3.2)
+	_check(_is_reset() and not game.entry_active, "The entry joints return smoothly to the neutral swimming pose before control resumes")
+	_test_entry_joint_continuity()
 	await _sample(["swim_left"])
 	game.open_gm_menu()
 	game.gm_select_dive_site(game.Ocean.site_index("amber_reef"), true)
@@ -173,6 +176,26 @@ func _test_lifecycle_resets() -> void:
 	game.state = "dock"
 	game.start_dive(false, false)
 	_check(_is_reset() and game.player.position == Vector3(0, -6, 14), "A fresh dive begins at its original spawn with no stale directional pose")
+
+func _test_entry_joint_continuity() -> void:
+	var rig_pose: Transform3D = rig.transform
+	var positions: Dictionary = {}
+	var previous: Dictionary = {}
+	for label: String in joints:
+		positions[label] = joints[label].position
+		previous[label] = joints[label].rotation
+	var continuous := true
+	var local_only := true
+	for frame in range(385):
+		DiverArt.animate_entry(rig,float(frame)/120.0)
+		local_only = local_only and rig.transform==rig_pose
+		for label: String in joints:
+			var rotation: Vector3 = joints[label].rotation
+			continuous = continuous and rotation.is_finite() and rotation.length()<1.1 and rotation.distance_to(previous[label])<.12
+			local_only = local_only and joints[label].position==positions[label]
+			previous[label] = rotation
+	_check(continuous, "All entry transitions remain continuous at 120 Hz without abrupt joint jumps or extreme angles")
+	_check(local_only and _is_reset(), "Entry articulation changes only local joint rotation and ends exactly at the reset pose")
 
 func _sample(actions: Array, frames: int = 30, start: Vector3 = CALM, heading: float = 0) -> Dictionary:
 	_release_actions()

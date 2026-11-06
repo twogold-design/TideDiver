@@ -139,7 +139,7 @@ func _sample_departures(seed_value: int, count: int) -> Array[Vector3]:
 	return sequence
 
 func _test_spawn_population(origin: Vector3, context: String) -> void:
-	_check(game.fish.size() == 171 and game.fish.size() == game.fish_population_count(), "Random destination retains exactly 171 ordinary catchable fish: " + context)
+	_check(game.fish.size() == 183 and game.fish.size() == game.fish_population_count(), "Random destination retains 171 original fish plus twelve atoll residents: " + context)
 	var landing: Vector3 = origin + Vector3(0, -6, 25)
 	var immediate_spawn: Vector3 = origin + Vector3(0, -6, 14)
 	var safe: bool = true
@@ -156,7 +156,7 @@ func _test_spawn_population(origin: Vector3, context: String) -> void:
 	_check(safe, "Original dangerous fish stay thirty metres away while stonefish and jellyfish leave twenty metres of entry space: " + context)
 	_check(nearby_count <= 14, "All population sources together keep at most fourteen fish within thirty metres of the landing: " + context)
 	var entry_start: int = game.COASTAL_FISH_COUNT + game.OUTER_FISH_PER_ZONE * Ocean.ZONES.size() + game.TRANSIT_SCHOOLS * game.TRANSIT_FISH_PER_SCHOOL
-	var entry_fish: Array = game.fish.slice(entry_start)
+	var entry_fish: Array = game.fish.slice(entry_start,entry_start+10)
 	_check(entry_fish.size() == 10 and entry_fish.size() == game.ENTRY_SCHOOL_KINDS.size() * game.ENTRY_FISH_PER_SCHOOL, "Entry adds exactly ten ordinary fish beyond the coastal, outer and transit populations: " + context)
 	var added_kinds: Dictionary = {}
 	var visible_kinds: Dictionary = {}
@@ -190,7 +190,8 @@ func _test_entry_at(origin: Vector3, context: String) -> void:
 	var clear_path: bool = _sphere_clear(game.player.position, 0.65)
 	game._physics_process(0.8)
 	clear_path = clear_path and _sphere_clear(game.player.position, 0.65)
-	_check(game.entry_active and game.player.position.z > origin.z + 17.5 and game.camera.position.is_equal_approx(game.player.position + Vector3(7, 3.2, 7)), "Jump and above-water follow camera use the chosen site's offset: " + context)
+	var camera_offset: Vector3 = game.camera.position-game.player.position
+	_check(game.entry_active and game.player.position.z > origin.z + 17.5 and game.camera.position.is_finite() and game.camera.position.y>0.65 and camera_offset.z<0 and camera_offset.length()>3.0 and camera_offset.length()<10.0 and _sphere_clear(game.camera.position,.28), "Jump camera stays above water, clear of geometry and reasonably close behind the diver at the selected site: " + context)
 	game._physics_process(0.75)
 	clear_path = clear_path and _sphere_clear(game.player.position, 0.65)
 	game._physics_process(1.65)

@@ -11,6 +11,9 @@ const FishData = preload("res://scripts/fish_catalog.gd")
 const FishBrain = preload("res://scripts/fish_brain.gd")
 const StormSchool = preload("res://scripts/storm_school.gd")
 const DiverMotion = preload("res://scripts/diver_motion.gd")
+const DiverArt = preload("res://scripts/diver_art.gd")
+const DiveEntry = preload("res://scripts/dive_entry.gd")
+var entry_lens: ColorRect
 const SandRays = preload("res://scripts/ray_habitat.gd")
 const CanyonShark = preload("res://scripts/thresher_shark.gd")
 const StonefishHabitat = preload("res://scripts/stonefish_habitat.gd")
@@ -150,6 +153,7 @@ var layout_camera_yaw: float = LAYOUT_DEFAULT_YAW
 var layout_camera_pitch: float = LAYOUT_DEFAULT_PITCH
 var _entry_water_meshes: Array[SphereMesh] = []
 var _entry_water_material: StandardMaterial3D
+var _entry_bubble_material: ShaderMaterial
 const LAYOUT_AREA = Rect2(332,96,1100,708)
 
 func _ready() -> void:
@@ -172,6 +176,8 @@ func _ready() -> void:
 	restaurant_node.visible = false
 	var layer = CanvasLayer.new()
 	add_child(layer)
+	entry_lens = preload("res://scripts/entry_lens.gd").new()
+	layer.add_child(entry_lens)
 	hud = Hud.new()
 	hud.game = self
 	layer.add_child(hud)
@@ -354,6 +360,7 @@ func _setup_world() -> void:
 	ocean_root = Node3D.new()
 	add_child(ocean_root)
 	Art.build_world(ocean_root)
+	preload("res://scripts/atoll_encounters.gd").build(ocean_root)
 	reef_plants = ReefPlants.build(ocean_root)
 	canyon_root = ocean_root.get_node("OuterOcean/twin_gates/TidalCanyon")
 	explorable_wreck = ocean_root.get_node("OuterOcean/merchant_wreck/ExplorableWreck")
@@ -458,9 +465,15 @@ func _spawn_population() -> void:
 			_add_fish(kind,center+Vector3(sin(float(i)*2.399)*16,float(i%3)*3,cos(float(i)*2.399)*14))
 	_spread_background_fish()
 	_spawn_entry_fish()
+	for spec: Dictionary in Ocean.atoll_fish_spawns():
+		var resident: Dictionary = _add_fish(spec.kind,spec.position)
+		if not resident.is_empty():
+			resident["atoll_activity"] = true
 	for point in Ocean.pickup_points():
 		var pickup_position: Vector3 = explorable_wreck.to_global(point.wreck_local) if point.has("wreck_local") else point.position
 		_add_pickup(pickup_position,point.kind)
+		if point.get("atoll_activity",false):
+			pickups[-1]["atoll_activity"] = true
 		if point.get("exploration",false):
 			pickups[-1]["exploration_site"] = point.site_index
 			pickups[-1]["location_name"] = point.name
@@ -474,7 +487,7 @@ func _spawn_population() -> void:
 		hazards.append({"node":node,"home":pos,"phase":rng.randf_range(0,TAU)})
 	stonefish_count = StonefishHabitat.populate(self)
 func fish_population_count() -> int:
-	return COASTAL_FISH_COUNT+OUTER_FISH_PER_ZONE*Ocean.ZONES.size()+TRANSIT_SCHOOLS*TRANSIT_FISH_PER_SCHOOL+ENTRY_SCHOOL_KINDS.size()*ENTRY_FISH_PER_SCHOOL
+	return COASTAL_FISH_COUNT+OUTER_FISH_PER_ZONE*Ocean.ZONES.size()+TRANSIT_SCHOOLS*TRANSIT_FISH_PER_SCHOOL+ENTRY_SCHOOL_KINDS.size()*ENTRY_FISH_PER_SCHOOL+Ocean.atoll_fish_spawns().size()
 
 func _add_fish(kind: int, point: Vector3) -> Dictionary:
 	var p := point
@@ -824,6 +837,7 @@ func open_gm_menu() -> void:
 	if gm_menu_open or new_game_confirmation or rescue_result_visible or layout_mode or state not in ["dock","dive","paused"]:
 		return
 	gm_return_state = state
+	entry_lens.visible = false
 	gm_menu_open = true
 	if state == "dive":
 		state = "paused"
@@ -942,6 +956,7 @@ func _gm_test_pose(index: int) -> Dictionary:
 func finish_dive(rescued: bool = false) -> void:
 	if state != "dive":
 		return
+	entry_lens.visible = false
 	_clear_loot_feedback()
 	diver_bubbles.reset()
 	var depleted: bool = rescued and oxygen <= 0.0
@@ -1004,6 +1019,7 @@ func toggle_pause() -> void:
 		state = "service"
 	elif state == "dive":
 		state = "paused"
+		entry_lens.visible = false
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	elif state == "paused":
 		state = "dive"
@@ -1071,6 +1087,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		diver_knife.swing(self)
 
 func _physics_process(delta: float) -> void:
+	entry_lens.update_view(entry_time,camera.position.y,state == "dive" and entry_active)
 	if state == "rescuing":
 		_update_rescue(delta)
 		hud.queue_redraw()
@@ -1132,34 +1149,31 @@ func _update_entry(delta: float) -> void:
 	var t: float = entry_time
 	yaw = PI
 	pitch = -0.12
-	if t < 0.45:
-		player.position = dive_origin + Vector3(0, 2.4 - sin(t / 0.45 * PI) * 0.25, 17.5)
-		player.rotation = Vector3(PI / 2, PI, 0)
-	elif t < 1.55:
-		var u: float = (t - 0.45) / 1.1
-		player.position = dive_origin + Vector3(0, 2.4 + 2.0 * u - 4.8 * u * u, 17.5 + 5.0 * u)
-		player.rotation = Vector3(lerpf(PI / 2, -0.65, smoothstep(0.0, 1.0, u)), PI, 0)
-	else:
-		var u: float = smoothstep(0.0, 1.0, (t - 1.55) / 1.65)
-		player.position = dive_origin + Vector3(0, lerpf(-0.4, -6.0, u), lerpf(22.5, 25.0, u))
-		player.rotation = Vector3(lerpf(-0.65, 0, u), PI, 0)
+	player.position = dive_origin + DiveEntry.position_at(t)
+	player.rotation = Vector3(DiveEntry.pitch_at(t), PI, 0)
+	DiverArt.animate_entry(player.get_child(0),t,DiveEntry.IMPACT_TIME,ENTRY_DURATION)
 	if not entry_splashed and player.position.y <= 0.65:
 		entry_splashed = true
 		_spawn_entry_water()
 		_play_splash()
-	var follow: float = smoothstep(1.4, ENTRY_DURATION, t)
+	var follow: float = smoothstep(.55,2.9,t)
 	var forward := Vector3(0, sin(pitch), cos(pitch))
-	var swim_camera: Vector3 = player.position - forward * 7.5 + Vector3.UP * 1.7
-	camera.position = (player.position + Vector3(7, 3.2, 7)).lerp(swim_camera, follow)
+	camera.position = player.position + DiveEntry.camera_offset(t)
 	camera.look_at((player.position + Vector3.UP * 0.3).lerp(player.position + forward * 3 + Vector3.UP * 0.6, follow))
-	camera.fov = 66 + sin(follow * PI) * 6
+	# One small, damped impact response; no orbit around the diver or abrupt cut.
+	var impact_age: float = maxf(0,t-DiveEntry.IMPACT_TIME)
+	var impact: float = sin(impact_age*13)*exp(-impact_age*5) if t>DiveEntry.IMPACT_TIME else 0.0
+	camera.rotate_object_local(Vector3.FORWARD,impact*.012*(1.0-smoothstep(2.5,3.2,t)))
+	camera.fov = 66 + 4*sin(follow*PI)
 	var submerged: float = 1.0 - smoothstep(-1.2, 0.7, camera.position.y)
 	var light_profile: Dictionary = _apply_underwater_lighting(maxf(0.0,-camera.position.y),submerged)
 	environment.background_color = Color("89c6cd").lerp(light_profile.water_color, submerged)
 	environment.fog_light_color = environment.background_color
 	environment.fog_density = lerpf(0.004, 0.024, submerged)
+	entry_lens.update_view(t,camera.position.y,true)
 	if t >= ENTRY_DURATION:
 		entry_active = false
+		entry_lens.visible = false
 		camera.fov = 66
 		environment.fog_density = 0.024
 		tell("WASD 游泳 · Q 下潜 / E 上浮 · 左键鱼叉 · 右键小刀割海草", 7)
@@ -1218,6 +1232,20 @@ func _prepare_entry_water() -> void:
 	_entry_water_material = StandardMaterial3D.new()
 	_entry_water_material.albedo_color = Color("b9f1ed")
 	_entry_water_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_entry_water_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_entry_water_material.albedo_color.a = .66
+	var bubble_shader := Shader.new()
+	bubble_shader.code = """
+shader_type spatial;
+render_mode unshaded, blend_mix, depth_draw_never;
+void fragment() {
+    float rim=pow(1.0-clamp(dot(NORMAL,VIEW),0.0,1.0),2.2);
+    ALBEDO=vec3(.70,.93,.96);
+    ALPHA=.035+rim*.34;
+}
+"""
+	_entry_bubble_material = ShaderMaterial.new()
+	_entry_bubble_material.shader = bubble_shader
 	for i in range(4):
 		var sphere := SphereMesh.new()
 		sphere.radius = 0.06 + float(i) * 0.025
@@ -1231,12 +1259,37 @@ func _spawn_entry_water() -> void:
 		droplet.material_override = _entry_water_material
 		var angle: float = float(i) * 2.399
 		var bubble: bool = i >= 24
-		droplet.position = Vector3(player.position.x + sin(angle) * 0.4, -0.8 if bubble else 0.65, player.position.z + cos(angle) * 0.4)
+		var impact_point: Vector3 = dive_origin+DiveEntry.position_at(DiveEntry.IMPACT_TIME)
+		droplet.position = Vector3(impact_point.x + sin(angle) * 0.4, -0.8 if bubble else 0.45, impact_point.z + cos(angle) * 0.4)
 		ocean_root.add_child(droplet)
 		var velocity := Vector3(sin(angle) * 2.6, 3.2 + float(i % 5) * 0.5, cos(angle) * 2.6)
 		if bubble:
 			velocity = Vector3(sin(angle) * 0.6, 1.1, cos(angle) * 0.6)
-		effects.append({"node":droplet, "life":2.5 if bubble else 1.0, "velocity":velocity, "gravity":0.0 if bubble else 9.8})
+		if bubble:
+			droplet.material_override = _entry_bubble_material
+			var delay: float = float(i-24)*.045
+			var source: Vector3 = dive_origin+DiveEntry.position_at(DiveEntry.IMPACT_TIME+.16+delay)
+			droplet.position = source+Vector3(sin(angle)*.45,0,cos(angle)*.45)
+			droplet.visible = false
+			effects.append({"node":droplet,"life":2.1+delay,"duration":2.1+delay,"delay":delay,"velocity":velocity,"gravity":0.0,"entry_particle":true,"scale":Vector3.ONE})
+		else:
+			droplet.scale = Vector3(.7,1.8,.7)
+			effects.append({"node":droplet,"life":1.0,"duration":1.0,"velocity":velocity,"gravity":9.8,"entry_particle":true,"scale":droplet.scale})
+	for index in range(2):
+		var ring := MeshInstance3D.new()
+		var mesh := TorusMesh.new()
+		mesh.inner_radius = .72
+		mesh.outer_radius = .80
+		mesh.rings = 40
+		mesh.ring_segments = 6
+		ring.mesh = mesh
+		ring.material_override = _entry_water_material.duplicate()
+		ring.material_override.albedo_color.a = .38
+		ring.position = dive_origin+DiveEntry.position_at(DiveEntry.IMPACT_TIME)
+		ring.position.y = .12+index*.04
+		ring.scale = Vector3(1,.22,1)
+		ocean_root.add_child(ring)
+		effects.append({"node":ring,"life":1.5+index*.3,"duration":1.5+index*.3,"entry_ripple":true})
 
 func _update_dive(delta: float) -> void:
 	shot_cooldown = maxf(0,shot_cooldown-delta)
@@ -1291,6 +1344,7 @@ func _update_dive(delta: float) -> void:
 		finish_dive(true)
 
 func _update_swim_camera() -> void:
+	entry_lens.visible = false
 	var inside_wreck: bool = explorable_wreck.contains_point(player.position)
 	var forward := Vector3(-sin(yaw)*cos(pitch),sin(pitch),-cos(yaw)*cos(pitch))
 	var anchor: Vector3 = player.position+Vector3.UP*0.25
@@ -1492,6 +1546,18 @@ func _hit_fish(target: Dictionary, launched_damage: int = -1) -> void:
 
 func _update_effects(delta: float) -> void:
 	for i in range(effects.size()-1,-1,-1):
+		if effects[i].get("entry_ripple",false):
+			var age: float = 1.0-effects[i].life/effects[i].duration
+			effects[i].node.scale = Vector3(1+age*5,maxf(.005,.22*(1-age)),1+age*5)
+			effects[i].node.material_override.albedo_color.a = .38*pow(1.0-age,1.4)
+		if effects[i].get("entry_particle",false):
+			var age: float = effects[i].duration-effects[i].life
+			var delay: float = effects[i].get("delay",0.0)
+			effects[i].node.visible = age>=delay
+			effects[i].node.scale = effects[i].scale*clampf(effects[i].life/.35,0.01,1.0)
+			if age<delay:
+				effects[i].life -= delta
+				continue
 		if effects[i].has("collect"):
 			var u: float = clampf(1.0 - (effects[i].life - delta) / effects[i].duration, 0, 1)
 			effects[i].node.position = effects[i].origin.lerp(player.position, u * u)
@@ -1646,7 +1712,10 @@ func nearby_exploration_point() -> Dictionary:
 	var best: float = INF
 	var result: Dictionary = {}
 	var site_index: int = areas.find(area)
-	for point: Dictionary in Ocean.exploration_points(site_index):
+	var points: Array = Ocean.exploration_points(site_index)
+	if site_index == Ocean.site_index("pearl_atoll"):
+		points.append_array(Ocean.atoll_activity_points())
+	for point: Dictionary in points:
 		var distance: float = Vector2(player.position.x-point.position.x,player.position.z-point.position.z).length()
 		if distance < best:
 			best = distance

@@ -219,6 +219,39 @@ static func pickup_points() -> Array:
 			station.x = canyon_center_x(station.z)
 		station.y = maxf(area.center.y,seabed_height(station.x,station.z)+8.0)
 		result.append({"kind":"oxygen","position":station,"site_index":site,"exploration":true,"name":"外围补气点"})
+	# Append the atoll loop so existing resource indices and saved loot seeds stay stable.
+	var activities: Array = atoll_activity_points()
+	for index in range(activities.size()):
+		var point: Dictionary = activities[index]
+		var kinds: Array = [["pearl","conch"],["sea_glass","ancient_coin"],["chest","oxygen"]][index]
+		for item_index in range(2):
+			var position: Vector3 = point.position+Vector3(-1.5 if item_index==0 else 1.5,0,0)
+			position.y = seabed_height(position.x,position.z)+(3.0 if kinds[item_index]=="oxygen" else 1.0)
+			result.append({"kind":kinds[item_index],"position":position,"site_index":site_index("pearl_atoll"),"exploration":true,"atoll_activity":true,"name":point.name})
+	return result
+
+## Three short, connected activities complement the two existing outer discoveries.
+static func atoll_activity_points() -> Array:
+	var center: Vector3 = ZONES[4].center
+	var result: Array = []
+	var offsets: Array[Vector3] = [Vector3(-20,0,20),Vector3(22,0,10),Vector3(65,0,-10)]
+	var names := ["浅湾贝床","海草花园","鳐鱼沙洲"]
+	for index in range(offsets.size()):
+		var point: Vector3 = center+offsets[index]
+		point.y = seabed_height(point.x,point.z)
+		result.append({"name":names[index],"position":point,"atoll_activity":true})
+	return result
+
+## Twelve huntable residents occupy separated depths and flanks, not a dense school.
+static func atoll_fish_spawns() -> Array:
+	var center: Vector3 = ZONES[4].center
+	var offsets: Array[Vector2] = [Vector2(-28,18),Vector2(-18,30),Vector2(-38,4),Vector2(-14,-18),Vector2(0,-32),Vector2(16,-26),Vector2(20,8),Vector2(34,20),Vector2(45,-8),Vector2(58,10),Vector2(64,-22),Vector2(48,-30)]
+	var kinds := [10,12,0,11,10,1,12,4,10,11,12,3]
+	var result: Array = []
+	for index in range(offsets.size()):
+		var point := Vector3(center.x+offsets[index].x,0,center.z+offsets[index].y)
+		point.y = minf(-6.0,seabed_height(point.x,point.z)+8.0+float(index%3)*1.5)
+		result.append({"kind":kinds[index],"position":point,"atoll_activity":true})
 	return result
 
 static func zone_for_position(point: Vector3) -> Dictionary:

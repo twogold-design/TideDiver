@@ -49,7 +49,7 @@ func _run() -> void:
 		if item.has("exploration_site"):
 			added_resources += 1
 	_check(areas.size() == 6 and Ocean.DIVE_SITES.size() == 6, "All six original dive destinations provide expanded exploration areas")
-	_check(game.fish.size() == 171 and game.fish_population_count() == 171 and game.pickups.size() == 65 and game.pickups.size() == 12 + Ocean.pickup_points().size() and added_resources == 18, "Larger areas add eighteen resources while keeping the ordinary fish population sparse")
+	_check(game.fish.size() == 183 and game.fish_population_count() == 183 and game.pickups.size() == 71 and game.pickups.size() == 12 + Ocean.pickup_points().size() and added_resources == 24, "Expanded areas retain eighteen peripheral resources and add six atoll-loop finds plus twelve separated fish")
 	_check(expansions != null and int(expansions.get_meta("site_count", 0)) == 6 and int(expansions.get_meta("side_area_count", 0)) == 12, "The actual scene includes twelve peripheral landmarks across all six sites")
 	if expansions != null and areas.size() == 6:
 		var ids: Dictionary = {}
@@ -172,7 +172,7 @@ func _test_peripheral_resources(site: int, area: Dictionary) -> void:
 	var refills: Array[Dictionary] = []
 	for item in game.pickups:
 		var distance: float = Vector2(item.home.x - center.x, item.home.z - center.z).length()
-		if item.active and int(item.get("exploration_site", -1)) == site and distance > float(area.core_radius) + 2 and distance <= float(area.radius) + 8:
+		if item.active and not item.get("atoll_activity",false) and int(item.get("exploration_site", -1)) == site and distance > float(area.core_radius) + 2 and distance <= float(area.radius) + 8:
 			if item.kind == "oxygen":
 				refills.append(item)
 			else:
@@ -227,7 +227,7 @@ func _test_gm_and_random_departures() -> void:
 	for departure in range(8):
 		game.state = "dock"
 		game.start_dive(false)
-		valid = valid and game.entry_site_index >= 0 and game.entry_site_index < 6 and game.entry_site_index != previous and game.fish.size() == 171 and game.pickups.size() == 65
+		valid = valid and game.entry_site_index >= 0 and game.entry_site_index < 6 and game.entry_site_index != previous and game.fish.size() == 183 and game.pickups.size() == 71
 		previous = game.entry_site_index
 		visited[previous] = true
 		var landing: Vector3 = game.dive_origin + Vector3(0, -6, 25)

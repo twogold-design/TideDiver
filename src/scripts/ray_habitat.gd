@@ -1,9 +1,9 @@
 extends Node3D
-## A few sand-buried rays live beyond Moonlight Sand Terrace, outside the catch pool.
+## Sand-buried rays inhabit the terrace outskirts and the atoll's open approach sand.
 const Ocean = preload("res://scripts/ocean_config.gd")
 const RayArt = preload("res://scripts/ray_art.gd")
 const DETECT_RADIUS := 9.0
-const RAY_COUNT := 6
+const RAY_COUNT := 12
 const ROAM_RADIUS := 48.0
 var rays: Array[Dictionary] = []
 var habitat_bounds := AABB()
@@ -25,17 +25,24 @@ func _ready() -> void:
 		_movement_exclusions.append(body.get_rid())
 	var terrace: Vector3 = Ocean.exploration_points(Ocean.site_index("pearl_atoll"))[1].position
 	var offsets: Array[Vector3] = [Vector3(17,0,-3),Vector3(25,0,5),Vector3(32,0,-8),Vector3(18,0,15),Vector3(34,0,14),Vector3(42,0,2)]
+	var atoll: Vector3 = Ocean.ZONES[4].center
+	var approach_offsets: Array[Vector3] = [Vector3(-26,0,-25),Vector3(-5,0,-46),Vector3(20,0,-38),Vector3(-17,0,42),Vector3(2,0,52),Vector3(23,0,42)]
 	for index in range(RAY_COUNT):
-		var home: Vector3 = terrace + offsets[index]
+		var home: Vector3 = terrace+offsets[index] if index<offsets.size() else _find_approach_sand(atoll+approach_offsets[index-offsets.size()],index)
 		home.y = Ocean.seabed_height(home.x,home.z)
 		var node: Node3D = RayArt.build()
 		node.name = "SandRay%d" % index
+		for visual: MeshInstance3D in node.find_children("*","MeshInstance3D",true,false):
+			visual.visibility_range_end = 110.0
+			visual.visibility_range_end_margin = 12.0
 		add_child(node)
 		var cover := MeshInstance3D.new()
 		cover.name = "SandCover%d" % index
 		cover.mesh = RayArt.sand_cover_mesh()
 		cover.material_override = RayArt.sand_material().duplicate()
 		cover.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		cover.visibility_range_end = 110.0
+		cover.visibility_range_end_margin = 12.0
 		add_child(cover)
 		var dust := _make_dust(index)
 		var item: Dictionary = {"node":node,"home":home,"rest":home,"state":"buried","velocity":Vector3.ZERO,"timer":0.0,"phase":float(index)*1.71,"heading":float(index)*2.399,"cover":cover,"dust":dust,"dust_age":3.0,"wing_left":node.get_node("WingLeft"),"wing_right":node.get_node("WingRight"),"tail":node.get_node("Tail")}
@@ -43,9 +50,29 @@ func _ready() -> void:
 		habitat_bounds = AABB(home,Vector3.ZERO) if index == 0 else habitat_bounds.expand(home)
 	habitat_bounds = habitat_bounds.grow(ROAM_RADIUS+3.0)
 	set_meta("location_name","月光沙台 · 外侧沙地")
+	set_meta("approach_count",approach_offsets.size())
 	set_meta("decorative_only",true)
 	set_meta("world_bounds",habitat_bounds)
 	reset()
+
+func _find_approach_sand(preferred: Vector3, index: int) -> Vector3:
+	# The new near-atoll encounters must not begin inside the limestone rim.
+	# Keep separate sand pockets so one passing diver never startles all twelve.
+	for attempt in range(97):
+		var ring: float = ceilf(float(attempt)/12.0)
+		var angle: float = float(attempt%12)*TAU/12.0
+		var point: Vector3 = preferred+Vector3(sin(angle),0,cos(angle))*ring*2.5
+		point.y = Ocean.seabed_height(point.x,point.z)
+		var separated := true
+		for existing: Dictionary in rays:
+			if Vector2(existing.home.x-point.x,existing.home.z-point.z).length()<12.0:
+				separated = false
+				break
+		if separated and point.y < -4.0 and _safe_to_settle(point,float(index)*2.399):
+			return point
+	push_warning("No unobstructed approach sand found for ray %d" % index)
+	preferred.y = Ocean.seabed_height(preferred.x,preferred.z)
+	return preferred
 
 func reset() -> void:
 	elapsed = 0.0
@@ -265,6 +292,7 @@ func _make_dust(index: int) -> MultiMeshInstance3D:
 	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	dust.material_override = material
 	dust.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	dust.visibility_range_end = 90.0
 	add_child(dust)
 	return dust
 

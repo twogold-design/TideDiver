@@ -333,11 +333,6 @@ func _draw_hud() -> void:
 		var immersion: float = 1.0 - smoothstep(-1.5, 0.6, game.camera.position.y)
 		screen_overlay(Color(0.02,0.28,0.34,immersion * 0.12))
 		_center(Vector2(720,710), ("跃入%s" % game.Ocean.DIVE_SITES[game.entry_site_index].name) if not game.entry_splashed else "沉入蔚蓝", 28, LIGHT)
-		if game.entry_splashed:
-			for i in range(16):
-				var age: float = maxf(0, game.entry_time - 1.4)
-				var pos := Vector2(180 + fposmod(float(i) * 173,1080), 900 - fposmod(age * (170 + i * 9) + i * 83, 1000))
-				draw_arc(pos, 4 + i % 5 * 2, 0, TAU, 20, Color(0.7,0.94,0.95,0.22 * maxf(0, 1.0 - age / 2.0)), 1.5, true)
 		return
 	region(TOP_LEFT)
 	_panel(Rect2(30,28,345,116))

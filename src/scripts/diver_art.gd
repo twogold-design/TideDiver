@@ -111,6 +111,37 @@ static func build() -> Node3D:
 	Detail.batch_joints(root)
 	return root
 
+static func animate_entry(rig: Node3D, time: float, impact_time: float = 1.35, duration: float = 3.2) -> void:
+	# World motion belongs to the entry path. These six local joints supply the
+	# anticipation, streamlining and water resistance that a rigid falling pose lacks.
+	var t: float = clampf(time,0.0,duration)
+	var crouch: float = _entry_pulse(t,.0,.26,.40,.62)
+	var streamline: float = smoothstep(.34,.80,t)*(1.0-smoothstep(impact_time+.20,impact_time+.85,t))
+	var brace: float = _entry_pulse(t,impact_time-.10,impact_time+.20,impact_time+.32,impact_time+.76)
+	var swim: float = smoothstep(impact_time+.35,impact_time+.78,t)
+	var recover: float = 1.0-smoothstep(duration-.46,duration,t)
+	var stroke: float = sin((t-impact_time-.35)*7.0)*swim*recover
+	for index in range(2):
+		var side: float = -1.0 if index==0 else 1.0
+		var suffix: String = "Left" if index==0 else "Right"
+		var leg: Node3D = rig.get_node("Leg"+suffix)
+		var knee: Node3D = rig.get_node("Leg"+suffix+"/Knee"+suffix)
+		var arm: Node3D = rig.get_node("Arm"+suffix)
+		# The knees flex together on the boat and on impact; the first underwater
+		# kick separates the fins instead of carrying a frozen crouch into swimming.
+		leg.rotation = Vector3(.34*crouch+.20*brace+side*stroke*.14,side*(-.07*crouch-.055*brace),0)*recover
+		knee.rotation = Vector3(-.76*crouch-.40*brace-maxf(0,-side*stroke)*.25,0,0)*recover
+		# Draw the elbows in for entry. The weapon arm folds less than the free arm
+		# so the existing harpoon remains to the side of the mask, not through it.
+		var arm_fold: float = 1.0 if index==0 else .58
+		arm.rotation = Vector3(.12*crouch+.26*streamline+.10*brace,
+			side*(.24*crouch+.38*streamline)*arm_fold,
+			-side*(.08*crouch+.055*brace))*recover
+		arm.rotation.x += side*stroke*.045
+
+static func _entry_pulse(time: float, start: float, peak: float, release: float, end: float) -> float:
+	return smoothstep(start,peak,time)*(1.0-smoothstep(release,end,time))
+
 static func _joint(parent: Node3D, label: String, pivot: Vector3) -> Node3D:
 	var joint := Node3D.new()
 	joint.name = label

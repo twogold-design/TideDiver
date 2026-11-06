@@ -51,6 +51,8 @@ func _run() -> void:
 	life = game.ocean_root.get_node_or_null("MarineLife")
 	_check(life != null,"The actual ocean includes its new decorative marine animals")
 	if life != null:
+		var fish_before: int = game.fish.size()
+		var pickups_before: int = game.pickups.size()
 		output = ProjectSettings.globalize_path("res://../.runtime/marine-life-checks")
 		DirAccess.make_dir_recursive_absolute(output)
 		var before: Dictionary = memory._save_data().duplicate(true)
@@ -60,7 +62,7 @@ func _run() -> void:
 		await _test_rendered_species()
 		await _test_pause_and_reset()
 		_test_capture_isolation()
-		_check(game.fish.size() == 171 and game.fish_population_count() == 171 and game.pickups.size() == 65,"Ambient ecology preserves the original sparse huntable population and existing pickups")
+		_check(game.fish.size() == fish_before and game.fish_population_count() == fish_before and game.pickups.size() == pickups_before,"Ambient ecology never adds capture targets or loot to the real gameplay population")
 		_check(game.cargo.is_empty() and memory._save_data() == before and memory.saves == 0,"Viewing, animation, GM and firing through ambient animals never change cargo or durable progress")
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	game.free()
@@ -80,10 +82,19 @@ func _test_population_and_resources() -> void:
 		actual_count += visual.multimesh.instance_count
 		meshes[visual.multimesh.mesh.get_instance_id()] = true
 		materials[visual.material_override.get_instance_id()] = true
-		bounded_batches = bounded_batches and visual.multimesh.instance_count <= 4 and visual.visibility_range_end > 0 and visual.visibility_range_end <= 140 and visual.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_check(actual_count==life.organisms.size() and actual_count==67 and int(life.get_meta("instance_count",0))==actual_count,"The six habitats hold sixty-seven ambient animals in restrained local encounters")
-	_check(meshes.size()==7 and materials.size()==7 and life.batches.size()<=35 and bounded_batches,"Species share seven original meshes and materials with at most four residents per culled batch")
-	_check(int(counts.get("GreenTurtle",0))==2 and int(counts.get("Cuttlefish",0))==4,"Only two turtles and four small cuttlefish occupy the entire ocean")
+		bounded_batches = bounded_batches and visual.multimesh.instance_count <= 5 and visual.visibility_range_end > 0 and visual.visibility_range_end <= 140 and visual.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_check(actual_count==life.organisms.size() and actual_count==80 and int(life.get_meta("instance_count",0))==actual_count,"The six habitats hold eighty ambient animals in restrained local encounters")
+	_check(meshes.size()==7 and materials.size()==7 and life.batches.size()<=35 and bounded_batches,"Species share seven original meshes and materials with at most five residents per culled batch")
+	_check(int(counts.get("GreenTurtle",0))==3 and int(counts.get("Cuttlefish",0))==7,"Three turtles and seven small cuttlefish remain occasional encounters across the ocean")
+	var atoll_count := 0
+	var atoll_species: Dictionary = {}
+	var site_counts := [0,0,0,0,0,0]
+	for item: Dictionary in life.organisms:
+		site_counts[item.site] += 1
+		if int(item.site)==Ocean.site_index("pearl_atoll"):
+			atoll_count += 1
+			atoll_species[item.kind] = true
+	_check(atoll_count==24 and atoll_species.size()==7 and site_counts==[14,10,9,12,11,24],"Only Moon Pearl Atoll gains animals: twenty-four residents and all seven species, with other sites unchanged")
 	_check(not _has_collision(life) and bool(life.get_meta("decorative_only",false)),"Ambient animals add no physical obstacles, pickup areas or combat targets")
 	for kind: String in Art.FORMS:
 		var mesh: ArrayMesh = Art.mesh(kind)

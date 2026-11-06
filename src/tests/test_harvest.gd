@@ -31,12 +31,13 @@ func _run() -> void:
 	game.smoke_mode = true
 	game.muted = true
 	root.add_child(game)
+	game.smoke_mode = true
 	game.set_physics_process(false)
 	game.set_process(false)
 	await physics_frame
 	game.start_dive(false,false)
 	var meadow: Node3D = game.reef_plants
-	check(meadow.harvests.size()==592,"All visible grass and ribbon-algae sources across dive sites are registered")
+	check(meadow.harvests.size()==632,"All visible grass and ribbon-algae sources across dive sites are registered")
 	var plant: Dictionary = meadow.harvests[0]
 	_isolate_plant(plant)
 	var point: Vector3 = plant.position
@@ -152,6 +153,10 @@ func _source(plant: Dictionary) -> String:
 		return "lagoon grass"
 	if path.contains("NaturalAtoll/RibbonAlgae"):
 		return "lagoon algae"
+	if path.contains("AtollActivities/SeagrassGarden/HarvestableGrass"):
+		return "activity grass"
+	if path.contains("AtollActivities/SeagrassGarden/HarvestableRibbonAlgae"):
+		return "activity algae"
 	if path.contains("ReefLife/"):
 		return "site grass"
 	if path.contains("DiveExpansions/"):
@@ -168,7 +173,7 @@ func _test_all_plant_sources() -> void:
 		if not groups.has(source):
 			groups[source] = []
 		groups[source].append(plant)
-	var expected := {"ordinary grass":89,"lagoon grass":90,"lagoon algae":30,"site grass":72,"exploration grass":76,"reef algae":65,"reef grass":170}
+	var expected := {"ordinary grass":89,"lagoon grass":90,"lagoon algae":30,"site grass":72,"exploration grass":76,"reef algae":65,"reef grass":170,"activity grass":24,"activity algae":16}
 	for source: String in expected:
 		check(groups.get(source,[]).size()==expected[source],"Registered every visible plant in source: "+source)
 		var selected: Dictionary = {}

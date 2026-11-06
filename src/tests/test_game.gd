@@ -329,7 +329,15 @@ func _test_water_entry() -> void:
 	_check(game.entry_time == entry_before, "Pause freezes the entry animation")
 	game.toggle_pause()
 	game._physics_process(0.75)
-	_check(game.entry_splashed and game.effects.size() == 42, "Water crossing emits splash and bubbles once")
+	var splash_particles := 0
+	var surface_ripples := 0
+	for effect: Dictionary in game.effects:
+		splash_particles += 1 if effect.get("entry_particle",false) else 0
+		surface_ripples += 1 if effect.get("entry_ripple",false) else 0
+	var splash_nodes: Array = game.effects.map(func(effect: Dictionary): return effect.node.get_instance_id())
+	game._update_entry(0.01)
+	var same_nodes: Array = game.effects.map(func(effect: Dictionary): return effect.node.get_instance_id())
+	_check(game.entry_splashed and splash_particles==42 and surface_ripples==2 and same_nodes==splash_nodes, "Water crossing emits a single splash, bubble trail and two surface ripples without repeating on the next frame")
 	game._physics_process(1.65)
 	_check(not game.entry_active and game.player.position.is_equal_approx(origin + Vector3(0, -6, 25)), "Entry ends fully submerged and restores swimming")
 	_check(game.camera.position.y < 0.6 and game.camera.fov == 66, "Camera follows underwater and settles to swimming view")

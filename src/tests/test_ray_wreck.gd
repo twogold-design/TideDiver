@@ -48,6 +48,8 @@ func _run() -> void:
 	_check(rays != null and wreck != null and school != null, "The actual ocean integrates the sand-ray habitat, hollow wreck and internal school")
 	if rays != null and wreck != null and school != null:
 		var progress_before: Dictionary = memory._save_data().duplicate(true)
+		var fish_before: int = game.fish.size()
+		var pickups_before: int = game.pickups.size()
 		_test_ray_initial_state()
 		await _test_ray_detection_and_swimming()
 		await _test_ray_wide_body_clearance()
@@ -56,7 +58,7 @@ func _run() -> void:
 		await _test_harpoon_isolation_and_hull()
 		_test_wreck_camera()
 		await _test_pause_and_gm()
-		_check(game.fish.size() == 171 and game.fish_population_count() == 171 and game.pickups.size() == 65, "Decorative rays and three hundred internal fish stay outside the 171 huntable fish and 64 pickups")
+		_check(game.fish.size() == fish_before and game.fish_population_count() == fish_before and game.pickups.size() == pickups_before, "Decorative rays and internal shoals never add huntable fish or pickups")
 		_check(memory._save_data() == progress_before and memory.saves == 0 and game.cargo.is_empty(), "Exploring and firing through decorative animals neither changes inventory nor writes progress")
 		_test_ray_lifecycle_reset()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -67,19 +69,42 @@ func _run() -> void:
 
 func _test_ray_initial_state() -> void:
 	var terrace: Vector3 = Ocean.exploration_points(Ocean.site_index("pearl_atoll"))[1].position
-	_check(rays.rays.size() == 6 and str(rays.get_meta("location_name", "")).contains("月光沙台"), "Exactly six decorative rays inhabit the sand outside Moonlight Sand Terrace")
+	_check(rays.rays.size() == 12 and str(rays.get_meta("location_name", "")).contains("月光沙台"), "Twelve decorative rays inhabit the terrace outskirts and near-atoll approach sand")
 	var grounded := true
 	var articulated := true
 	var isolated := true
-	for item: Dictionary in rays.rays:
+	for index in range(rays.rays.size()):
+		var item: Dictionary = rays.rays[index]
 		var node: Node3D = item.node
 		var home: Vector3 = item.home
 		var distance := Vector2(home.x - terrace.x, home.z - terrace.z).length()
-		grounded = grounded and distance >= 16.0 and distance < 48.0 and absf(home.y - Ocean.seabed_height(home.x, home.z)) < 0.01 and absf(node.position.y - home.y + 0.025) < 0.01 and item.state == "buried" and item.cover.visible and not item.dust.visible and rays.habitat_bounds.has_point(home)
+		grounded = grounded and (index>=6 or (distance>=16.0 and distance<48.0)) and absf(home.y - Ocean.seabed_height(home.x, home.z)) < 0.01 and absf(node.position.y - home.y + 0.025) < 0.01 and item.state == "buried" and item.cover.visible and not item.dust.visible and rays.habitat_bounds.has_point(home)
 		articulated = articulated and node.get_node_or_null("WingLeft") != null and node.get_node_or_null("WingRight") != null and node.get_node_or_null("Tail") != null and _mesh_count(node) >= 5
 		isolated = isolated and not _has_collision(node) and bool(node.get_meta("decorative_only", false))
-	_check(grounded, "Every ray starts sand-buried on the real seabed beyond the terrace, inside its habitat")
-	_check(articulated, "All six actual ray models contain visible bodies, separate wings and tails")
+	_check(grounded, "Every ray starts sand-buried on the real seabed, while the original terrace population stays in place")
+	_check(articulated, "All twelve actual ray models contain visible bodies, separate wings and tails")
+	var approach_safe := true
+	var northern := 0
+	var southern := 0
+	var atoll: Vector3 = Ocean.ZONES[4].center
+	for index in range(6,rays.rays.size()):
+		var item: Dictionary = rays.rays[index]
+		approach_safe = approach_safe and rays._safe_to_settle(item.home,item.heading)
+		var relative: Vector3 = item.home-atoll
+		approach_safe = approach_safe and Vector2(relative.x,relative.z).length()<76.0
+		if relative.z<0: northern += 1
+		else: southern += 1
+		for other in range(index):
+			var difference: Vector3 = item.home-rays.rays[other].home
+			approach_safe = approach_safe and Vector2(difference.x,difference.z).length()>=12.0
+	_check(approach_safe and northern==3 and southern==3,"Six new rays occupy clear, separated seabed pockets on both atoll approaches")
+	var near_ray: Dictionary = rays.rays[6]
+	rays.advance(.02,near_ray.home+Vector3.UP*3.0)
+	var startled := 0
+	for item: Dictionary in rays.rays:
+		if item.state!="buried": startled += 1
+	_check(near_ray.state=="rising" and near_ray.dust.visible and startled<=2,"Approaching a new near-atoll ray triggers a local sand burst without alarming the whole habitat")
+	rays.reset()
 	_check(isolated and bool(rays.get_meta("decorative_only", false)), "Decorative rays add no physical capture target or obstacle")
 	_check(rays.ignored_bodies.has(game.player.get_rid()), "Ray visibility queries ignore the real diver collider")
 
@@ -208,7 +233,7 @@ func _test_ray_wide_body_clearance() -> void:
 						if clearance < minimum_clearance:
 							minimum_clearance = clearance
 							lowest_sample = "ray %d %s at %s" % [ray_index, mesh.name, world]
-	_check(minimum_clearance >= -0.03 and bounded, "All six rays' animated body, wing and tail geometry stays above real seabed across twelve-second escape paths (minimum %.4f, %s, outside %s)" % [minimum_clearance, lowest_sample, outside_sample])
+	_check(minimum_clearance >= -0.03 and bounded, "All twelve rays' animated body, wing and tail geometry stays above real seabed across twelve-second escape paths (minimum %.4f, %s, outside %s)" % [minimum_clearance, lowest_sample, outside_sample])
 	rays.reset()
 
 func _test_wreck_routes_and_walls() -> void:
@@ -404,7 +429,7 @@ func _test_ray_lifecycle_reset() -> void:
 	game.return_to_dock()
 	_check(game.state == "dock" and _ray_snapshot() == before, "Visiting the restaurant and returning to the dock also preserve the ray habitat")
 	game.start_dive(true, false)
-	_check(_all_rays_reset(), "A new dive resets all six rays to their original sand-buried homes")
+	_check(_all_rays_reset(), "A new dive resets all twelve rays to their original sand-buried homes")
 	var visible_at_start: bool = rig.is_visible_in_tree()
 	game._update_entry(0.75)
 	_check(visible_at_start and game.entry_active and rig.is_visible_in_tree(), "Boat entry restores the actual diver model after the previous wreck camera hid it")

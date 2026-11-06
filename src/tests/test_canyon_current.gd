@@ -54,7 +54,7 @@ func _run() -> void:
 	await _test_swimming()
 	await _test_pause_and_entry()
 	var garden: Node = game.ocean_root.get_node_or_null("OuterOcean/amber_reef/CoralGarden")
-	_check(game.fish.size() == 171 and game.fish_population_count() == 171 and Ocean.DIVE_SITES.size() == 6, "Canyon updates retain all six departure sites and the sparse ordinary fish population")
+	_check(game.fish.size() == 183 and game.fish_population_count() == 183 and Ocean.DIVE_SITES.size() == 6, "Canyon updates retain all six departure sites and the sparse ordinary fish population")
 	_check(game.storm_school != null and int(game.storm_school.get_meta("fish_count", 0)) == 420 and garden != null and int(garden.get_meta("patch_count", 0)) == 540, "The actual ocean still contains the fish storm and the expanded coral garden")
 	_check(memory._save_data() == progress_before and memory.saves == 0, "Current, movement, pause and entry tests do not mutate or save player progress")
 	_release_actions()
@@ -139,7 +139,7 @@ func _test_winding_routes() -> void:
 
 func _test_submerged_ecology() -> void:
 	var life: Node3D = game.ocean_root.get_node_or_null("MarineLife")
-	var submerged: bool = life != null and life.organisms.size() == 67
+	var submerged: bool = life != null and life.organisms.size() == 80
 	var highest := -INF
 	if life != null:
 		for time: float in [0.0,12.0,47.0,210.0]:
@@ -152,7 +152,7 @@ func _test_submerged_ecology() -> void:
 					highest = maxf(highest,(pose*vertex).y)
 					submerged = submerged and (pose*vertex).y < -1.0
 		life.reset()
-	_check(submerged,"All sixty-seven animated marine animals remain entirely underwater after emergent mountains are added (highest %.2f)" % highest)
+	_check(submerged,"All eighty animated marine animals remain entirely underwater after emergent mountains are added (highest %.2f)" % highest)
 
 func _terrain_hit(x: float, z: float) -> Dictionary:
 	var excluded: Array[RID] = [game.player.get_rid()]
