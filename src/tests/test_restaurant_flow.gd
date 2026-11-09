@@ -48,6 +48,7 @@ func _run() -> void:
 	_test_extended_recipe_timing_and_tips()
 	_test_timeout_stages()
 	_test_four_seats_and_guest_target()
+	_test_renovation_completion()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	game.free()
 	await process_frame
@@ -244,3 +245,35 @@ func _test_four_seats_and_guest_target() -> void:
 			_check(game.state == "service" and game.service_arrived == 4, "Service continues until its target after the first seating")
 	_check(game.state == "restaurant" and game.service_arrived == 8 and game.service_summary.served == 8, "Eight-customer target automatically closes service even with menu portions left")
 	_check(game.service_summary.returned == 2 and progress.inventory.orange == 2 and progress.coins == 368, "Target closure returns two unallocated portions and pays eight tipped dishes")
+
+func _test_renovation_completion() -> void:
+	progress = MemoryProgression.new()
+	progress.persistence_enabled = false
+	progress.coins = 1000
+	game.progress = progress
+	game.state = "dock"
+	game.summary_visible = false
+	game.service_summary.clear()
+	game.restaurant_tab = "renovation"
+	game.open_restaurant()
+	for id: String in ["clean","kitchen","tables"]:
+		game.renovate_shop(id)
+	_check(not progress.renovations_complete() and game.restaurant_tab == "renovation" and _button("店面装修") != null and _button("备菜菜单") != null,"Partial renovations retain both management tabs even after the kitchen becomes usable")
+	game.renovate_shop("sign")
+	game.renovate_shop("expansion")
+	_check(not progress.renovations_complete() and _button("店面装修") != null,"The renovation screen remains available until the final optional project is complete")
+	game.renovate_shop("decor")
+	_check(progress.renovations_complete() and game.restaurant_tab == "menu" and _button("店面装修") == null,"Finishing the last renovation immediately removes the renovation tab and opens preparation")
+	_check(_button("精细备料") != null and _button("已完成") == null and _button("自由布置") != null,"The completed restaurant displays working recipe controls and keeps free layout without obsolete renovation rows")
+	var saved: Dictionary = progress._save_data().duplicate(true)
+	var loaded := MemoryProgression.new()
+	loaded.persistence_enabled = false
+	loaded._apply_save_data(saved)
+	game.progress = loaded
+	game.return_to_dock()
+	game.restaurant_tab = "renovation"
+	game.open_restaurant()
+	_check(game.restaurant_tab == "menu" and _button("店面装修") == null and _button("精细备料") != null,"An existing fully renovated save enters the preparation menu directly")
+	game.restaurant_tab = "renovation"
+	game.hud.restaurant_ui.rebuild()
+	_check(game.restaurant_tab == "menu" and _button("店面装修") == null,"A stale completed-shop tab cannot resurrect the obsolete renovation screen")

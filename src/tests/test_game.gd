@@ -36,6 +36,9 @@ func _run() -> void:
 		return
 	game = packed.instantiate()
 	memory = MemoryProgression.new()
+	# Settlement fixtures use an already catalogued starter fish; first-discovery
+	# payouts are covered by test_wildlife_observation and test_bestiary_progress.
+	memory.discoveries["orange"] = {"method":"caught"}
 	game.progress = memory
 	game.muted = true
 	game.smoke_mode = true
@@ -44,7 +47,7 @@ func _run() -> void:
 	game.set_physics_process(false)
 	game.smoke_mode = true
 	_check(game.state == "dock", "Game starts at dock")
-	_check(game.hud.buttons.size() == 8, "Dock has launch, three upgrades, restaurant, new game, GM, and exit")
+	_check(game.hud.buttons.size() == 9, "Dock has launch, upgrades, restaurant, bestiary, new game, GM, and exit")
 	_test_water_entry()
 	game.state = "dock"
 	game.start_dive(false, false)
@@ -126,7 +129,7 @@ func _test_capacity_and_catching() -> void:
 
 func _test_pause() -> void:
 	_key(KEY_ESCAPE)
-	_check(game.state == "paused" and game.hud.buttons.size() == 5, "Escape opens pause menu with new-game and GM entries")
+	_check(game.state == "paused" and game.hud.buttons.size() == 6, "Escape opens pause menu with bestiary, new-game and GM entries")
 	var feedback_before: float = game.catch_timer
 	var oxygen_before: float = game.oxygen
 	var clock_before: float = game.clock
@@ -167,7 +170,7 @@ func _test_rescue() -> void:
 	game._physics_process(20.0)
 	_check(game.rescue_result_visible and memory.saves == 1, "Return summary does not disappear with the old toast timer or settle twice")
 	_key(KEY_ENTER)
-	_check(not game.rescue_result_visible and game.hud.buttons.size() == 8, "Acknowledging restores normal dock controls")
+	_check(not game.rescue_result_visible and game.hud.buttons.size() == 9, "Acknowledging restores normal dock controls")
 
 func _test_return_and_upgrade() -> void:
 	game.start_dive(false, false)
@@ -179,7 +182,7 @@ func _test_return_and_upgrade() -> void:
 	_key(KEY_F)
 	_check(game.state == "dock" and not game.last_result.rescued, "Surface F returns safely")
 	_check(game.last_result.earned == 0 and memory.coins == 63 and memory.inventory.chest == 1 and memory.day == 3, "Safe return stores cargo without automatically selling it")
-	_check(game.harvest_result_visible and game.hud.buttons.size() == 8, "Safe return shows a harvest notification while retaining all dock controls")
+	_check(game.harvest_result_visible and game.hud.buttons.size() == 9, "Safe return shows a harvest notification while retaining all dock controls")
 	var saves_before: int = memory.saves
 	game._physics_process(3.0)
 	_check(game.harvest_result_visible and game.state == "dock", "Harvest notification is readable while already back at the dock")

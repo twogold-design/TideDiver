@@ -9,6 +9,13 @@ const Restaurant = preload("res://scripts/restaurant_art.gd")
 const Layout = preload("res://scripts/layout_rules.gd")
 const FishData = preload("res://scripts/fish_catalog.gd")
 const FishBrain = preload("res://scripts/fish_brain.gd")
+const WildlifeCatalog = preload("res://scripts/wildlife_catalog.gd")
+const WildlifeObservation = preload("res://scripts/wildlife_observation.gd")
+var wildlife_observation = WildlifeObservation.new()
+var bestiary_open := false
+var bestiary_return_state := "dock"
+var discovery_notifications: Array[Dictionary] = []
+var discovery_notification_timer := 0.0
 const StormSchool = preload("res://scripts/storm_school.gd")
 const DiverMotion = preload("res://scripts/diver_motion.gd")
 const DiverArt = preload("res://scripts/diver_art.gd")
@@ -408,6 +415,7 @@ func _setup_world() -> void:
 	_reset_shore_lighting()
 
 func _spawn_population() -> void:
+	wildlife_observation.reset()
 	diver_knife.reset()
 	reef_plants.reset_harvests()
 	marine_life.reset()
@@ -702,6 +710,11 @@ func confirm_new_game() -> void:
 	gm_test_active = false
 	gm_return_state = "dock"
 	gm_infinite_air = false
+	progress.gm_infinite_coins = false
+	bestiary_open = false
+	wildlife_observation.reset()
+	discovery_notifications.clear()
+	discovery_notification_timer = 0.0
 	diver_bubbles.reset()
 	state = "dock"
 	entry_active = false
@@ -841,6 +854,8 @@ func start_dive(animate_entry: bool = true, random_entry: bool = true, site_over
 	_play_tone(480, 0.18)
 
 func open_gm_menu() -> void:
+	if bestiary_open:
+		return
 	if gm_menu_open or new_game_confirmation or rescue_result_visible or layout_mode or state not in ["dock","dive","paused"]:
 		return
 	gm_return_state = state
@@ -1015,6 +1030,9 @@ func upgrade(kind: String) -> void:
 	hud.rebuild()
 
 func toggle_pause() -> void:
+	if bestiary_open:
+		close_bestiary()
+		return
 	if gm_menu_open:
 		close_gm_menu()
 		return
@@ -1049,6 +1067,11 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 func _unhandled_input(event: InputEvent) -> void:
+	if bestiary_open:
+		if event is InputEventKey and event.pressed and not event.echo and event.physical_keycode in [KEY_ESCAPE,KEY_B]:
+			close_bestiary()
+		get_viewport().set_input_as_handled()
+		return
 	if state == "rescuing":
 		return
 	if rescue_result_visible:
@@ -1065,11 +1088,21 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 		return
 	if layout_mode:
-		_layout_input(event)
+		if event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_F1:
+			toggle_gm_infinite_coins()
+		else:
+			_layout_input(event)
 		return
 	if event is InputEventKey and event.pressed and not event.echo:
+		if event.physical_keycode == KEY_B:
+			open_bestiary()
+			get_viewport().set_input_as_handled()
+			return
 		if event.physical_keycode == KEY_F1:
-			open_gm_menu()
+			if state == "restaurant":
+				toggle_gm_infinite_coins()
+			else:
+				open_gm_menu()
 			get_viewport().set_input_as_handled()
 			return
 		if event.physical_keycode == KEY_ESCAPE and not (OS.has_feature("web") and state == "paused"):
@@ -1096,7 +1129,10 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _physics_process(delta: float) -> void:
 	_sync_entry_audio()
+	if bestiary_open:
+		return
 	entry_lens.update_view(entry_time,camera.position.y,state == "dive" and entry_active)
+	_advance_discovery_notifications(delta)
 	if state == "rescuing":
 		_update_rescue(delta)
 		hud.queue_redraw()
@@ -1114,6 +1150,7 @@ func _physics_process(delta: float) -> void:
 			_update_dive(delta)
 			diver_knife.advance(self,delta)
 			_update_projectiles(delta)
+			wildlife_observation.advance(self,delta)
 			if state == "dive":
 				var effort: float = 1.0 if Input.is_action_pressed("boost") else minf(0.5,player.velocity.length()/12.0)
 				diver_bubbles.advance(delta,player.get_child(0).global_transform,true,effort,drift_current)
@@ -1566,6 +1603,7 @@ func _hit_fish(target: Dictionary, launched_damage: int = -1) -> void:
 			target.alive = false
 			target.node.visible = false
 			tell("捕获 %s · 已装入背包 · 价值 %d G" % [data.name,data.value],3)
+			record_species(data.id,"caught")
 			_capture_feedback(target.kind, target.node.position)
 		else:
 			target.hp = 1
@@ -1781,6 +1819,67 @@ func context_hint() -> String:
 		return "观察 · %s" % observed
 	return ""
 
+func open_bestiary() -> void:
+	if bestiary_open or entry_active or gm_menu_open or new_game_confirmation or rescue_result_visible or layout_mode or summary_visible or state not in ["dock","dive","paused","restaurant"]:
+		return
+	bestiary_return_state = state
+	bestiary_open = true
+	progress.mark_discoveries_seen()
+	discovery_notifications.clear()
+	discovery_notification_timer = 0.0
+	if state == "dive":
+		state = "paused"
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	_sync_entry_audio()
+	hud.rebuild()
+
+func close_bestiary() -> void:
+	if not bestiary_open:
+		return
+	bestiary_open = false
+	state = bestiary_return_state
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED if state == "dive" else Input.MOUSE_MODE_VISIBLE
+	_sync_entry_audio()
+	hud.rebuild()
+
+func record_species(id: String, method: String) -> void:
+	if progress.has_discovery(id):
+		return
+	var species: Dictionary = WildlifeCatalog.entry(id)
+	if species.is_empty():
+		return
+	var reward: int = progress.discover_species(id,method)
+	if not progress.has_discovery(id):
+		return
+	var action: String = "捕获并收录" if method == "caught" else "观察完成 · 图鉴收录"
+	if state == "dive":
+		discovery_notifications.append({"name":species.name,"reward":reward,"method":method})
+		if discovery_notifications.size() == 1:
+			discovery_notification_timer = 5.0
+	else:
+		tell("%s %s · 首次奖励 +%d G · B 查看图鉴" % [action,species.name,reward],4.5)
+	hud.rebuild()
+
+func bestiary_button_label(compact: bool = false) -> String:
+	var count: int = progress.unread_discoveries()
+	var label: String = "图鉴 · B" if compact else "海洋图鉴 · B"
+	return label+("  ● %d" % count if compact else "   ● 新%d" % count) if count > 0 else label
+
+func _advance_discovery_notifications(delta: float) -> void:
+	if state == "paused" or bestiary_open or gm_menu_open:
+		return
+	if state != "dive" or entry_active:
+		discovery_notifications.clear()
+		discovery_notification_timer = 0.0
+		return
+	if discovery_notifications.is_empty():
+		return
+	discovery_notification_timer = maxf(0.0,discovery_notification_timer-delta)
+	if discovery_notification_timer <= 0.0:
+		discovery_notifications.pop_front()
+		if not discovery_notifications.is_empty():
+			discovery_notification_timer = 5.0
+
 func tell(message: String, seconds: float) -> void:
 	harvest_result_visible = false
 	notice = message
@@ -1858,6 +1957,15 @@ func _run_smoke() -> void:
 
 
 # Shore management and restaurant service.
+func toggle_gm_infinite_coins() -> void:
+	if state != "restaurant" or summary_visible or bestiary_open:
+		return
+	progress.gm_infinite_coins = not progress.gm_infinite_coins
+	if layout_mode and layout_work != null:
+		layout_work.gm_infinite_coins = progress.gm_infinite_coins
+	tell("GM 无限金币已开启 · 装修和家具免费，真实金币保留" if progress.gm_infinite_coins else "GM 无限金币已关闭 · 恢复正常消费",4)
+	hud.rebuild()
+
 func open_restaurant() -> void:
 	if rescue_result_visible or state not in ["dock","restaurant"]:
 		return
@@ -2185,6 +2293,7 @@ func enter_layout() -> void:
 	layout_work = Progress.new()
 	layout_work.persistence_enabled = false
 	layout_work._apply_save_data(progress._save_data().duplicate(true))
+	layout_work.gm_infinite_coins = progress.gm_infinite_coins
 	layout_mode = true
 	layout_selected = -1
 	layout_placing = false
@@ -2284,13 +2393,14 @@ func buy_layout_furniture(kind: String, variant: String = "basic") -> void:
 		return
 	_discard_pending_purchase()
 	_remember_layout()
+	var coins_before: int = layout_work.coins
 	var uid: int = layout_work.buy_furniture(kind,variant)
 	if uid < 0:
 		layout_history.pop_back()
 		layout_reason = "金币不足，或该家具暂时不能购买。"
 		hud.rebuild()
 		return
-	layout_pending_purchase = {"uid":uid,"cost":int(Layout.variant_data(kind,variant).cost)}
+	layout_pending_purchase = {"uid":uid,"cost":coins_before-layout_work.coins}
 	select_furniture(uid)
 	layout_reason = "选购待放置 · 右键 / Esc 取消不扣款；放下并保存后才购买。"
 
@@ -2372,13 +2482,13 @@ func recycle_selected_furniture() -> void:
 		return
 	_remember_layout()
 	var refund: int = layout_work.recycle_furniture(layout_selected)
-	if refund <= 0:
+	if not layout_work.furniture_by_uid(layout_selected).is_empty():
 		layout_history.pop_back()
 		layout_reason = "暂时不能回收；金币达到上限时请先消费。"
 	else:
 		layout_selected = -1
 		layout_placing = false
-		layout_reason = "已回收家具，退还 %d G（售价50%%，向上取整）；保存后生效，可撤销。" % refund
+		layout_reason = "已回收GM免费家具 · 不返还金币；保存后生效，可撤销。" if refund == 0 else "已回收家具，退还 %d G（售价50%%，向上取整）；保存后生效，可撤销。" % refund
 	_rebuild_restaurant()
 	hud.rebuild()
 

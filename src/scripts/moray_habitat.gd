@@ -9,11 +9,29 @@ const BITE_DAMAGE := 12.0
 var dens: Array[Dictionary] = []
 var clam_den: Node3D
 var reef_bounds: Array[AABB] = []
+var ambient_bounds: Array[AABB] = []
 
 static func create(game: Node) -> Node3D:
 	var habitat := new()
 	habitat.name = "CreviceHabitats"
 	game.ocean_root.add_child(habitat)
+	# These visual-only residents are placed before caves and have no physics bodies.
+	# Reserve their complete orbit and rotated silhouette, not just their current pose.
+	for resident: Dictionary in game.marine_life.organisms:
+		var visual: MultiMeshInstance3D = resident.visual
+		var bounds: AABB = visual.multimesh.mesh.get_aabb()
+		var scale: float = resident.scale
+		if resident.kind in ["GreenTurtle","Cuttlefish"]:
+			var radius := 0.0
+			for corner in range(8):
+				var vertex: Vector3 = bounds.get_endpoint(corner)
+				radius = maxf(radius,Vector2(vertex.x,vertex.z).length())
+			radius = radius*scale+.15+(3.4 if resident.kind == "GreenTurtle" else 1.05)
+			var offset := Vector3(-radius,bounds.position.y*scale-.27,-radius)
+			habitat.ambient_bounds.append(AABB(resident.home+offset,Vector3(radius*2,bounds.size.y*scale+.54,radius*2)))
+		else:
+			var pose := Transform3D((resident.basis as Basis).scaled(Vector3.ONE*scale),resident.home)
+			habitat.ambient_bounds.append((pose*bounds).grow(.30))
 	# Coral is visual-only geometry; physics queries alone cannot protect a view
 	# into a den. Cache individual colonies instead of the garden's huge envelope.
 	var garden: Node3D = game.ocean_root.get_node("OuterOcean/amber_reef/CoralGarden")
@@ -53,9 +71,12 @@ func _place_cave(game: Node, site: int, clam: bool, variant: int) -> Node3D:
 	var area: Dictionary = Ocean.exploration_areas()[site]
 	var footprint := BoxShape3D.new()
 	footprint.size = Vector3(7.5,4.2,8.8)
-	for attempt in range(160):
+	for attempt in range(320):
 		var angle: float = float(attempt)*2.399963+float(variant)*.61
 		var radius: float = 30.0+float(attempt%5)*5.5
+		# A finer inner-ring fallback finds flat gaps in the atoll's raised reef.
+		if attempt >= 160:
+			radius = 18.0+float(attempt%23)*1.5
 		var point: Vector3 = area.center+Vector3(cos(angle)*radius,0,sin(angle)*radius)
 		if site == 3:
 			# Place reef caves on the winding sand corridor between coral banks.
@@ -92,6 +113,14 @@ func _place_cave(game: Node, site: int, clam: bool, variant: int) -> Node3D:
 		var inward: Vector3 = area.center-point
 		inward.y = 0
 		var frame := Basis.looking_at(inward.normalized(),Vector3.UP)
+		var cave_bounds := AABB(Vector3(-3.6,-2.5,-2.1),Vector3(7.2,6.8,5.8))
+		var cave_inverse := Transform3D(frame,point).affine_inverse()
+		for resident_bounds: AABB in ambient_bounds:
+			if cave_bounds.intersects(cave_inverse*resident_bounds):
+				crowded = true
+				break
+		if crowded:
+			continue
 		if site == 3:
 			var view_bounds: AABB = Transform3D(frame,point)*AABB(Vector3(-3.6,.35,-6),Vector3(7.2,4,9.8))
 			for colony: AABB in reef_bounds:

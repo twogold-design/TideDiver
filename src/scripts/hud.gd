@@ -1,5 +1,7 @@
 extends "res://scripts/responsive_ui.gd"
 const RestaurantUI = preload("res://scripts/restaurant_ui.gd")
+const BestiaryUI = preload("res://scripts/bestiary_ui.gd")
+var bestiary_ui: Node2D
 const PixelText = preload("res://scripts/pixel_text.gd")
 const PixelButtonLabel = preload("res://scripts/pixel_button_label.gd")
 var restaurant_ui: Node2D
@@ -32,6 +34,9 @@ func _ready() -> void:
 	restaurant_ui = RestaurantUI.new()
 	restaurant_ui.game = game
 	add_child(restaurant_ui)
+	bestiary_ui = BestiaryUI.new()
+	bestiary_ui.game = game
+	add_child(bestiary_ui)
 	rebuild()
 
 func _style(color: Color, border: Color = Color.TRANSPARENT) -> StyleBoxFlat:
@@ -77,6 +82,12 @@ func rebuild() -> void:
 		remove_child(button)
 		button.queue_free()
 	buttons.clear()
+	if is_instance_valid(bestiary_ui):
+		bestiary_ui.rebuild()
+	if game.bestiary_open:
+		restaurant_ui.rebuild()
+		queue_redraw()
+		return
 	if is_instance_valid(restaurant_ui):
 		restaurant_ui.rebuild()
 	if game.state == "rescuing":
@@ -109,6 +120,7 @@ func rebuild() -> void:
 			var label: String = "%d G   升级" % cost if cost >= 0 else "已满级"
 			_button(label,Rect2(1045,530+i*77,180,43),func(): game.upgrade(kind),false,cost < 0 or game.progress.coins < cost,CENTER_RIGHT)
 		_button("我的餐厅  ·  仓库 / 装修 / 营业",_dock_left_rect(Rect2(64,561,370,49)),game.open_restaurant,false,false,CENTER_LEFT)
+		_button(game.bestiary_button_label(),_dock_left_rect(Rect2(64,624,370,43)),game.open_bestiary,game.progress.unread_discoveries() > 0,false,CENTER_LEFT)
 		if not OS.has_feature("web"):
 			_button("退出游戏",_dock_left_rect(Rect2(64,782,150,43)),func(): get_tree().quit(),false,false,BOTTOM_LEFT)
 		_button("重新开始游戏",_dock_left_rect(Rect2(230,782,204,43)),game.request_new_game,false,false,BOTTOM_LEFT)
@@ -120,6 +132,7 @@ func rebuild() -> void:
 		if not OS.has_feature("web"):
 			_button("退出游戏",Rect2(545,620,350,48),func(): get_tree().quit())
 		_button("GM 自选潜点 · F1",Rect2(545,680,350,48),game.open_gm_menu)
+		_button(game.bestiary_button_label(),Rect2(545,736,350,43),game.open_bestiary,game.progress.unread_discoveries() > 0)
 	queue_redraw()
 
 func _rescue() -> void:
@@ -158,6 +171,8 @@ func _panel(rect: Rect2, color: Color = Color(0.025,0.12,0.16,0.88), border: Col
 func _draw() -> void:
 	if not is_instance_valid(game) or font == null:
 		return
+	if game.bestiary_open:
+		return
 	if OS.has_feature("web"):
 		PixelText.pixel_ratio = float(JavaScriptBridge.get_interface("window").devicePixelRatio)
 	if game.state in ["restaurant","service","service_paused"]:
@@ -178,7 +193,7 @@ func _draw() -> void:
 	if game.state == "paused":
 		region(CENTER)
 		screen_overlay(Color(0.01,0.05,0.08,0.75))
-		_panel(Rect2(495,260,450,510),Color("0d303d"))
+		_panel(Rect2(495,260,450,530),Color("0d303d"))
 		_center(Vector2(720,317),"静候下一次呼吸",29)
 		_center(Vector2(720,351),"PAUSED / 潜水已暂停",14,MUTED)
 	if game.harvest_result_visible and game.notice_timer > 0 and game.state == "dock" and not game.new_game_confirmation and not game.gm_menu_open:
@@ -194,7 +209,7 @@ func _draw() -> void:
 		screen_overlay(Color(0.01,0.04,0.07,0.88))
 		_panel(Rect2(410,283,620,324),Color("0d303d"))
 		_center(Vector2(720,337),"重新开始一段旅程？",29)
-		_center(Vector2(720,387),"金币、装备、仓库、店面和家具将全部重置。",19,LIGHT)
+		_center(Vector2(720,387),"金币、图鉴、装备、仓库、店面和家具将全部重置。",19,LIGHT)
 		_center(Vector2(720,423),"从第 1 天重新开始，并覆盖当前自动存档。",18,GOLD)
 		_center(Vector2(720,467),game.new_game_error if not game.new_game_error.is_empty() else "取消或按 Esc 可保留当前进度。",16,GOLD if not game.new_game_error.is_empty() else MUTED)
 	if game.gm_test_active and game.state == "dive":
@@ -203,6 +218,23 @@ func _draw() -> void:
 		_text(Vector2(44,442),"GM 试游 · F1 切换潜点",14,GOLD)
 	if game.gm_menu_open and not game.new_game_confirmation:
 		_draw_gm_menu()
+	elif game.state == "dive" and not game.entry_active:
+		_draw_discovery_notification()
+
+func _draw_discovery_notification() -> void:
+	region(TOP_RIGHT)
+	var unread: int = game.progress.unread_discoveries()
+	_panel(Rect2(1135,154,275,38))
+	_text(Vector2(1150,179),"图鉴 · B"+("    ● 新收录 %d" % unread if unread > 0 else ""),16,GOLD if unread > 0 else MUTED)
+	if game.discovery_notifications.is_empty():
+		return
+	var item: Dictionary = game.discovery_notifications[0]
+	_panel(Rect2(1000,206,350,134),Color(0.025,0.15,0.19,0.96),GOLD)
+	draw_rect(Rect2(1000,206,5,134),GOLD)
+	_text(Vector2(1020,235),"新图鉴已收录",19,GOLD)
+	_text(Vector2(1020,270),str(item.name),24,LIGHT)
+	_text(Vector2(1020,300),("捕获发现" if item.method == "caught" else "观察完成")+"  ·  奖励 +%d G" % int(item.reward),17,MINT)
+	_text(Vector2(1020,324),"按 B 查看图鉴"+("  ·  还有 %d 条新发现" % (game.discovery_notifications.size()-1) if game.discovery_notifications.size() > 1 else ""),14,MUTED)
 
 func _draw_harvest_result() -> void:
 	region(CENTER)
@@ -285,23 +317,23 @@ func _draw_dock() -> void:
 	_text(Vector2(65,424),"把日常留在岸上。",20,MUTED)
 	_text(Vector2(65,458),"向海而行，带着故事返航。",20,MUTED)
 	
-	_panel(Rect2(64,624,370,144),Color(0.03,0.16,0.20,0.76))
+	_panel(Rect2(64,678,370,90),Color(0.03,0.16,0.20,0.76))
 	_text(Vector2(85,654),"潜客日志",16,MINT)
 	if game.last_result.is_empty():
-		_text(Vector2(85,686),"潜水筹资 · 修复你的海岸旧店",18,LIGHT)
-		_text(Vector2(85,718),"仓库 %d 件 · 去餐厅售货或备菜" % game.progress.inventory_total(),15,MUTED)
+		_text(Vector2(85,705),"潜水筹资 · 修复你的海岸旧店",18,LIGHT)
+		_text(Vector2(85,738),"仓库 %d 件 · 去餐厅售货或备菜" % game.progress.inventory_total(),15,MUTED)
 	else:
-		_text(Vector2(85,687),("救援结算  +%d G" % game.last_result.earned) if game.last_result.rescued else ("收获入库  %d 件" % game.last_result.count),25,GOLD,true)
+		_text(Vector2(85,705),("救援结算  +%d G" % game.last_result.earned) if game.last_result.rescued else ("收获入库  %d 件" % game.last_result.count),25,GOLD,true)
 		if game.last_result.rescued:
-			_text(Vector2(85,719),"本次货物按 35% 折价，岸上物资保留",13,MUTED)
+			_text(Vector2(85,738),"本次货物按 35% 折价，岸上物资保留",13,MUTED)
 		else:
 			var entries: Array[String] = []
 			var stored: Dictionary = game.last_result.get("stored",{})
 			for id in stored:
 				entries.append("%s ×%d" % [game.progress.GOODS[id].name,stored[id]])
-			_text(Vector2(85,716),"  ".join(entries.slice(0,3)) if not entries.is_empty() else "这次没有带回物资，再试一次吧。",13,MUTED)
+			_text(Vector2(85,736),"  ".join(entries.slice(0,3)) if not entries.is_empty() else "这次没有带回物资，再试一次吧。",13,MUTED)
 			if entries.size() > 3:
-				_text(Vector2(85,742),"  ".join(entries.slice(3)),13,MUTED)
+				_text(Vector2(85,757),"  ".join(entries.slice(3)),13,MUTED)
 	region(CENTER_RIGHT)
 	_panel(Rect2(895,422,365,347),Color(0.025,0.12,0.16,0.92))
 	_text(Vector2(923,459),"下一次，潜得更远",24,LIGHT)
@@ -377,6 +409,12 @@ func _draw_hud() -> void:
 	for dir in [Vector2.LEFT,Vector2.RIGHT,Vector2.UP,Vector2.DOWN]:
 		draw_line(center+dir*9,center+dir*17,reticle,2,true)
 	draw_circle(center,2,reticle)
+	var observation: Dictionary = game.wildlife_observation.target
+	if not observation.is_empty() and not game.entry_active:
+		var known: bool = game.progress.has_discovery(observation.id)
+		var ratio: float = 1.0 if known else game.wildlife_observation.elapsed/3.0
+		draw_arc(center,31,-PI*.5,-PI*.5+TAU*maxf(.001,ratio),48,MINT if known else GOLD,2,true)
+		_center(Vector2(720,397),"已收录 · B 查看图鉴" if known else "保持观察  %.1f / 3 秒" % game.wildlife_observation.elapsed,16,MINT if known else GOLD)
 	if game.shot_cooldown > 0:
 		draw_arc(center,23,-PI/2,-PI/2+TAU*(1-game.shot_cooldown/game.SPEAR_COOLDOWN),30,MINT,2,true)
 	if game.hit_timer > 0:
@@ -423,7 +461,7 @@ func _draw_hud() -> void:
 	if fraction < 0.25:
 		region(TOP_CENTER)
 		_panel(Rect2(350,154,740,78),Color(0.27,0.10,0.08,0.96),Color("ef9e72"))
-		_center(Vector2(720,185),"氧气不足 · 剩余 %d%%" % maxi(0,ceili(fraction*100)),25,Color("ffb190"))
+		_center(Vector2(720,185),"气瓶余量不足 · 剩余 %d%%" % maxi(0,ceili(fraction*100)),25,Color("ffb190"))
 		_center(Vector2(720,216),"立即按住 E 上浮，抵达 3 米内按 F 返航；耗尽将触发救援折价结算。",17,LIGHT)
 	if game.hunt_warning_timer > 0:
 		region(TOP_CENTER)

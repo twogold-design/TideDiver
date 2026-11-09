@@ -111,6 +111,7 @@ func animate(time: float, viewer: Vector3) -> void:
 		var point: Vector3 = fish.home+Vector3(cos(angle)*fish.radius,sin(angle*1.3)*.10,sin(angle)*fish.radius*.65)
 		var direction := Vector3(-sin(angle),.13*cos(angle*1.3),cos(angle)*.65)
 		var pose := Transform3D(Basis.looking_at(direction.normalized()).scaled(Vector3.ONE*fish.scale),point)
+		fish["observation_point"] = fish.visual.global_transform*point
 		fish.visual.multimesh.set_instance_transform(fish.index,pose)
 
 func nearby_species(viewer: Vector3, ignored_body: RID) -> String:

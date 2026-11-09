@@ -39,7 +39,7 @@ func _run() -> void:
 	await physics_frame
 	await physics_frame
 	var habitat: Node3D = game.crevice_habitat
-	_check(is_instance_valid(habitat) and habitat.dens.size() >= 4, "Several real rock crevices host catchable morays")
+	_check(is_instance_valid(habitat) and habitat.dens.size() == 9, "All nine real rock crevices retain their catchable morays")
 	if not is_instance_valid(habitat) or habitat.dens.is_empty():
 		game.free()
 		quit(1)

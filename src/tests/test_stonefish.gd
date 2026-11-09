@@ -45,6 +45,9 @@ func _run() -> void:
 	await process_frame
 	output = ProjectSettings.globalize_path("res://../.runtime/stonefish-checks")
 	DirAccess.make_dir_recursive_absolute(output)
+	# This suite isolates camouflage/contact/cargo persistence from the separately
+	# tested first-discovery reward triggered by its natural capture fixture.
+	memory.discoveries["stonefish"] = {"method":"caught"}
 	var before: Dictionary = memory._save_data().duplicate(true)
 	var actual: Array[Dictionary] = _stonefish()
 	_check(FishData.SPECIES.size() == 14 and FishData.SPECIES[9].id == "stonefish" and FishData.SPECIES[9].behavior == "camouflage", "Stonefish is the tenth canonical catch with stationary camouflage behavior")

@@ -32,12 +32,16 @@ func _run() -> void:
 	await physics_frame
 	game.start_dive(false,false)
 	await physics_frame
+	var added_fish: Array = game.fish.filter(func(item: Dictionary)->bool: return item.get("atoll_activity",false))
+	# This suite isolates unbanked cargo; the separate bestiary suite covers first-discovery rewards.
+	if not added_fish.is_empty():
+		var known_id: String = game.FishData.SPECIES[added_fish[0].kind].id
+		game.progress.discoveries[known_id] = {"method":"caught","seen":true}
 	var original: Dictionary = game.progress._save_data().duplicate(true)
 	var activity: Node3D = game.ocean_root.get_node_or_null("AtollActivities")
 	check(activity!=null,"The actual ocean contains the three atoll activity beds")
 	if activity!=null:
 		check(activity.get_child_count()==3 and activity.get_meta("draw_batches")==6 and activity.find_children("*","CollisionObject3D",true,false).is_empty(),"Three visual activities share six batches and leave the swim route unobstructed")
-	var added_fish: Array = game.fish.filter(func(item: Dictionary)->bool: return item.get("atoll_activity",false))
 	check(added_fish.size()==12,"Twelve new huntable residents are added through the actual fish spawner")
 	var kinds := {}
 	var homes_clear := true

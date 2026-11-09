@@ -3,11 +3,11 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'environment.ps1')
 & $Godot --headless --editor --path $source --log-file (Join-Path $work 'test-import.log') --quit
 if ($LASTEXITCODE -ne 0) { throw 'Import failed.' }
-$tests = @('progression','restaurant','game','restaurant_flow','layout','layout_flow','furniture_catalog','new_game','living_world','hunting','dive_spawns','ocean_features','coastal_update','canyon_current','gm_dives','diver_motion','seabed_detail','dive_expansion','ray_wreck','reef_fish','canyon_wildlife','stonefish','depth_lighting','loot','harvest','fish_motion','marine_life','diver_atmosphere','transitions','atoll_exploration','entry_immersion','crevice_life')
+$tests = @('progression','restaurant','game','restaurant_flow','layout','layout_flow','furniture_catalog','new_game','living_world','hunting','dive_spawns','ocean_features','coastal_update','canyon_current','gm_dives','diver_motion','seabed_detail','dive_expansion','ray_wreck','reef_fish','canyon_wildlife','stonefish','depth_lighting','loot','harvest','fish_motion','marine_life','diver_atmosphere','transitions','atoll_exploration','entry_immersion','crevice_life','bestiary_progress','wildlife_observation','gm_coins')
 foreach ($test in $tests) {
     $log = Join-Path $work ("test-$test.log")
     $options = @('--audio-driver','Dummy')
-    if ($test -in @('progression','restaurant','layout','furniture_catalog')) { $options = @('--headless') }
+    if ($test -in @('progression','restaurant','layout','furniture_catalog','bestiary_progress','gm_coins')) { $options = @('--headless') }
     & $Godot @options --path $source --log-file $log --script "res://tests/test_$test.gd"
     # Some Windows installations cannot read the OS certificate store. This exact
     # engine warning is unrelated to game tests; all other errors still fail.

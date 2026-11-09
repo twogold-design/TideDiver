@@ -4,6 +4,7 @@ class_name Progression
 
 const Layout = preload("res://scripts/layout_rules.gd")
 const FishCatalog = preload("res://scripts/fish_catalog.gd")
+const WildlifeCatalog = preload("res://scripts/wildlife_catalog.gd")
 const LootCatalog = preload("res://scripts/loot_catalog.gd")
 const SAVE_PATH := "res://saves/progress.json"
 const WEB_SAVE_PATH := "user://saves/progress.json"
@@ -55,12 +56,14 @@ const RENOVATIONS := {
 var save_path: String = WEB_SAVE_PATH if OS.has_feature("web") else SAVE_PATH
 var persistence_enabled: bool = true
 var coins: int = 0
+var gm_infinite_coins: bool = false
 var day: int = 1
 var tank_level: int = 0
 var bag_level: int = 0
 var spear_level: int = 0
 var total_fish: int = 0
 var best_depth: float = 0.0
+var discoveries: Dictionary = {}
 var inventory: Dictionary = {"orange": 0, "blue": 0, "lantern": 0, "pearl": 0, "chest": 0, "sardine": 0, "puffer": 0, "lionfish": 0, "tuna": 0, "moray": 0, "reef_shark": 0, "stonefish": 0, "yellowtail_snapper":0, "coral_grouper":0, "silver_pomfret":0, "barracuda":0, "sea_glass":0, "ancient_coin":0, "amber_shard":0, "conch":0, "captain_astrolabe":0, "seagrass":0}
 var renovation: Dictionary = {"clean": false, "kitchen": false, "tables": false, "sign": false, "expansion": false, "decor": false}
 var restaurant_runs: int = 0
@@ -82,6 +85,64 @@ var next_furniture_uid: int = 100
 
 func oxygen_max() -> float:
 	return 100.0 + 25.0 * tank_level
+
+func has_discovery(id: String) -> bool:
+	return discoveries.has(id)
+
+func unread_discoveries() -> int:
+	var count := 0
+	for record: Dictionary in discoveries.values():
+		if record.get("seen") is bool and not record.seen:
+			count += 1
+	return count
+
+func mark_discoveries_seen() -> void:
+	var changed := false
+	for record: Dictionary in discoveries.values():
+		if record.get("seen") is bool and not record.seen:
+			record.seen = true
+			changed = true
+	if changed:
+		save_game()
+
+## The discovery itself is durable immediately, even if this dive later needs rescue.
+## Returns the amount credited; a first discovery at the coin cap still unlocks.
+func discover_species(id: String, method: String) -> int:
+	var record: Dictionary = WildlifeCatalog.entry(id)
+	if record.is_empty() or method not in ["observed","caught"] or has_discovery(id):
+		return 0
+	if method == "caught" and not bool(record.catchable):
+		return 0
+	discoveries[id] = {"method":method,"seen":false}
+	var awarded: int = mini(int(record.reward),maxi(0,MAX_COINS-coins))
+	coins = mini(MAX_COINS,coins+awarded)
+	save_game()
+	return awarded
+
+func _load_discoveries(data: Dictionary) -> void:
+	discoveries = {}
+	if not data.has("discoveries"):
+		# Legacy inventory is evidence of earlier catches, not an unclaimed reward.
+		for fish: Dictionary in FishCatalog.SPECIES:
+			if int(inventory.get(fish.id,0)) > 0:
+				discoveries[fish.id] = {"method":"caught","seen":true}
+		return
+	var saved: Variant = data.get("discoveries")
+	if not saved is Dictionary:
+		return
+	for record: Dictionary in WildlifeCatalog.entries():
+		var value: Variant = saved.get(record.id)
+		if not value is Dictionary:
+			continue
+		var method: Variant = value.get("method")
+		if not method is String or method not in ["observed","caught"]:
+			continue
+		if method == "caught" and not bool(record.catchable):
+			continue
+		# Saves predating unread indicators are already read; malformed fields
+		# likewise cannot manufacture a backlog of notifications.
+		var seen: bool = value.seen if value.get("seen") is bool else true
+		discoveries[record.id] = {"method":method,"seen":seen}
 
 func capacity() -> int:
 	return 12 + 4 * bag_level
@@ -175,6 +236,12 @@ func sell_valuables() -> int:
 	save_game()
 	return earned
 
+func renovations_complete() -> bool:
+	for id: String in RENOVATIONS:
+		if not bool(renovation.get(id,false)):
+			return false
+	return true
+
 func renovation_reason(id: String) -> String:
 	if not RENOVATIONS.has(id):
 		return "未知装修项目"
@@ -185,17 +252,27 @@ func renovation_reason(id: String) -> String:
 	for required in RENOVATIONS[id].requires:
 		if not renovation[required]:
 			return "先完成：" + str(RENOVATIONS[required].name)
-	if coins < int(RENOVATIONS[id].cost):
+	if not can_afford(int(RENOVATIONS[id].cost)):
 		return "还需 %d G" % (int(RENOVATIONS[id].cost) - coins)
 	return ""
 
 func renovate(id: String) -> bool:
 	if not renovation_reason(id).is_empty():
 		return false
-	coins -= int(RENOVATIONS[id].cost)
+	spend_coins(int(RENOVATIONS[id].cost))
 	renovation[id] = true
 	furniture_items()
 	save_game()
+	return true
+
+func can_afford(amount: int) -> bool:
+	return amount >= 0 and (gm_infinite_coins or coins >= amount)
+
+func spend_coins(amount: int) -> bool:
+	if not can_afford(amount):
+		return false
+	if not gm_infinite_coins:
+		coins -= amount
 	return true
 
 func can_open() -> bool:
@@ -312,7 +389,7 @@ func end_service(_pending_count: int = 0, reviews: Dictionary = {}, culinary: Di
 func _save_data() -> Dictionary:
 	furniture_items()
 	return {"version": 4, "coins": coins, "day": day, "tank_level": tank_level, "bag_level": bag_level, "spear_level": spear_level,
-		"total_fish": total_fish, "best_depth": best_depth, "inventory": inventory, "renovation": renovation,
+		"total_fish": total_fish, "best_depth": best_depth, "inventory": inventory, "discoveries": discoveries, "renovation": renovation,
 		"restaurant_runs": restaurant_runs, "total_served": total_served, "total_lost": total_lost,
 		"restaurant_income": restaurant_income, "last_service_day": last_service_day, "service_active": service_active,
 		"service_stock": service_stock, "service_pending": service_pending, "service_stats": service_stats, "last_service_result": last_service_result, "furnishings": furnishings, "recycled_gifts":recycled_gifts, "floor_style":floor_style, "wall_style":wall_style, "next_furniture_uid":next_furniture_uid}
@@ -424,6 +501,7 @@ func _apply_save_data(data: Variant) -> void:
 	if (saved_depth is float or saved_depth is int) and is_finite(float(saved_depth)):
 		best_depth = clampf(float(saved_depth), 0.0, MAX_DEPTH)
 	inventory = _read_counts(data.get("inventory"), GOODS, MAX_ITEMS)
+	_load_discoveries(data)
 	var flags: Variant = data.get("renovation", {})
 	for id in RENOVATIONS:
 		renovation[id] = flags is Dictionary and flags.get(id) is bool and flags.get(id) == true
@@ -511,6 +589,8 @@ func furniture_items() -> Array:
 		if exists:
 			continue
 		var item: Dictionary = {"uid":uid,"kind":gift.kind,"variant":"basic","x":gift.x,"z":gift.z,"rotation":0,"color":0,"placed":false}
+		if gm_infinite_coins:
+			item["gm_free"] = true
 		furnishings.append(item)
 		# Decorative gifts stay in storage until the player chooses their position.
 		if gift.kind == "table":
@@ -563,13 +643,15 @@ func buy_furniture(kind: String, variant: String = "basic") -> int:
 	if service_active or not renovation.clean or not Layout.CATALOG.has(kind) or variant not in Layout.variant_ids(kind) or furnishings.size() >= 1024:
 		return -1
 	var cost: int = int(Layout.variant_data(kind,variant).cost)
-	if coins < cost or next_furniture_uid >= 999999999:
+	if not can_afford(cost) or next_furniture_uid >= 999999999:
 		return -1
 	furniture_items()
 	var uid: int = next_furniture_uid
 	next_furniture_uid += 1
 	furnishings.append({"uid":uid,"kind":kind,"variant":variant,"x":0.0,"z":0.0,"rotation":0,"color":0,"placed":false})
-	coins -= cost
+	if gm_infinite_coins:
+		furnishings[-1]["gm_free"] = true
+	spend_coins(cost)
 	save_game()
 	return uid
 
@@ -609,7 +691,7 @@ func store_furniture(uid: int) -> bool:
 
 func furniture_refund(uid: int) -> int:
 	var item := furniture_by_uid(uid)
-	if item.is_empty():
+	if item.is_empty() or item.get("gm_free",false):
 		return 0
 	return ceili(float(Layout.variant_data(item.kind,item.variant).cost)*0.5)
 
@@ -617,7 +699,7 @@ func recycle_furniture(uid: int) -> int:
 	if service_active or not renovation.clean:
 		return 0
 	var refund: int = furniture_refund(uid)
-	if refund <= 0 or coins > MAX_COINS-refund:
+	if coins > MAX_COINS-refund:
 		return 0
 	for index in range(furnishings.size()):
 		if int(furnishings[index].uid) != uid:
@@ -699,6 +781,9 @@ func _load_layout(data: Dictionary) -> void:
 			var point: Vector2 = Layout.snap_position(float(entry.x),float(entry.z)) if finite else Vector2.ZERO
 			var rotation: int = _safe_int(entry.get("rotation"),0,3,0)
 			var item: Dictionary = {"uid":uid,"kind":entry.kind,"variant":entry.get("variant", "basic") if entry.get("variant", "basic") in Layout.variant_ids(entry.kind) else "basic","x":point.x,"z":point.y,"rotation":rotation,"color":_safe_int(entry.get("color"),0,2,0),"placed":false}
+			# This ownership flag survives reload even though the GM switch does not.
+			if entry.get("gm_free") is bool and entry.gm_free:
+				item["gm_free"] = true
 			furnishings.append(item)
 			var wants_placed: bool = entry.get("placed") is bool and entry.placed == true
 			if finite and renovation.clean and wants_placed and Layout.validate(furnishings,uid,point.x,point.y,rotation).is_empty() and (item.kind != "table" or _table_count() < _table_limit()):

@@ -99,7 +99,7 @@ func rebuild() -> void:
 		remove_child(b)
 		b.queue_free()
 	buttons.clear()
-	visible = game.state in ["restaurant","service","service_paused"]
+	visible = game.state in ["restaurant","service","service_paused"] and not game.bestiary_open
 	if is_instance_valid(layout_ui):
 		layout_ui.rebuild()
 	if game.layout_mode:
@@ -114,14 +114,20 @@ func rebuild() -> void:
 		_button("收好账单 · 继续整备",Rect2(540,611,360,54),func(): game.summary_visible = false; rebuild(),true)
 		return
 	if game.state == "restaurant":
+		var fully_renovated: bool = game.progress.renovations_complete()
 		var menu_locked: bool = not (game.progress.renovation.clean and game.progress.renovation.kitchen and game.progress.renovation.tables)
-		if menu_locked and game.restaurant_tab == "menu":
+		if fully_renovated:
+			game.restaurant_tab = "menu"
+		elif menu_locked and game.restaurant_tab == "menu":
 			game.restaurant_tab = "renovation"
 		button_anchor = TOP_LEFT
 		_button("← 返回码头",Rect2(32,30,150,43),game.return_to_dock)
+		button_anchor = TOP_CENTER
+		_button("GM 无限金币："+("开启" if game.progress.gm_infinite_coins else "关闭")+" · F1",Rect2(574,30,300,43),game.toggle_gm_infinite_coins,game.progress.gm_infinite_coins)
 		button_anchor = CENTER_RIGHT
-		_button("店面装修",Rect2(1050,110,166,42),func(): game.restaurant_tab = "renovation"; rebuild(),game.restaurant_tab == "renovation")
-		_button("备菜菜单",Rect2(1226,110,180,42),func(): game.restaurant_tab = "menu"; rebuild(),game.restaurant_tab == "menu",menu_locked,"请先装修店面" if menu_locked else "")
+		if not fully_renovated:
+			_button("店面装修",Rect2(1050,110,166,42),func(): game.restaurant_tab = "renovation"; rebuild(),game.restaurant_tab == "renovation")
+		_button("备菜菜单",Rect2(1050,110,356,42) if fully_renovated else Rect2(1226,110,180,42),func(): game.restaurant_tab = "menu"; rebuild(),game.restaurant_tab == "menu",menu_locked,"请先装修店面" if menu_locked else "")
 		button_anchor = CENTER_LEFT
 		var i: int = 0
 		for id in _warehouse_ids():
@@ -151,6 +157,7 @@ func rebuild() -> void:
 				_button("备料中" if game.preparation.has(id) and game.preparation[id].left > 0 else ("备料完成" if game.preparation.has(id) else "精细备料"),Rect2(1224,y+44,150,31),func(): game.prepare_dish(id),false,game.preparation.has(id) or int(game.menu_plan.get(id,0)) <= 0 or not game.progress.renovation.kitchen)
 				i += 1
 		button_anchor = BOTTOM_CENTER
+		_button(game.bestiary_button_label(true),Rect2(357,796,173,36),game.open_bestiary,game.progress.unread_discoveries() > 0)
 		_button("自由布置",Rect2(357,726,173,58),game.enter_layout,false,not game.progress.renovation.clean)
 		var reason: String = game.service_block_reason()
 		_button("开门营业   →",Rect2(545,726,350,58),game.start_service,true,not reason.is_empty())
@@ -211,7 +218,7 @@ func _draw() -> void:
 	_text(Vector2(363,52),"TIDE TABLE",17,MINT,true)
 	region(TOP_RIGHT)
 	_text(Vector2(970,49),"DAY %02d" % game.progress.day,21,MINT,true)
-	_text(Vector2(1100,49),"%d G" % game.progress.coins,25,GOLD,true)
+	_text(Vector2(1100,49),"∞ G · GM" if game.progress.gm_infinite_coins else "%d G" % game.progress.coins,25,GOLD,true)
 	if game.state == "restaurant":
 		_draw_management()
 	else:
