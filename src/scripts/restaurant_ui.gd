@@ -91,6 +91,9 @@ func _button(text: String, rect: Rect2, action: Callable, primary: bool = false,
 	buttons.append(b)
 
 func rebuild() -> void:
+	clear_mobile_menu()
+	if compact_enabled():
+		call_deferred("_mobile_rebuild")
 	# A mode change must clear retained CanvasItem draw commands even when the
 	# layout screen stops this panel's continuous redraws.
 	queue_redraw()
@@ -123,7 +126,8 @@ func rebuild() -> void:
 		button_anchor = TOP_LEFT
 		_button("← 返回码头",Rect2(32,30,150,43),game.return_to_dock)
 		button_anchor = TOP_CENTER
-		_button("GM 无限金币："+("开启" if game.progress.gm_infinite_coins else "关闭")+" · F1",Rect2(574,30,300,43),game.toggle_gm_infinite_coins,game.progress.gm_infinite_coins)
+		if BuildMode.GM_ENABLED:
+			_button("GM 无限金币："+("开启" if game.progress.gm_infinite_coins else "关闭")+" · F1",Rect2(574,30,300,43),game.toggle_gm_infinite_coins,game.progress.gm_infinite_coins)
 		button_anchor = CENTER_RIGHT
 		if not fully_renovated:
 			_button("店面装修",Rect2(1050,110,166,42),func(): game.restaurant_tab = "renovation"; rebuild(),game.restaurant_tab == "renovation")
@@ -133,8 +137,9 @@ func rebuild() -> void:
 		for id in _warehouse_ids():
 			var amount: int = int(game.progress.inventory.get(id,0))
 			var y: float = 221 + i*82
-			_button("卖 1 件",Rect2(54,y,110,30),func(): game.sell_goods(id,1),false,amount <= 0)
-			_button("全卖",Rect2(174,y,110,30),func(): game.sell_goods(id,amount),false,amount <= 0)
+			var prefix: String = "%s ×%d · " % [P.GOODS[id].name,amount] if compact_enabled() else ""
+			_button(prefix+("卖1件" if compact_enabled() else "卖 1 件"),Rect2(54,y,110,30),func(): game.sell_goods(id,1),false,amount <= 0)
+			_button(prefix+"全卖",Rect2(174,y,110,30),func(): game.sell_goods(id,amount),false,amount <= 0)
 			i += 1
 		_button("上一页",Rect2(54,625,78,32),func(): _change_warehouse_page(-1),false,warehouse_page == 0)
 		_button("下一页",Rect2(206,625,78,32),func(): _change_warehouse_page(1),false,warehouse_page >= _warehouse_page_count() - 1)
@@ -145,16 +150,21 @@ func rebuild() -> void:
 			for id in P.RENOVATIONS:
 				var item: Dictionary = P.RENOVATIONS[id]
 				var owned: bool = bool(game.progress.renovation.get(id,false))
-				_button("已完成" if owned else "%d G · 施工" % item.cost,Rect2(1241,182+i*94,140,35),func(): game.renovate_shop(id),false,not game.progress.renovation_reason(id).is_empty())
+				var caption: String = "已完成" if owned else "%d G · 施工" % item.cost
+				if compact_enabled():
+					caption = str(item.name)+" · "+caption
+				_button(caption,Rect2(1241,182+i*94,140,35),func(): game.renovate_shop(id),false,not game.progress.renovation_reason(id).is_empty())
 				i += 1
 		else:
 			i = 0
 			for id in P.RECIPES:
 				var y: float = 268+i*140
-				_button("−",Rect2(1080,y,65,36),func(): game.change_menu(id,-1),false,int(game.menu_plan.get(id,0)) <= 0)
-				_button("+",Rect2(1300,y,65,36),func(): game.change_menu(id,1),true,int(game.menu_plan.get(id,0)) >= int(game.progress.inventory.get(id,0)))
-				_button("口味 · "+game.Cuisine.SEASONINGS[int(game.menu_seasoning.get(id,0))],Rect2(1080,y+44,136,31),func(): game.change_seasoning(id))
-				_button("备料中" if game.preparation.has(id) and game.preparation[id].left > 0 else ("备料完成" if game.preparation.has(id) else "精细备料"),Rect2(1224,y+44,150,31),func(): game.prepare_dish(id),false,game.preparation.has(id) or int(game.menu_plan.get(id,0)) <= 0 or not game.progress.renovation.kitchen)
+				var prefix: String = "%s %d/%d份 · " % [P.RECIPES[id].name,int(game.menu_plan.get(id,0)),int(game.progress.inventory.get(id,0))] if compact_enabled() else ""
+				_button(prefix+"−",Rect2(1080,y,65,36),func(): game.change_menu(id,-1),false,int(game.menu_plan.get(id,0)) <= 0)
+				_button(prefix+"+",Rect2(1300,y,65,36),func(): game.change_menu(id,1),true,int(game.menu_plan.get(id,0)) >= int(game.progress.inventory.get(id,0)))
+				_button(prefix+"口味 · "+game.Cuisine.SEASONINGS[int(game.menu_seasoning.get(id,0))],Rect2(1080,y+44,136,31),func(): game.change_seasoning(id))
+				var prep: String = "备料中" if game.preparation.has(id) and game.preparation[id].left > 0 else ("备料完成" if game.preparation.has(id) else "精细备料")
+				_button(prefix+prep,Rect2(1224,y+44,150,31),func(): game.prepare_dish(id),false,game.preparation.has(id) or int(game.menu_plan.get(id,0)) <= 0 or not game.progress.renovation.kitchen)
 				i += 1
 		button_anchor = BOTTOM_CENTER
 		_button(game.bestiary_button_label(true),Rect2(357,796,173,36),game.open_bestiary,game.progress.unread_discoveries() > 0)
@@ -177,11 +187,16 @@ func rebuild() -> void:
 			elif order.state == "ready":
 				label = "上菜  +%d G" % game.order_price(order)
 			var order_id: int = order.id
+			if compact_enabled():
+				label = "%d桌 %s · %s" % [order.seat+1,P.RECIPES[order.dish].name,label]
 			if order.state == "ready":
-				_button("已摆盘" if order.get("plated",false) else "精致摆盘",Rect2(x+18,747,122,40),func(): game.tend_order(order_id),false,order.get("plated",false))
+				var plating: String = "已摆盘" if order.get("plated",false) else "精致摆盘"
+				_button(("%d桌 · " % [order.seat+1] if compact_enabled() else "")+plating,Rect2(x+18,747,122,40),func(): game.tend_order(order_id),false,order.get("plated",false))
 				_button(label,Rect2(x+148,747,162,40),func(): game.serve_order(order_id),true)
 			elif order.state == "cooking":
 				_button("已掌勺" if order.get("heat_result","") != "" else "绿色区点击 · 翻面",Rect2(x+18,747,292,40),func(): game.tend_order(order_id),true,order.get("heat_result","") != "")
+				if compact_enabled():
+					buttons[-1].set_meta("mobile_heat",order_id)
 			else:
 				_button(label,Rect2(x+18,747,292,40),func(): game.cook_order(order_id),false,order.state == "cooking")
 	queue_redraw()
@@ -212,13 +227,25 @@ func _panel(rect: Rect2, color: Color = Color(0.025,0.12,0.15,0.95)) -> void:
 func _draw() -> void:
 	if not visible or font == null or game.layout_mode:
 		return
+	if compact_enabled():
+		for action: Button in buttons:
+			if action.has_meta("mobile_heat"):
+				for order: Dictionary in game.orders:
+					if order.id == action.get_meta("mobile_heat"):
+						var heat: float = game.Cuisine.heat_fraction(order)
+						action.text = "%d桌 · %s" % [order.seat+1,"已掌勺" if action.disabled else ("绿色时机！点此翻面" if heat >= .4 and heat <= .75 else "等待绿色时机 · 翻面")]
+		_mobile_summary = ("∞ G · GM" if BuildMode.GM_ENABLED and game.progress.gm_infinite_coins else "%d G" % game.progress.coins)+" · "+(game.service_block_reason() if game.state == "restaurant" else "待出餐 %d · 本场收入 %d G" % [game.orders.size(),game.progress.service_stats.get("earned",0)])
+		if game.summary_visible:
+			_mobile_summary = "收入 %d G · 服务 %d 位 · 流失 %d 位" % [game.service_summary.get("earned",0),game.service_summary.get("served",0),game.service_summary.get("lost",0)]
+		draw_mobile_menu()
+		return
 	region(TOP_LEFT)
 	screen_bar(94,Color(0.025,0.10,0.13,0.96))
 	_text(Vector2(207,52),"潮间食堂",27,CREAM)
 	_text(Vector2(363,52),"TIDE TABLE",17,MINT,true)
 	region(TOP_RIGHT)
 	_text(Vector2(970,49),"DAY %02d" % game.progress.day,21,MINT,true)
-	_text(Vector2(1100,49),"∞ G · GM" if game.progress.gm_infinite_coins else "%d G" % game.progress.coins,25,GOLD,true)
+	_text(Vector2(1100,49),"∞ G · GM" if BuildMode.GM_ENABLED and game.progress.gm_infinite_coins else "%d G" % game.progress.coins,25,GOLD,true)
 	if game.state == "restaurant":
 		_draw_management()
 	else:
@@ -387,3 +414,14 @@ func _draw_bill() -> void:
 
 func _mood_color(mood: String) -> Color:
 	return Color("ed8e78") if mood == "lost" else (GOLD if mood == "okay" else MINT)
+
+func _mobile_rebuild() -> void:
+	if not compact_enabled() or not visible or game.layout_mode:
+		return
+	var title: String = "潮间食堂 · 装修与备菜" if game.state == "restaurant" else "潮间食堂 · 营业中"
+	if game.summary_visible:
+		title = "今日营业账单"
+	elif game.state == "service_paused":
+		title = "营业已暂停"
+	var sidebar: bool = not mobile_enabled() and not game.summary_visible and game.state != "service_paused"
+	mobile_menu(buttons,title,("∞ G · GM" if BuildMode.GM_ENABLED and game.progress.gm_infinite_coins else "%d G" % game.progress.coins)+" · 翻页查看仓库、装修和菜单",sidebar)

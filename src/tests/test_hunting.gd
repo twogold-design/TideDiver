@@ -23,6 +23,8 @@ func _check(condition: bool, description: String) -> void:
 		failures += 1
 		printerr("FAIL: " + description)
 func _run() -> void:
+	# Warehouse row bindings below exercise the desktop layout and button labels.
+	root.size = Vector2i(1440, 900)
 	_test_catalog_and_persistence()
 	var scene: PackedScene = load("res://scenes/main.tscn")
 	if scene == null:
@@ -229,7 +231,7 @@ func _aim_at(item: Dictionary) -> void:
 func _test_population_and_seabed() -> void:
 	game.start_dive(false, false)
 	_check(Ocean.X_MAX-Ocean.X_MIN >= 1000 and Ocean.Z_MAX-Ocean.Z_MIN >= 1000 and Ocean.Y_MIN <= -120, "Playable ocean spans a kilometre in both directions and reaches 120 metres")
-	_check(game.fish.size() == game.fish_population_count(), "Sparse ocean, entry schools and atoll encounters create the expected catchable population")
+	_check(game.fish.size() == game.fish_population_count(), "Sparse ocean, entry schools, atoll, coastal and spire residents create the expected catchable population")
 	var kinds: Dictionary = {}
 	var valid: bool = true
 	var deepest: float = 0.0

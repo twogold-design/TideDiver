@@ -2,7 +2,7 @@ extends RefCounted
 ## Stable discovery IDs: huntable fish and named ornamental residents share one field guide.
 const Fish = preload("res://scripts/fish_catalog.gd")
 const FISH_HABITATS := [
-	"潮汐湾近岸、各潜点浅水区", "近岸礁区、外海巡游水域", "深水沙坡与峡谷", "开放水域与散游鱼群",
+	"潮溪湾近岸、各潜点浅水区", "近岸礁区、外海巡游水域", "深水沙坡与峡谷", "开放水域与散游鱼群",
 	"礁石与珊瑚外围", "礁石及沉船外围", "外海开阔水域", "各潜点岩洞与石缝",
 	"外海礁区", "各潜点海床的岩石边缘", "外礁与珊瑚外围", "岩礁与沉船外围", "沙坡和沉船外缘", "外海开阔水域",
 ]

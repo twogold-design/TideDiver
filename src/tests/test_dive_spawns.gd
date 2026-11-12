@@ -35,6 +35,7 @@ func _run() -> void:
 	game = packed.instantiate()
 	memory = MemoryProgression.new()
 	memory.persistence_enabled = false
+	memory.day = 2 # Random destinations become available after the sheltered first dive.
 	game.progress = memory
 	game.smoke_mode = true
 	game.muted = true
@@ -139,7 +140,7 @@ func _sample_departures(seed_value: int, count: int) -> Array[Vector3]:
 	return sequence
 
 func _test_spawn_population(origin: Vector3, context: String) -> void:
-	_check(game.fish.size() == 183 and game.fish.size() == game.fish_population_count(), "Random destination retains 171 original fish plus twelve atoll residents: " + context)
+	_check(game.fish.size() == 207 and game.fish.size() == game.fish_population_count(), "Random destination retains 171 original fish, twelve atoll residents, ten coastal residents and fourteen spire residents: " + context)
 	var landing: Vector3 = origin + Vector3(0, -6, 25)
 	var immediate_spawn: Vector3 = origin + Vector3(0, -6, 14)
 	var safe: bool = true

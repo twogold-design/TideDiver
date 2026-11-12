@@ -41,21 +41,25 @@ func _test_catalog() -> void:
 func _test_rewards() -> void:
 	var p := MemoryProgression.new()
 	var original_inventory: Dictionary = p.inventory.duplicate(true)
-	var first: int = p.discover_species("orange","observed")
-	_check(first == Catalog.entry("orange").reward and p.coins == first and p.has_discovery("orange") and p.discoveries.orange.method == "observed", "A first observation unlocks its record and credits the advertised reward")
+	_check(p.discover_species("orange","observed") == 0 and p.discover_species("reef_clown","observed") == 0 and p.discoveries.is_empty() and p.coins == 0 and p.saves == 0, "Passive observation cannot unlock either catchable or ornamental species")
+	_check(p.discover_species("orange","sketched") == 0 and not p.has_discovery("orange") and p.saves == 0, "Catchable fish require a capture and cannot unlock through sketching")
+	var first: int = p.discover_species("orange","caught")
+	_check(first == Catalog.entry("orange").reward and p.coins == first and p.has_discovery("orange") and p.discoveries.orange.method == "caught", "A first capture unlocks its record and credits the advertised reward")
 	_check(p.saves == 1 and p.inventory == original_inventory and p.total_fish == 0, "Discovery immediately saves without inventing catches or inventory")
 	_check(p.discover_species("orange","observed") == 0 and p.discover_species("orange","caught") == 0 and p.coins == first and p.saves == 1, "Repeated observation and later capture never pay or save a second reward")
 	var caught: int = p.discover_species("moray","caught")
 	_check(caught == Catalog.entry("moray").reward and p.discoveries.moray.method == "caught" and p.saves == 2, "One successful catch can unlock the same catalog with its capture acquisition method")
 	_check(p.discover_species("lightning_clam","caught") == 0 and not p.has_discovery("lightning_clam") and p.saves == 2, "An ornamental animal cannot be unlocked by an impossible capture event")
-	_check(p.discover_species("lightning_clam","observed") == Catalog.entry("lightning_clam").reward and p.has_discovery("lightning_clam"), "The ornamental clam can be unlocked by observation")
+	_check(p.discover_species("lightning_clam","sketched") == Catalog.entry("lightning_clam").reward and p.has_discovery("lightning_clam") and p.discoveries.lightning_clam.method == "sketched", "The ornamental clam unlocks after successful sketching")
+	var sketch_coins: int = p.coins
+	_check(p.discover_species("lightning_clam","sketched") == 0 and p.coins == sketch_coins and p.saves == 3, "Repeated sketches never pay or save a second reward")
 	var coins_before: int = p.coins
 	_check(p.discover_species("unknown","observed") == 0 and p.discover_species("blue","invalid") == 0 and p.coins == coins_before and not p.has_discovery("blue"), "Unknown IDs and invalid acquisition methods are rejected")
 	p.coins = Progress.MAX_COINS-7
-	_check(p.discover_species("reef_clown","observed") == 7 and p.coins == Progress.MAX_COINS and p.has_discovery("reef_clown"), "A discovery near the coin cap credits only the available headroom")
-	_check(p.discover_species("sand_ray","observed") == 0 and p.has_discovery("sand_ray") and p.coins == Progress.MAX_COINS, "A full wallet still unlocks the record exactly once without overflowing")
+	_check(p.discover_species("reef_clown","sketched") == 7 and p.coins == Progress.MAX_COINS and p.has_discovery("reef_clown"), "A discovery near the coin cap credits only the available headroom")
+	_check(p.discover_species("sand_ray","sketched") == 0 and p.has_discovery("sand_ray") and p.coins == Progress.MAX_COINS, "A full wallet still unlocks the record exactly once without overflowing")
 	p.coins -= 100
-	_check(p.discover_species("sand_ray","observed") == 0 and p.coins == Progress.MAX_COINS-100, "Spending after a capped discovery cannot reclaim an already-consumed first reward")
+	_check(p.discover_species("sand_ray","sketched") == 0 and p.coins == Progress.MAX_COINS-100, "Spending after a capped discovery cannot reclaim an already-consumed first reward")
 	p.complete_dive([{"id":"orange"}],true,20)
 	_check(p.has_discovery("moray") and p.has_discovery("lightning_clam"), "Rescue settlement does not erase discoveries earned during the dive")
 
@@ -75,15 +79,19 @@ func _test_validation_and_migration() -> void:
 	var loaded := MemoryProgression.new()
 	loaded._apply_save_data(saved)
 	_check(loaded.discoveries == p.discoveries and loaded.coins == p.coins and loaded.discover_species("orange","caught") == 0, "A current save round trip preserves the consumed reward and acquisition method")
+	p._apply_save_data({"discoveries":{"reef_clown":{"method":"sketched","seen":false},"orange":{"method":"sketched"},"lightning_clam":{"method":"caught"}}})
+	_check(p.discoveries == {"reef_clown":{"method":"sketched","seen":false}}, "Loading accepts ornamental sketches and rejects acquisition methods incompatible with species")
+	loaded._apply_save_data(p._save_data().duplicate(true))
+	_check(loaded.discoveries == p.discoveries and loaded.unread_discoveries() == 1 and loaded.discover_species("reef_clown","sketched") == 0, "Sketched records retain their acquisition method, unread flag and consumed reward across save round trips")
 
 func _test_unread_records() -> void:
 	var p := MemoryProgression.new()
 	p.mark_discoveries_seen()
 	_check(p.unread_discoveries() == 0 and p.saves == 0, "An empty guide has no unread items and marking it read causes no save")
-	p.discover_species("orange","observed")
+	p.discover_species("orange","caught")
 	p.discover_species("moray","caught")
 	var coins: int = p.coins
-	_check(p.unread_discoveries() == 2 and p.discoveries.orange.seen == false and p.discoveries.moray.seen == false, "New observations and captures both create unread records")
+	_check(p.unread_discoveries() == 2 and p.discoveries.orange.seen == false and p.discoveries.moray.seen == false, "New captures create unread records")
 	p.discover_species("orange","caught")
 	_check(p.unread_discoveries() == 2 and p.coins == coins and p.saves == 2, "Duplicate discoveries neither duplicate unread counts nor repeat payment or saving")
 	var loaded := MemoryProgression.new()
@@ -104,7 +112,7 @@ func _test_persistence_and_reset() -> void:
 		var file: String = ProjectSettings.globalize_path(p.save_path+suffix)
 		if FileAccess.file_exists(file):
 			DirAccess.remove_absolute(file)
-	p.discover_species("moray","observed")
+	p.discover_species("moray","caught")
 	var loaded := Progress.new()
 	loaded.save_path = p.save_path
 	loaded.load_game()

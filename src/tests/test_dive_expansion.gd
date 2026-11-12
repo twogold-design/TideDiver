@@ -1,4 +1,5 @@
 extends SceneTree
+const DiveFixture = preload("res://tests/dive_fixture.gd")
 ## Actual peripheral landmarks, usable resources and physical exploration routes.
 const Ocean = preload("res://scripts/ocean_config.gd")
 const Loot = preload("res://scripts/loot_catalog.gd")
@@ -41,6 +42,7 @@ func _run() -> void:
 	game.start_dive(false, false)
 	await physics_frame
 	await process_frame
+	memory.day = 2 # Expansion departure coverage exercises the post-introduction route pool.
 	var progress_before: Dictionary = memory._save_data().duplicate(true)
 	var areas: Array = Ocean.exploration_areas()
 	var expansions: Node3D = game.ocean_root.get_node_or_null("DiveExpansions")
@@ -49,7 +51,7 @@ func _run() -> void:
 		if item.has("exploration_site"):
 			added_resources += 1
 	_check(areas.size() == 6 and Ocean.DIVE_SITES.size() == 6, "All six original dive destinations provide expanded exploration areas")
-	_check(game.fish.size() == 183 and game.fish_population_count() == 183 and game.pickups.size() == 71 and game.pickups.size() == 12 + Ocean.pickup_points().size() and added_resources == 24, "Expanded areas retain eighteen peripheral resources and add six atoll-loop finds plus twelve separated fish")
+	_check(game.fish.size() == 207 and game.fish_population_count() == 207 and game.pickups.size() == 75 and game.pickups.size() == 12 + Ocean.pickup_points().size() and added_resources == 28, "Expanded areas retain eighteen peripheral resources, six atoll-loop finds and four coastal finds, with 207 separated catchable fish")
 	_check(expansions != null and int(expansions.get_meta("site_count", 0)) == 6 and int(expansions.get_meta("side_area_count", 0)) == 12, "The actual scene includes twelve peripheral landmarks across all six sites")
 	if expansions != null and areas.size() == 6:
 		var ids: Dictionary = {}
@@ -61,10 +63,10 @@ func _run() -> void:
 			await _test_landmarks(site, area, expansions)
 			_test_peripheral_resources(site, area)
 		_check(ids.size() == 6, "Expanded areas preserve six distinct destination identities")
-		_test_gm_and_random_departures()
+		_test_fixture_and_random_departures()
 		await _test_air_cost()
 	_test_current_isolation()
-	_check(memory._save_data() == progress_before and memory.saves == 0, "Exploration, collection, refills and GM inspection do not change or save durable progress")
+	_check(memory._save_data() == progress_before and memory.saves == 0, "Exploration, collection, refills and fixture inspection do not change or save durable progress")
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	game.free()
 	await process_frame
@@ -172,7 +174,7 @@ func _test_peripheral_resources(site: int, area: Dictionary) -> void:
 	var refills: Array[Dictionary] = []
 	for item in game.pickups:
 		var distance: float = Vector2(item.home.x - center.x, item.home.z - center.z).length()
-		if item.active and not item.get("atoll_activity",false) and int(item.get("exploration_site", -1)) == site and distance > float(area.core_radius) + 2 and distance <= float(area.radius) + 8:
+		if item.active and not item.get("atoll_activity",false) and not item.get("coastal_activity",false) and int(item.get("exploration_site", -1)) == site and distance > float(area.core_radius) + 2 and distance <= float(area.radius) + 8:
 			if item.kind == "oxygen":
 				refills.append(item)
 			else:
@@ -214,12 +216,12 @@ func _test_peripheral_resources(site: int, area: Dictionary) -> void:
 		refilled = game.oxygen == 45 and not item.active and not item.node.visible
 	_check(refilled, "The peripheral gas bottle actually restores the original thirty-five units of air: " + str(area.name))
 
-func _test_gm_and_random_departures() -> void:
+func _test_fixture_and_random_departures() -> void:
 	for site in range(Ocean.DIVE_SITES.size()):
-		game.open_gm_menu()
-		var expected: Dictionary = game._gm_test_pose(site)
-		game.gm_select_dive_site(site, true)
-		_check(game.entry_site_index == site and game.player.position.is_equal_approx(expected.position) and _sphere_clear(game.player.position, 0.65), "Expanding the destination preserves its original safe GM viewpoint: %d" % site)
+		game.open_bestiary()
+		var expected: Dictionary = DiveFixture.viewpoint(game,site)
+		DiveFixture.visit(game,site, true)
+		_check(game.entry_site_index == site and game.player.position.is_equal_approx(expected.position) and _sphere_clear(game.player.position, 0.65), "Expanding the destination preserves its original safe test viewpoint: %d" % site)
 	game.entry_rng.seed = 20261027
 	var previous: int = -1
 	var visited: Dictionary = {}
@@ -227,7 +229,7 @@ func _test_gm_and_random_departures() -> void:
 	for departure in range(8):
 		game.state = "dock"
 		game.start_dive(false)
-		valid = valid and game.entry_site_index >= 0 and game.entry_site_index < 6 and game.entry_site_index != previous and game.fish.size() == 183 and game.pickups.size() == 71
+		valid = valid and game.entry_site_index >= 0 and game.entry_site_index < 6 and game.entry_site_index != previous and game.fish.size() == 207 and game.pickups.size() == 75
 		previous = game.entry_site_index
 		visited[previous] = true
 		var landing: Vector3 = game.dive_origin + Vector3(0, -6, 25)

@@ -1,4 +1,5 @@
 extends SceneTree
+const DiveFixture = preload("res://tests/dive_fixture.gd")
 ## Rare wildlife uses the real game lifecycle without durable save access.
 const Ocean = preload("res://scripts/ocean_config.gd")
 const Shark = preload("res://scripts/thresher_shark.gd")
@@ -94,9 +95,8 @@ func _run() -> void:
 	shark.animate(12, Vector3(-210,-80,-230))
 	roll = shark.spawn_roll
 	phase = shark.phase_offset
-	game.open_gm_menu()
-	game.gm_select_dive_site(1, true)
-	_check(shark.spawned and shark.spawn_roll == roll and shark.phase_offset == phase, "GM relocation preserves the current dive's encounter roll")
+	DiveFixture.visit(game,1, true)
+	_check(shark.spawned and shark.spawn_roll == roll and shark.phase_offset == phase, "Test relocation preserves the current dive's encounter roll")
 	game.toggle_pause()
 	position_before = shark.position
 	tail_before = shark.get_node("Tail").transform
@@ -105,8 +105,8 @@ func _run() -> void:
 		await physics_frame
 	game.set_physics_process(false)
 	_check(game.state == "paused" and shark.position == position_before and shark.get_node("Tail").transform == tail_before, "The real pause state freezes the encounter in physics frames")
-	_check(game.fish.size() == 183 and game.fish_population_count() == 183 and game.pickups.size() > 0, "Rare wildlife leaves the ordinary fish population and existing pickups intact")
-	_check(memory._save_data() == before and memory.saves == 0, "Encounter rolls, animation and GM testing never write durable progress")
+	_check(game.fish.size() == 207 and game.fish_population_count() == 207 and game.pickups.size() > 0, "Rare wildlife leaves the ordinary fish population and existing pickups intact")
+	_check(memory._save_data() == before and memory.saves == 0, "Encounter rolls, animation and fixture testing never write durable progress")
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	game.free()
 	await process_frame

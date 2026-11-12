@@ -1,4 +1,5 @@
 extends SceneTree
+const DiveFixture = preload("res://tests/dive_fixture.gd")
 ## Real local encounters: hunt, collect, refill and cut the new atoll garden.
 const Ocean = preload("res://scripts/ocean_config.gd")
 class MemoryProgression extends "res://scripts/progression.gd":
@@ -98,9 +99,8 @@ func _run() -> void:
 		found = not selected.active and game.cargo.size()==1 and game.cargo[0].id=="seagrass"
 		break
 	check(found,"A real right click in the new garden harvests sea grass")
-	game.open_gm_menu()
-	game.gm_select_dive_site(Ocean.site_index("pearl_atoll"),true)
-	check(plants.any(func(plant: Dictionary)->bool: return not plant.active),"GM relocation during a dive does not regenerate the harvested garden")
+	DiveFixture.visit(game,Ocean.site_index("pearl_atoll"),true)
+	check(plants.any(func(plant: Dictionary)->bool: return not plant.active),"Test relocation during a dive does not regenerate the harvested garden")
 	check(game.progress._save_data()==original,"Unbanked exploration and collection do not mutate durable progression")
 	game.finish_dive(false)
 	check(game.progress.inventory.seagrass==1,"Returning safely banks the harvested garden sea grass")

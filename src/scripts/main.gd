@@ -1,5 +1,6 @@
 extends Node3D
 
+const BuildMode = preload("res://scripts/build_mode.gd")
 const Art = preload("res://scripts/ocean_art.gd")
 const Ocean = preload("res://scripts/ocean_config.gd")
 const Feedback = preload("res://scripts/customer_feedback.gd")
@@ -12,6 +13,11 @@ const FishBrain = preload("res://scripts/fish_brain.gd")
 const WildlifeCatalog = preload("res://scripts/wildlife_catalog.gd")
 const WildlifeObservation = preload("res://scripts/wildlife_observation.gd")
 var wildlife_observation = WildlifeObservation.new()
+var sketch_active := false
+var sketch_species_id := ""
+var sketch_ui: Control
+var mobile_controls := false
+var touch_input = preload("res://scripts/mobile_input.gd").new()
 var bestiary_open := false
 var bestiary_return_state := "dock"
 var discovery_notifications: Array[Dictionary] = []
@@ -64,10 +70,10 @@ var dive_origin: Vector3 = Vector3.ZERO
 var entry_site_index: int = -1
 var entry_rng = RandomNumberGenerator.new()
 var wildlife_rng = RandomNumberGenerator.new()
-var gm_menu_open: bool = false
-var gm_return_state: String = "dock"
-var gm_test_active: bool = false
-var gm_infinite_air: bool = false
+var gm_menu_open := false
+var gm_return_state := "dock"
+var gm_test_active := false
+var gm_infinite_air := false
 var player: CharacterBody3D
 var diver_motion = DiverMotion.new()
 var camera: Camera3D
@@ -110,7 +116,7 @@ var hurt_flash: float = 0.0
 var poison_timer: float = 0.0
 var hunt_warning: String = ""
 var hunt_warning_timer: float = 0.0
-var notice: String = "潮汐湾的第一束晨光，正在等你。"
+var notice: String = "潮溪湾的第一束晨光，正在等你。"
 var notice_timer: float = 8.0
 var last_result: Dictionary = {}
 var rescue_result_visible := false
@@ -167,6 +173,8 @@ var _entry_bubble_material: ShaderMaterial
 const LAYOUT_AREA = Rect2(332,96,1100,708)
 
 func _ready() -> void:
+	if OS.has_feature("web"):
+		mobile_controls = bool(JavaScriptBridge.eval("window.tideMobileEnabled === true"))
 	rng.seed = 271828
 	entry_rng.randomize()
 	wildlife_rng.randomize()
@@ -191,6 +199,11 @@ func _ready() -> void:
 	hud = Hud.new()
 	hud.game = self
 	layer.add_child(hud)
+	sketch_ui = preload("res://scripts/wildlife_sketch.gd").new()
+	sketch_ui.game = self
+	layer.add_child(sketch_ui)
+	sketch_ui.completed.connect(_on_sketch_completed)
+	sketch_ui.cancelled.connect(cancel_sketch)
 	_setup_sound()
 	_prepare_entry_water()
 	if OS.has_feature("web"):
@@ -480,11 +493,18 @@ func _spawn_population() -> void:
 		var resident: Dictionary = _add_fish(spec.kind,spec.position)
 		if not resident.is_empty():
 			resident["atoll_activity"] = true
+	# Local residents stay by their authored habitats, beyond the entry schools.
+	for spec: Dictionary in Ocean.coastal_fish_spawns()+Ocean.spire_fish_spawns():
+		var resident: Dictionary = _add_fish(spec.kind,spec.position)
+		if not resident.is_empty():
+			resident["habitat_site"] = "tidal_cove" if spec.get("coastal_activity",false) else "southern_spires"
 	for point in Ocean.pickup_points():
 		var pickup_position: Vector3 = explorable_wreck.to_global(point.wreck_local) if point.has("wreck_local") else point.position
 		_add_pickup(pickup_position,point.kind)
 		if point.get("atoll_activity",false):
 			pickups[-1]["atoll_activity"] = true
+		if point.get("coastal_activity",false):
+			pickups[-1]["coastal_activity"] = true
 		if point.get("exploration",false):
 			pickups[-1]["exploration_site"] = point.site_index
 			pickups[-1]["location_name"] = point.name
@@ -501,7 +521,7 @@ func _spawn_population() -> void:
 		crevice_habitat = MorayHabitat.create(self)
 	crevice_habitat.populate(self)
 func fish_population_count() -> int:
-	return COASTAL_FISH_COUNT+OUTER_FISH_PER_ZONE*Ocean.ZONES.size()+TRANSIT_SCHOOLS*TRANSIT_FISH_PER_SCHOOL+ENTRY_SCHOOL_KINDS.size()*ENTRY_FISH_PER_SCHOOL+Ocean.atoll_fish_spawns().size()
+	return COASTAL_FISH_COUNT+OUTER_FISH_PER_ZONE*Ocean.ZONES.size()+TRANSIT_SCHOOLS*TRANSIT_FISH_PER_SCHOOL+ENTRY_SCHOOL_KINDS.size()*ENTRY_FISH_PER_SCHOOL+Ocean.atoll_fish_spawns().size()+Ocean.coastal_fish_spawns().size()+Ocean.spire_fish_spawns().size()
 
 func _add_fish(kind: int, point: Vector3) -> Dictionary:
 	var p := point
@@ -814,7 +834,8 @@ func start_dive(animate_entry: bool = true, random_entry: bool = true, site_over
 	ocean_root.visible = true
 	environment.fog_enabled = true
 	camera.fov = 66
-	_select_dive_site(random_entry, site_override)
+	# Day one always starts at the sheltered cove, including a resumed fresh save.
+	_select_dive_site(random_entry and progress.day > 1, site_override)
 	_spawn_population()
 	cargo.clear()
 	oxygen = progress.oxygen_max()
@@ -843,8 +864,8 @@ func start_dive(animate_entry: bool = true, random_entry: bool = true, site_over
 	hunt_warning_timer = 0
 	hunt_warning = ""
 	state = "dive"
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-	tell("WASD 游泳 · Q 下潜 / E 上浮 · 鼠标瞄准 · 左键发射鱼叉", 9)
+	Input.mouse_mode = _dive_mouse_mode()
+	tell("左侧摇杆移动 · 右侧拖动转向 · 点击按钮捕鱼、潜浮" if mobile_controls else "WASD 游泳 · Q 下潜 / E 上浮 · 鼠标瞄准 · 左键发射鱼叉", 9)
 	hud.rebuild()
 	if entry_active:
 		tell("本次入水 · %s" % Ocean.DIVE_SITES[entry_site_index].name, 3.2)
@@ -854,10 +875,11 @@ func start_dive(animate_entry: bool = true, random_entry: bool = true, site_over
 	_play_tone(480, 0.18)
 
 func open_gm_menu() -> void:
-	if bestiary_open:
+	if not BuildMode.GM_ENABLED or bestiary_open:
 		return
 	if gm_menu_open or new_game_confirmation or rescue_result_visible or layout_mode or state not in ["dock","dive","paused"]:
 		return
+	touch_input.reset()
 	gm_return_state = state
 	entry_lens.visible = false
 	gm_menu_open = true
@@ -867,15 +889,15 @@ func open_gm_menu() -> void:
 	hud.rebuild()
 
 func close_gm_menu() -> void:
-	if not gm_menu_open:
+	if not BuildMode.GM_ENABLED or not gm_menu_open:
 		return
 	gm_menu_open = false
 	state = gm_return_state
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED if state == "dive" else Input.MOUSE_MODE_VISIBLE
+	Input.mouse_mode = _dive_mouse_mode() if state == "dive" else Input.MOUSE_MODE_VISIBLE
 	hud.rebuild()
 
 func toggle_gm_infinite_air() -> void:
-	if not gm_menu_open:
+	if not BuildMode.GM_ENABLED or not gm_menu_open:
 		return
 	gm_infinite_air = not gm_infinite_air
 	if gm_infinite_air:
@@ -883,12 +905,13 @@ func toggle_gm_infinite_air() -> void:
 	hud.rebuild()
 
 func _consume_air(amount: float) -> void:
-	if not gm_infinite_air:
+	if not (BuildMode.GM_ENABLED and gm_infinite_air):
 		oxygen = maxf(0.0,oxygen-maxf(0.0,amount))
 
 func gm_select_dive_site(index: int, direct: bool = false) -> void:
-	if not gm_menu_open or index < 0 or index >= Ocean.DIVE_SITES.size():
+	if not BuildMode.GM_ENABLED or not gm_menu_open or index < 0 or index >= Ocean.DIVE_SITES.size():
 		return
+	touch_input.reset()
 	splash_player.stop()
 	var from_dock: bool = gm_return_state == "dock"
 	gm_menu_open = false
@@ -932,7 +955,7 @@ func gm_select_dive_site(index: int, direct: bool = false) -> void:
 		_update_swim_camera()
 	else:
 		_update_entry(0.0)
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	Input.mouse_mode = _dive_mouse_mode()
 	tell("GM · %s · %s" % [Ocean.DIVE_SITES[index].name,"直达景观" if direct else "船上入水"],5)
 	hud.rebuild()
 
@@ -1030,11 +1053,15 @@ func upgrade(kind: String) -> void:
 	hud.rebuild()
 
 func toggle_pause() -> void:
-	if bestiary_open:
-		close_bestiary()
+	touch_input.reset()
+	if sketch_active:
+		_leave_sketch(true)
 		return
 	if gm_menu_open:
 		close_gm_menu()
+		return
+	if bestiary_open:
+		close_bestiary()
 		return
 	if new_game_confirmation:
 		cancel_new_game()
@@ -1049,10 +1076,14 @@ func toggle_pause() -> void:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	elif state == "paused":
 		state = "dive"
-		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		Input.mouse_mode = _dive_mouse_mode()
 	hud.rebuild()
 
 func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+		touch_input.reset()
+		if sketch_active and is_instance_valid(sketch_ui):
+			sketch_ui.end_stroke()
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
 		layout_panning = false
 		layout_orbiting = false
@@ -1067,6 +1098,11 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 func _unhandled_input(event: InputEvent) -> void:
+	if sketch_active:
+		if event is InputEventKey and event.pressed and not event.echo and event.physical_keycode in [KEY_ESCAPE,KEY_P]:
+			cancel_sketch()
+		get_viewport().set_input_as_handled()
+		return
 	if bestiary_open:
 		if event is InputEventKey and event.pressed and not event.echo and event.physical_keycode in [KEY_ESCAPE,KEY_B]:
 			close_bestiary()
@@ -1088,17 +1124,21 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 		return
 	if layout_mode:
-		if event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_F1:
+		if BuildMode.GM_ENABLED and event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_F1:
 			toggle_gm_infinite_coins()
 		else:
 			_layout_input(event)
 		return
 	if event is InputEventKey and event.pressed and not event.echo:
+		if event.physical_keycode == KEY_R and can_sketch():
+			begin_sketch()
+			get_viewport().set_input_as_handled()
+			return
 		if event.physical_keycode == KEY_B:
 			open_bestiary()
 			get_viewport().set_input_as_handled()
 			return
-		if event.physical_keycode == KEY_F1:
+		if BuildMode.GM_ENABLED and event.physical_keycode == KEY_F1:
 			if state == "restaurant":
 				toggle_gm_infinite_coins()
 			else:
@@ -1119,17 +1159,22 @@ func _unhandled_input(event: InputEvent) -> void:
 				shoot()
 	if state != "dive" or entry_active:
 		return
-	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+	if event is InputEventMouseMotion and not mobile_controls and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		yaw -= event.relative.x * 0.0026
 		pitch = clampf(pitch - event.relative.y * 0.0022, -1.25, 1.10)
-	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-		shoot()
-	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_RIGHT:
+	if event is InputEventMouseButton and not mobile_controls and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		if can_sketch() and target_fish().is_empty():
+			begin_sketch()
+		else:
+			shoot()
+	if event is InputEventMouseButton and not mobile_controls and event.pressed and event.button_index == MOUSE_BUTTON_RIGHT:
 		diver_knife.swing(self)
 
 func _physics_process(delta: float) -> void:
+	if state != "dive" or entry_active or bestiary_open or gm_menu_open:
+		touch_input.reset()
 	_sync_entry_audio()
-	if bestiary_open:
+	if bestiary_open or sketch_active:
 		return
 	entry_lens.update_view(entry_time,camera.position.y,state == "dive" and entry_active)
 	_advance_discovery_notifications(delta)
@@ -1152,7 +1197,7 @@ func _physics_process(delta: float) -> void:
 			_update_projectiles(delta)
 			wildlife_observation.advance(self,delta)
 			if state == "dive":
-				var effort: float = 1.0 if Input.is_action_pressed("boost") else minf(0.5,player.velocity.length()/12.0)
+				var effort: float = 1.0 if _swim_action_pressed("boost") else minf(0.5,player.velocity.length()/12.0)
 				diver_bubbles.advance(delta,player.get_child(0).global_transform,true,effort,drift_current)
 	elif state in ["restaurant","service","service_paused"]:
 		if layout_mode:
@@ -1222,7 +1267,7 @@ func _update_entry(delta: float) -> void:
 		entry_lens.visible = false
 		camera.fov = 66
 		environment.fog_density = 0.024
-		tell("WASD 游泳 · Q 下潜 / E 上浮 · 左键鱼叉 · 右键小刀割海草", 7)
+		tell("摇杆游动 · 拖动转向 · 小刀割海草 · 水面点交互返航" if mobile_controls else "WASD 游泳 · Q 下潜 / E 上浮 · 左键鱼叉 · 右键小刀割海草", 7)
 
 func _play_splash() -> void:
 	if muted:
@@ -1354,12 +1399,12 @@ func _update_dive(delta: float) -> void:
 	shot_cooldown = maxf(0,shot_cooldown-delta)
 	hurt_cooldown = maxf(0,hurt_cooldown-delta)
 	_update_hunting_status(delta)
-	var input_dir = Input.get_vector("swim_left","swim_right","swim_forward","swim_back")
+	var input_dir = (Input.get_vector("swim_left","swim_right","swim_forward","swim_back")+touch_input.movement).limit_length()
 	var horizontal = Vector3(input_dir.x,0,input_dir.y).rotated(Vector3.UP,yaw)
-	var vertical: float = Input.get_action_strength("ascend") - Input.get_action_strength("descend")
+	var vertical: float = clampf(Input.get_action_strength("ascend") - Input.get_action_strength("descend") + float(touch_input.pressed("ascend")) - float(touch_input.pressed("descend")),-1,1)
 	var move = Vector3(horizontal.x,vertical,horizontal.z).limit_length()
-	var boosting: bool = Input.is_action_pressed("boost") and move.length() > 0.1
-	var speed: float = 2.8 if Input.is_action_pressed("stealth") else (11.5 if boosting else 6.2)
+	var boosting: bool = _swim_action_pressed("boost") and move.length() > 0.1
+	var speed: float = 2.8 if _swim_action_pressed("stealth") else (11.5 if boosting else 6.2)
 	drift_current = Ocean.current_velocity(player.position)
 	current_hint = ""
 	if drift_current.length() > 0.05:
@@ -1390,16 +1435,16 @@ func _update_dive(delta: float) -> void:
 	depth_record = maxf(depth_record,-player.position.y)
 	var use_rate: float = (0.72 + maxf(0,-player.position.y-20)*0.009) * (1.8 if boosting else 1.0)
 	_consume_air(use_rate*delta)
-	if gm_infinite_air:
+	if BuildMode.GM_ENABLED and gm_infinite_air:
 		oxygen = progress.oxygen_max()
 	_update_swim_camera()
 	for hazard in hazards:
 		if player.position.distance_to(hazard.node.position) < 2.0 and hurt_cooldown <= 0:
 			_consume_air(12)
 			hurt_cooldown = 2.5
-			tell("小心水母！GM 无限气瓶量已免除耗气。" if gm_infinite_air else "小心水母！气瓶量减少 12。", 3)
+			tell("小心水母！GM 无限气瓶量已免除耗气。" if BuildMode.GM_ENABLED and gm_infinite_air else "小心水母！气瓶量减少 12。", 3)
 			_play_tone(120,0.18)
-	if oxygen <= 0 and not gm_infinite_air:
+	if oxygen <= 0 and not (BuildMode.GM_ENABLED and gm_infinite_air):
 		finish_dive(true)
 
 func _update_swim_camera() -> void:
@@ -1463,7 +1508,7 @@ func _animate_ocean(_delta: float) -> void:
 	storm_school.animate(clock,player.position)
 	explorable_wreck.get_node("WreckFishSchool").animate(clock,player.position)
 	canyon_shark.animate(clock,player.position)
-	var ray_sensitivity: float = 0.55 if Input.is_action_pressed("stealth") else (1.35 if Input.is_action_pressed("boost") else 1.0)
+	var ray_sensitivity: float = 0.55 if _swim_action_pressed("stealth") else (1.35 if _swim_action_pressed("boost") else 1.0)
 	ray_habitat.advance(_delta,player.position,state == "dive" and not entry_active,ray_sensitivity)
 	for item in fish:
 		if item.alive:
@@ -1500,7 +1545,7 @@ func take_hunt_damage(amount: float, poison: bool, source: String) -> void:
 		hunt_warning = "石头鱼毒棘刺伤 · 气瓶量 -%d · 中毒6秒，请远离岩石边缘" % int(amount)
 	elif source == "岩洞海鳗":
 		hunt_warning = "海鳗咬击 · 气瓶量 -%d · 退离洞口，保持距离用鱼叉捕获" % int(amount)
-	if gm_infinite_air:
+	if BuildMode.GM_ENABLED and gm_infinite_air:
 		hunt_warning = "%s · GM 无限气瓶量已免除耗气%s" % [source," · 中毒6秒" if poison else ""]
 	hunt_warning_timer = 3.0
 	_play_tone(120,0.12)
@@ -1819,7 +1864,61 @@ func context_hint() -> String:
 		return "观察 · %s" % observed
 	return ""
 
+func can_sketch() -> bool:
+	if state != "dive" or entry_active or sketch_active or bestiary_open or gm_menu_open or rescue_result_visible or new_game_confirmation:
+		return false
+	var target: Dictionary = wildlife_observation.target
+	if target.is_empty() or progress.has_discovery(str(target.get("id",""))):
+		return false
+	var entry: Dictionary = WildlifeCatalog.entry(str(target.get("id","")))
+	return not entry.is_empty() and not entry.catchable
+
+func begin_sketch() -> void:
+	if not can_sketch():
+		return
+	# Recheck sight at the actual click, rather than trusting the previous scan.
+	var confirmed: Dictionary = wildlife_observation.find_target(self)
+	if confirmed.is_empty() or confirmed.get("key","") != wildlife_observation.target.get("key",""):
+		wildlife_observation.target = confirmed
+		return
+	sketch_species_id = str(confirmed.id)
+	sketch_active = true
+	state = "sketch"
+	touch_input.reset()
+	player.velocity = Vector3.ZERO
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	entry_lens.visible = false
+	sketch_ui.open_entry(sketch_species_id)
+	_sync_entry_audio()
+	hud.rebuild()
+
+func _leave_sketch(paused: bool = false) -> void:
+	if not sketch_active:
+		return
+	# A finished drawing is earned even when leaving with Escape or pause.
+	var earned_id: String = sketch_species_id if sketch_ui.trace_complete else ""
+	sketch_active = false
+	sketch_species_id = ""
+	sketch_ui.close_panel()
+	wildlife_observation.reset()
+	touch_input.reset()
+	state = "paused" if paused else "dive"
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if paused else _dive_mouse_mode()
+	_sync_entry_audio()
+	hud.rebuild()
+	if not earned_id.is_empty():
+		record_species(earned_id,"sketched")
+
+func cancel_sketch() -> void:
+	_leave_sketch()
+
+func _on_sketch_completed(id: String) -> void:
+	if not sketch_active or id != sketch_species_id or not sketch_ui.trace_complete:
+		return
+	_leave_sketch()
+
 func open_bestiary() -> void:
+	touch_input.reset()
 	if bestiary_open or entry_active or gm_menu_open or new_game_confirmation or rescue_result_visible or layout_mode or summary_visible or state not in ["dock","dive","paused","restaurant"]:
 		return
 	bestiary_return_state = state
@@ -1838,7 +1937,7 @@ func close_bestiary() -> void:
 		return
 	bestiary_open = false
 	state = bestiary_return_state
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED if state == "dive" else Input.MOUSE_MODE_VISIBLE
+	Input.mouse_mode = _dive_mouse_mode() if state == "dive" else Input.MOUSE_MODE_VISIBLE
 	_sync_entry_audio()
 	hud.rebuild()
 
@@ -1851,7 +1950,7 @@ func record_species(id: String, method: String) -> void:
 	var reward: int = progress.discover_species(id,method)
 	if not progress.has_discovery(id):
 		return
-	var action: String = "捕获并收录" if method == "caught" else "观察完成 · 图鉴收录"
+	var action: String = "捕获并收录" if method == "caught" else "描绘完成 · 图鉴收录"
 	if state == "dive":
 		discovery_notifications.append({"name":species.name,"reward":reward,"method":method})
 		if discovery_notifications.size() == 1:
@@ -1958,7 +2057,7 @@ func _run_smoke() -> void:
 
 # Shore management and restaurant service.
 func toggle_gm_infinite_coins() -> void:
-	if state != "restaurant" or summary_visible or bestiary_open:
+	if not BuildMode.GM_ENABLED or state != "restaurant" or summary_visible or bestiary_open:
 		return
 	progress.gm_infinite_coins = not progress.gm_infinite_coins
 	if layout_mode and layout_work != null:
@@ -2293,7 +2392,7 @@ func enter_layout() -> void:
 	layout_work = Progress.new()
 	layout_work.persistence_enabled = false
 	layout_work._apply_save_data(progress._save_data().duplicate(true))
-	layout_work.gm_infinite_coins = progress.gm_infinite_coins
+	layout_work.gm_infinite_coins = BuildMode.GM_ENABLED and progress.gm_infinite_coins
 	layout_mode = true
 	layout_selected = -1
 	layout_placing = false
@@ -2488,7 +2587,7 @@ func recycle_selected_furniture() -> void:
 	else:
 		layout_selected = -1
 		layout_placing = false
-		layout_reason = "已回收GM免费家具 · 不返还金币；保存后生效，可撤销。" if refund == 0 else "已回收家具，退还 %d G（售价50%%，向上取整）；保存后生效，可撤销。" % refund
+		layout_reason = "已回收家具，退还 %d G（售价50%%，向上取整）；保存后生效，可撤销。" % refund
 	_rebuild_restaurant()
 	hud.rebuild()
 
@@ -2578,6 +2677,11 @@ func _update_layout_preview() -> void:
 
 func layout_view_rect() -> Rect2:
 	var view_size := get_viewport().get_visible_rect().size
+	if hud.restaurant_ui.layout_ui.compact_enabled():
+		var unit: float = hud.restaurant_ui.layout_ui.mobile_unit()
+		var side: float = minf(300,view_size.x/unit*.46)*unit if layout_panel_visible else 0.0
+		var top: float = 0.0 if layout_panel_visible else 60.0*unit
+		return Rect2(side,top,view_size.x-side,view_size.y-top-56.0*unit)
 	var left: float = LAYOUT_AREA.position.x if layout_panel_visible else 8.0
 	return Rect2(left,96,view_size.x-left-8,view_size.y-192)
 
@@ -2673,3 +2777,9 @@ func _layout_input(event: InputEvent) -> void:
 				if chosen >= 0:
 					select_furniture(chosen)
 
+
+func _dive_mouse_mode() -> Input.MouseMode:
+	return Input.MOUSE_MODE_VISIBLE if mobile_controls else Input.MOUSE_MODE_CAPTURED
+
+func _swim_action_pressed(action: String) -> bool:
+	return Input.is_action_pressed(action) or touch_input.pressed(action)

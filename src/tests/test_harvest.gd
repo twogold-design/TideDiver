@@ -1,4 +1,5 @@
 extends SceneTree
+const DiveFixture = preload("res://tests/dive_fixture.gd")
 const Loot = preload("res://scripts/loot_catalog.gd")
 class MemoryProgression extends "res://scripts/progression.gd":
 	func load_game() -> void:
@@ -95,9 +96,8 @@ func _run() -> void:
 	wall.queue_free()
 	await physics_frame
 	meadow.cut(plant)
-	game.open_gm_menu()
-	game.gm_select_dive_site(0)
-	check(not plant.active,"GM relocation inside the current dive does not regrow harvested grass")
+	DiveFixture.visit(game,0)
+	check(not plant.active,"Test relocation inside the current dive does not regrow harvested grass")
 	game.finish_dive(false)
 	check(game.progress.inventory.seagrass==1 and game.progress.total_fish==0,"Safe return stores grass without counting it as a fish")
 	var saved: Dictionary = game.progress._save_data()

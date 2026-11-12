@@ -1,4 +1,5 @@
 extends SceneTree
+const DiveFixture = preload("res://tests/dive_fixture.gd")
 ## Real cave geometry, anchored moray encounters, swept harpoons and dive lifecycle.
 const FishData = preload("res://scripts/fish_catalog.gd")
 const Ocean = preload("res://scripts/ocean_config.gd")
@@ -44,11 +45,11 @@ func _run() -> void:
 		game.free()
 		quit(1)
 		return
-	_check(game.fish.size() == 183 and game.fish_population_count() == 183, "Rock-dwelling morays reuse the established 183-fish population")
+	_check(game.fish.size() == 207 and game.fish_population_count() == 207, "Rock-dwelling morays reuse the established 207-fish population")
 	_test_natural_homes()
 	var target: Dictionary = game.fish[habitat.dens[0].slot]
 	_test_peeking(target)
-	await _test_pause_and_gm(target)
+	await _test_pause_and_bestiary(target)
 	await _test_attack()
 	await _test_obstruction()
 	await _test_capture_and_lifecycle()
@@ -126,7 +127,7 @@ func _test_peeking(item: Dictionary) -> void:
 	_check(jaw_moves, "The visible moray jaw breathes instead of remaining a static head")
 	_check(game.oxygen == 100.0, "Watching a den from outside bite range does not consume air through attacks")
 
-func _test_pause_and_gm(item: Dictionary) -> void:
+func _test_pause_and_bestiary(item: Dictionary) -> void:
 	game.toggle_pause()
 	var pose := _pose(item.node)
 	var clock_before: float = game.clock
@@ -134,15 +135,14 @@ func _test_pause_and_gm(item: Dictionary) -> void:
 	for step in range(15):
 		game._physics_process(1.0 / 60.0)
 	_check(game.state == "paused" and _pose(item.node) == pose and game.clock == clock_before and game.oxygen == air_before, "Pausing freezes the actual moray pose and simulation clock")
-	game.open_gm_menu()
+	game.open_bestiary()
 	for step in range(15):
 		game._physics_process(1.0 / 60.0)
-	_check(game.gm_menu_open and _pose(item.node) == pose and game.clock == clock_before, "The GM panel also freezes the rock encounter")
-	game.close_gm_menu()
+	_check(game.bestiary_open and _pose(item.node) == pose and game.clock == clock_before, "The bestiary panel also freezes the rock encounter")
+	game.close_bestiary()
 	game.toggle_pause()
-	game.open_gm_menu()
-	game.gm_select_dive_site(Ocean.site_index("amber_reef"), true)
-	_check(game.state == "dive" and _pose(item.node) == pose and game.oxygen == air_before, "GM travel preserves the existing den and moray state")
+	DiveFixture.visit(game,Ocean.site_index("amber_reef"), true)
+	_check(game.state == "dive" and _pose(item.node) == pose and game.oxygen == air_before, "Test travel preserves the existing den and moray state")
 	await physics_frame
 
 func _fresh() -> Dictionary:
@@ -151,7 +151,6 @@ func _fresh() -> Dictionary:
 	await physics_frame
 	game.state = "dive"
 	game.entry_active = false
-	game.gm_infinite_air = false
 	game.oxygen = 100.0
 	game.hurt_cooldown = 0.0
 	game.poison_timer = 0.0
@@ -238,9 +237,8 @@ func _test_capture_and_lifecycle() -> void:
 	_check(game.cargo.size() == 1 and game.cargo[0].id == "moray" and game.cargo[0].weight == FishData.SPECIES[7].weight, "Den catches use normal moray cargo, weight and capture feedback")
 	var captured_node: Node3D = target.node
 	_step(target, 10.0)
-	game.open_gm_menu()
-	game.gm_select_dive_site(Ocean.site_index("pearl_atoll"), true)
-	_check(not target.alive and target.node == captured_node and not target.node.visible and game.cargo.size() == 1, "Caught cave residents stay absent during the dive and after GM travel")
+	DiveFixture.visit(game,Ocean.site_index("pearl_atoll"), true)
+	_check(not target.alive and target.node == captured_node and not target.node.visible and game.cargo.size() == 1, "Caught cave residents stay absent during the dive and after Test travel")
 	game.finish_dive(false)
 	_check(game.progress.inventory.get("moray", 0) == 1, "Returning safely stores a caught den moray in the existing warehouse")
 	game.start_dive(false, false)
@@ -250,7 +248,7 @@ func _test_capture_and_lifecycle() -> void:
 	for den: Dictionary in game.crevice_habitat.dens:
 		var item: Dictionary = game.fish[den.slot]
 		fresh = fresh and item.alive and item.hp == FishData.SPECIES[7].hp
-	_check(fresh and game.fish.size() == 183, "A new dive restores healthy den residents without duplicating fish")
+	_check(fresh and game.fish.size() == 207, "A new dive restores healthy den residents without duplicating fish")
 
 func _test_clam() -> void:
 	var cave: Node3D = game.crevice_habitat.clam_den

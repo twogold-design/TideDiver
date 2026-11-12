@@ -10,6 +10,7 @@ var game: Node
 var font: Font
 var latin: Font
 var buttons: Array[Button] = []
+var sketch_button: Button
 var fade_texture: GradientTexture2D
 const INK = Color("092834")
 const LIGHT = Color("e9f5ec")
@@ -37,7 +38,39 @@ func _ready() -> void:
 	bestiary_ui = BestiaryUI.new()
 	bestiary_ui.game = game
 	add_child(bestiary_ui)
+	_create_sketch_button()
 	rebuild()
+
+func _create_sketch_button() -> void:
+	# This control persists while targets change; it is not rebuilt every frame.
+	sketch_button = Button.new()
+	sketch_button.name = "SketchWildlifeButton"
+	sketch_button.text = "描绘轮廓 · 左键 / R"
+	sketch_button.tooltip_text = "对准可描绘的观赏生物，按鼠标左键或 R 开始描绘。"
+	sketch_button.focus_mode = Control.FOCUS_NONE
+	sketch_button.mouse_filter = Control.MOUSE_FILTER_STOP
+	sketch_button.add_theme_font_override("font",font)
+	sketch_button.add_theme_color_override("font_color",INK)
+	sketch_button.add_theme_color_override("font_hover_color",INK)
+	sketch_button.add_theme_stylebox_override("normal",_style(MINT,Color("e0fff0")))
+	sketch_button.add_theme_stylebox_override("hover",_style(Color("d7ffed"),GOLD))
+	sketch_button.add_theme_stylebox_override("pressed",_style(Color("74bca6")))
+	sketch_button.pressed.connect(func(): game.begin_sketch())
+	sketch_button.visible = false
+	sketch_button.z_index = 20
+	add_child(sketch_button)
+
+func _process(_delta: float) -> void:
+	if not is_instance_valid(sketch_button) or not is_instance_valid(game):
+		return
+	# Browser touch controls provide their own matching action above the canvas.
+	sketch_button.visible = not mobile_enabled() and game.has_method("can_sketch") and game.can_sketch()
+	if sketch_button.visible:
+		var unit := mobile_unit()
+		var screen := ui_size()/unit
+		sketch_button.position = Vector2(screen.x*.5-116,92 if compact_enabled() else 156)*unit
+		sketch_button.size = Vector2(232,44)*unit
+		sketch_button.add_theme_font_size_override("font_size",roundi(16*unit))
 
 func _style(color: Color, border: Color = Color.TRANSPARENT) -> StyleBoxFlat:
 	var style = StyleBoxFlat.new()
@@ -78,13 +111,16 @@ func _button(label: String, rect: Rect2, callback: Callable, primary: bool = fal
 	buttons.append(button)
 
 func rebuild() -> void:
+	clear_mobile_menu()
+	if compact_enabled():
+		call_deferred("_mobile_rebuild")
 	for button in buttons:
 		remove_child(button)
 		button.queue_free()
 	buttons.clear()
 	if is_instance_valid(bestiary_ui):
 		bestiary_ui.rebuild()
-	if game.bestiary_open:
+	if game.bestiary_open or game.state == "sketch":
 		restaurant_ui.rebuild()
 		queue_redraw()
 		return
@@ -102,12 +138,13 @@ func rebuild() -> void:
 		_button("确认重新开始",Rect2(733,511,256,53),game.confirm_new_game)
 		queue_redraw()
 		return
-	if game.gm_menu_open:
+	if BuildMode.GM_ENABLED and game.gm_menu_open:
 		for index in range(game.Ocean.DIVE_SITES.size()):
 			var y: float = 215 + index * 66
-			_button("船上入水",Rect2(817,y+8,150,40),game.gm_select_dive_site.bind(index,false))
-			_button("直达景观",Rect2(982,y+8,170,40),game.gm_select_dive_site.bind(index,true),true)
-		_button("无限气瓶量：" + ("开启" if game.gm_infinite_air else "关闭"),Rect2(290,715,420,48),game.toggle_gm_infinite_air,game.gm_infinite_air)
+			var prefix: String = str(game.Ocean.DIVE_SITES[index].name).split(" · ")[0]+" · " if compact_enabled() else ""
+			_button(prefix+"船上入水",Rect2(817,y+8,150,40),game.gm_select_dive_site.bind(index,false))
+			_button(prefix+"直达景观",Rect2(982,y+8,170,40),game.gm_select_dive_site.bind(index,true),true)
+		_button("无限气瓶量："+("开启" if game.gm_infinite_air else "关闭"),Rect2(290,715,420,48),game.toggle_gm_infinite_air,game.gm_infinite_air)
 		_button("返回游戏 · F1 / Esc",Rect2(750,715,400,48),game.close_gm_menu)
 		queue_redraw()
 		return
@@ -118,20 +155,26 @@ func rebuild() -> void:
 			var kind: String = kinds[i]
 			var cost: int = game.progress.upgrade_cost(kind)
 			var label: String = "%d G   升级" % cost if cost >= 0 else "已满级"
+			if compact_enabled():
+				label = ["气瓶","背包","鱼叉"][i]+" · "+label
 			_button(label,Rect2(1045,530+i*77,180,43),func(): game.upgrade(kind),false,cost < 0 or game.progress.coins < cost,CENTER_RIGHT)
 		_button("我的餐厅  ·  仓库 / 装修 / 营业",_dock_left_rect(Rect2(64,561,370,49)),game.open_restaurant,false,false,CENTER_LEFT)
 		_button(game.bestiary_button_label(),_dock_left_rect(Rect2(64,624,370,43)),game.open_bestiary,game.progress.unread_discoveries() > 0,false,CENTER_LEFT)
 		if not OS.has_feature("web"):
 			_button("退出游戏",_dock_left_rect(Rect2(64,782,150,43)),func(): get_tree().quit(),false,false,BOTTOM_LEFT)
 		_button("重新开始游戏",_dock_left_rect(Rect2(230,782,204,43)),game.request_new_game,false,false,BOTTOM_LEFT)
-		_button("GM 自选潜点 · F1",Rect2(545,782,260,43),game.open_gm_menu,false,false,BOTTOM_CENTER)
+		if BuildMode.GM_ENABLED:
+			_button("GM 自选潜点 · F1",Rect2(545,782,260,43),game.open_gm_menu,false,false,BOTTOM_CENTER)
+
 	elif game.state == "paused":
 		_button("重新开始游戏",Rect2(545,558,350,48),game.request_new_game)
 		_button("继续探索",Rect2(545,410,350,58),game.toggle_pause,true)
 		_button("呼叫救援 · 保留 35% 收益",Rect2(545,484,350,58),_rescue)
 		if not OS.has_feature("web"):
 			_button("退出游戏",Rect2(545,620,350,48),func(): get_tree().quit())
-		_button("GM 自选潜点 · F1",Rect2(545,680,350,48),game.open_gm_menu)
+		if BuildMode.GM_ENABLED:
+			_button("GM 自选潜点 · F1",Rect2(545,680,350,48),game.open_gm_menu)
+
 		_button(game.bestiary_button_label(),Rect2(545,736,350,43),game.open_bestiary,game.progress.unread_discoveries() > 0)
 	queue_redraw()
 
@@ -163,7 +206,7 @@ func _center(pos: Vector2, text: String, size: int, color: Color = LIGHT) -> voi
 	_text(pos-Vector2(width*0.5,0),text,size,color)
 
 func _use_pixel_text() -> bool:
-	return OS.has_feature("web") and is_instance_valid(game) and game.state == "dock" and not game.rescue_result_visible and not game.new_game_confirmation and not game.gm_menu_open
+	return OS.has_feature("web") and is_instance_valid(game) and game.state == "dock" and not game.rescue_result_visible and not game.new_game_confirmation and not (BuildMode.GM_ENABLED and game.gm_menu_open)
 
 func _panel(rect: Rect2, color: Color = Color(0.025,0.12,0.16,0.88), border: Color = Color(0.4,0.8,0.75,0.18)) -> void:
 	draw_style_box(_style(color,border),rect)
@@ -171,10 +214,19 @@ func _panel(rect: Rect2, color: Color = Color(0.025,0.12,0.16,0.88), border: Col
 func _draw() -> void:
 	if not is_instance_valid(game) or font == null:
 		return
-	if game.bestiary_open:
+	if game.bestiary_open or game.state == "sketch":
+		return
+	if compact_enabled():
+		if game.state in ["restaurant","service","service_paused"]:
+			return
+		if game.state == "dive" and not game.new_game_confirmation and not (BuildMode.GM_ENABLED and game.gm_menu_open):
+			_draw_mobile_dive()
+		else:
+			draw_mobile_menu()
 		return
 	if OS.has_feature("web"):
-		PixelText.pixel_ratio = float(JavaScriptBridge.get_interface("window").devicePixelRatio)
+		var canvas = JavaScriptBridge.get_interface("document").getElementById("canvas")
+		PixelText.pixel_ratio = float(canvas.width)/maxf(1.0,float(canvas.clientWidth))
 	if game.state in ["restaurant","service","service_paused"]:
 		return
 	region(CENTER)
@@ -196,7 +248,7 @@ func _draw() -> void:
 		_panel(Rect2(495,260,450,530),Color("0d303d"))
 		_center(Vector2(720,317),"静候下一次呼吸",29)
 		_center(Vector2(720,351),"PAUSED / 潜水已暂停",14,MUTED)
-	if game.harvest_result_visible and game.notice_timer > 0 and game.state == "dock" and not game.new_game_confirmation and not game.gm_menu_open:
+	if game.harvest_result_visible and game.notice_timer > 0 and game.state == "dock" and not game.new_game_confirmation and not (BuildMode.GM_ENABLED and game.gm_menu_open):
 		_draw_harvest_result()
 	elif game.notice_timer > 0 and game.state != "paused":
 		region(BOTTOM_CENTER)
@@ -212,11 +264,11 @@ func _draw() -> void:
 		_center(Vector2(720,387),"金币、图鉴、装备、仓库、店面和家具将全部重置。",19,LIGHT)
 		_center(Vector2(720,423),"从第 1 天重新开始，并覆盖当前自动存档。",18,GOLD)
 		_center(Vector2(720,467),game.new_game_error if not game.new_game_error.is_empty() else "取消或按 Esc 可保留当前进度。",16,GOLD if not game.new_game_error.is_empty() else MUTED)
-	if game.gm_test_active and game.state == "dive":
+	if BuildMode.GM_ENABLED and game.gm_test_active and game.state == "dive":
 		region(CENTER_LEFT)
 		_panel(Rect2(30,414,220,44),Color(0.08,0.17,0.20,0.94),Color(GOLD,0.65))
 		_text(Vector2(44,442),"GM 试游 · F1 切换潜点",14,GOLD)
-	if game.gm_menu_open and not game.new_game_confirmation:
+	if BuildMode.GM_ENABLED and game.gm_menu_open and not game.new_game_confirmation:
 		_draw_gm_menu()
 	elif game.state == "dive" and not game.entry_active:
 		_draw_discovery_notification()
@@ -233,7 +285,7 @@ func _draw_discovery_notification() -> void:
 	draw_rect(Rect2(1000,206,5,134),GOLD)
 	_text(Vector2(1020,235),"新图鉴已收录",19,GOLD)
 	_text(Vector2(1020,270),str(item.name),24,LIGHT)
-	_text(Vector2(1020,300),("捕获发现" if item.method == "caught" else "观察完成")+"  ·  奖励 +%d G" % int(item.reward),17,MINT)
+	_text(Vector2(1020,300),("捕获发现" if item.method == "caught" else "描绘完成")+"  ·  奖励 +%d G" % int(item.reward),17,MINT)
 	_text(Vector2(1020,324),"按 B 查看图鉴"+("  ·  还有 %d 条新发现" % (game.discovery_notifications.size()-1) if game.discovery_notifications.size() > 1 else ""),14,MUTED)
 
 func _draw_harvest_result() -> void:
@@ -313,7 +365,7 @@ func _draw_dock() -> void:
 	_text(Vector2(58,250),"TIDE",98,LIGHT,true)
 	_text(Vector2(58,339),"DIVER",98,LIGHT,true)
 	draw_line(Vector2(65,369),Vector2(111,369),GOLD,3)
-	_text(Vector2(130,376),"潮间潜客  /  潮汐湾",24,LIGHT)
+	_text(Vector2(130,376),"潮间潜客  /  潮溪湾",24,LIGHT)
 	_text(Vector2(65,424),"把日常留在岸上。",20,MUTED)
 	_text(Vector2(65,458),"向海而行，带着故事返航。",20,MUTED)
 	
@@ -356,7 +408,7 @@ func _draw_dock() -> void:
 	draw_arc(Vector2(1032,247),38,0,TAU,60,Color(MINT,0.45),1.0,true)
 	draw_circle(Vector2(1032,247),4,MINT)
 	draw_line(Vector2(1070,247),Vector2(1134,247),Color(MINT,0.45),1)
-	_text(Vector2(1144,252),"潮汐湾",18,LIGHT)
+	_text(Vector2(1144,252),"潮溪湾",18,LIGHT)
 	_text(Vector2(1144,277),"REEF 01",12,MINT,true)
 
 func _draw_hud() -> void:
@@ -371,13 +423,14 @@ func _draw_hud() -> void:
 	_text(Vector2(52,59),"TIDE DIVER",19,LIGHT,true)
 	_text(Vector2(230,57),"潮间潜客",15,MUTED)
 	_text(Vector2(52,88),"AIR",22,MINT,true)
-	var fraction: float = 1.0 if game.gm_infinite_air else game.oxygen/game.progress.oxygen_max()
+	var infinite: bool = BuildMode.GM_ENABLED and game.gm_infinite_air
+	var fraction: float = 1.0 if infinite else game.oxygen/game.progress.oxygen_max()
 	var oxygen_color: Color = MINT if fraction > 0.25 else Color("ff886b")
 	draw_style_box(_style(Color("21434b")),Rect2(95,77,210,11))
 	draw_style_box(_style(oxygen_color),Rect2(95,77,210*maxf(fraction,0.01),11))
-	_text(Vector2(316,88),"∞" if game.gm_infinite_air else str(int(game.oxygen)),17,oxygen_color,true)
-	_text(Vector2(52,123),"气瓶量 · GM 无限" if game.gm_infinite_air else "气瓶量",13,MINT if game.gm_infinite_air else MUTED)
-	_text(Vector2(214,123),"DAY %02d  ·  潮汐湾" % game.progress.day,13,MUTED)
+	_text(Vector2(316,88),"∞" if infinite else str(int(game.oxygen)),17,oxygen_color,true)
+	_text(Vector2(52,123),"气瓶量 · GM 无限" if infinite else "气瓶量",13,MINT if infinite else MUTED)
+	_text(Vector2(214,123),"DAY %02d  ·  潮溪湾" % game.progress.day,13,MUTED)
 	region(TOP_RIGHT)
 	var bag_full: bool = game.weight() >= game.progress.capacity()
 	var capacity_alert: bool = bag_full or game.capacity_warning_timer > 0
@@ -412,9 +465,7 @@ func _draw_hud() -> void:
 	var observation: Dictionary = game.wildlife_observation.target
 	if not observation.is_empty() and not game.entry_active:
 		var known: bool = game.progress.has_discovery(observation.id)
-		var ratio: float = 1.0 if known else game.wildlife_observation.elapsed/3.0
-		draw_arc(center,31,-PI*.5,-PI*.5+TAU*maxf(.001,ratio),48,MINT if known else GOLD,2,true)
-		_center(Vector2(720,397),"已收录 · B 查看图鉴" if known else "保持观察  %.1f / 3 秒" % game.wildlife_observation.elapsed,16,MINT if known else GOLD)
+		_center(Vector2(720,397),"已收录 · B 查看图鉴" if known else "发现观赏生物 · 按 R 描绘",16,MINT if known else GOLD)
 	if game.shot_cooldown > 0:
 		draw_arc(center,23,-PI/2,-PI/2+TAU*(1-game.shot_cooldown/game.SPEAR_COOLDOWN),30,MINT,2,true)
 	if game.hit_timer > 0:
@@ -469,7 +520,7 @@ func _draw_hud() -> void:
 		_center(Vector2(720,271),game.hunt_warning,18,Color("ffb190"))
 	if game.poison_timer > 0:
 		region(TOP_CENTER)
-		var poison_label: String = "中毒 %.1f 秒 · GM 已免除耗气" if game.gm_infinite_air else "中毒 %.1f 秒 · 每秒额外消耗 1.5 气瓶量"
+		var poison_label: String = "中毒 %.1f 秒 · GM 已免除耗气" if infinite else "中毒 %.1f 秒 · 每秒额外消耗 1.5 气瓶量"
 		_center(Vector2(720,316),poison_label % game.poison_timer,17,Color("d5c0f2"))
 	region(BOTTOM_LEFT)
 	_panel(Rect2(30,685,236,104),Color(0.025,0.12,0.16,0.78))
@@ -485,7 +536,7 @@ func _draw_hud() -> void:
 	_panel(Rect2(290,768,1035,43),Color(0.025,0.12,0.16,0.85))
 	_text(Vector2(308,794),"WASD 游泳  Q/E 潜浮  Shift 冲刺  Ctrl 慢游  左键/空格 鱼叉  右键 小刀  F 互动  Esc 暂停",15,MUTED)
 	region(BOTTOM_LEFT)
-	_text(Vector2(42,882),"M  音效开关   ·   F1  GM 自选潜点",12,MUTED)
+	_text(Vector2(42,882),"M  音效开关   ·   "+("F1  GM 自选潜点" if BuildMode.GM_ENABLED else "B  海洋图鉴"),12,MUTED)
 	region(BOTTOM_RIGHT)
 	_text(Vector2(1200,882),"TIDAL BAY / 01",13,MUTED,true)
 	if game.hurt_cooldown > 1.8:
@@ -540,3 +591,73 @@ func _draw_ocean_map() -> void:
 
 func _map_point(point: Vector3, rect: Rect2) -> Vector2:
 	return rect.position + Vector2(inverse_lerp(game.Ocean.X_MIN,game.Ocean.X_MAX,point.x)*rect.size.x,inverse_lerp(game.Ocean.Z_MIN,game.Ocean.Z_MAX,point.z)*rect.size.y)
+
+func _mobile_rebuild() -> void:
+	if not compact_enabled() or game.bestiary_open or game.state in ["restaurant","service","service_paused","sketch"]:
+		return
+	if game.state == "dive" and not game.new_game_confirmation and not (BuildMode.GM_ENABLED and game.gm_menu_open):
+		return
+	var title := "潮间潜客 · 出海整备" if game.state == "dock" else "潜水暂停"
+	var summary := "%d G · 图鉴 %d / 29 · 仓库 %d 件" % [game.progress.coins,game.progress.discoveries.size(),game.progress.inventory_total()]
+	if game.rescue_result_visible:
+		title = "救援结束 · 已安全返航"
+		summary = "本次折价结算 +%d G · 原有仓库与家具保留" % int(game.last_result.earned)
+	elif game.new_game_confirmation:
+		title = "重新开始？将清空当前存档"
+		summary = "金币、图鉴、装备和餐厅将全部重置。"
+	elif game.state == "rescuing":
+		title = "正在救援 · 请稍候"
+	elif BuildMode.GM_ENABLED and game.gm_menu_open:
+		title = "GM · 自选潜点"
+		summary = "船上入水播放动画；直达景观快速测试。翻页可切换无限气瓶量。"
+	var sidebar: bool = not mobile_enabled() and game.state == "dock" and not game.rescue_result_visible and not game.new_game_confirmation and not (BuildMode.GM_ENABLED and game.gm_menu_open)
+	var actions: Array = buttons.duplicate()
+	if sidebar and actions.size() >= 6:
+		# Keep the three destinations together; upgrades remain on following rows.
+		actions = [buttons[0],buttons[4],buttons[5]] + buttons.slice(1,4) + buttons.slice(6)
+	mobile_menu(actions,title,summary,sidebar)
+
+func _draw_mobile_dive() -> void:
+	var unit := mobile_unit()
+	var screen := ui_size()/unit
+	draw_set_transform(Vector2.ZERO)
+	draw_offset = Vector2.ZERO
+	var face = font
+	var air := "∞" if BuildMode.GM_ENABLED and game.gm_infinite_air else "%d%%" % ceili(game.oxygen/game.progress.oxygen_max()*100)
+	draw_rect(Rect2(Vector2(8,8)*unit,Vector2(screen.x-16,40)*unit),Color(.025,.10,.14,.75))
+	draw_string(face,Vector2(18,26)*unit,"气瓶 %s · %.1fm" % [air,-game.player.position.y],HORIZONTAL_ALIGNMENT_LEFT,-1,roundi(13*unit),LIGHT)
+	draw_string(face,Vector2(screen.x-145,26)*unit,"背包 %d/%dkg" % [game.weight(),game.progress.capacity()],HORIZONTAL_ALIGNMENT_LEFT,-1,roundi(13*unit),LIGHT)
+	if game.progress.unread_discoveries() > 0:
+		draw_string(face,Vector2(screen.x-145,43)*unit,"图鉴新收录 %d" % game.progress.unread_discoveries(),HORIZONTAL_ALIGNMENT_LEFT,-1,roundi(11*unit),GOLD)
+	if not mobile_enabled():
+		draw_string(face,Vector2(18,43)*unit,"B 图鉴 · Esc 暂停"+(" · F1 GM" if BuildMode.GM_ENABLED else ""),HORIZONTAL_ALIGNMENT_LEFT,-1,roundi(11*unit),MUTED)
+		draw_rect(Rect2(Vector2(8,screen.y-34)*unit,Vector2(screen.x-16,26)*unit),Color(.025,.10,.14,.75))
+		draw_string(face,Vector2(18,screen.y-16)*unit,"WASD 移动 · 鼠标转向 · Q/E 升降 · 左键鱼叉 · 右键小刀 · F 交互",HORIZONTAL_ALIGNMENT_LEFT,(screen.x-36)*unit,roundi(12*unit),MUTED)
+	if game.entry_active:
+		draw_string(face,Vector2(screen.x*.5-70,screen.y*.5)*unit,"正在进入海底…",HORIZONTAL_ALIGNMENT_LEFT,-1,roundi(18*unit),MINT)
+		return
+	var center := ui_size()*.5
+	draw_circle(center,2*unit,MINT)
+	for direction in [Vector2.LEFT,Vector2.RIGHT,Vector2.UP,Vector2.DOWN]:
+		draw_line(center+direction*7*unit,center+direction*12*unit,MINT,unit,true)
+	var observation: Dictionary = game.wildlife_observation.target
+	if not observation.is_empty():
+		var known: bool = game.progress.has_discovery(observation.id)
+		var hint := "已收录" if known else ("发现观赏生物" if mobile_enabled() else "按 R 描绘轮廓")
+		draw_string(face,center+Vector2(-48,-30)*unit,hint,HORIZONTAL_ALIGNMENT_LEFT,-1,roundi(12*unit),GOLD)
+	var message: String = game.context_hint()
+	if game.oxygen/game.progress.oxygen_max() < .25:
+		message = "气瓶余量不足 · 请上浮返航"
+	elif not game.discovery_notifications.is_empty():
+		var item: Dictionary = game.discovery_notifications[0]
+		message = "图鉴新收录：%s  +%d G" % [item.name,item.reward]
+	elif game.notice_timer > 0:
+		message = game.notice
+	if mobile_enabled() and message.begins_with("WASD"):
+		message = "左侧摇杆移动 · 右侧滑动转向 · 点击操作按钮"
+	if mobile_enabled():
+		message = message.replace("按 F", "点交互").replace("按F", "点交互")
+	if not message.is_empty():
+		var max_width: float = (screen.x-230)*unit
+		draw_rect(Rect2(Vector2(110,54)*unit,Vector2(screen.x-220,32)*unit),Color(.025,.10,.14,.80))
+		draw_string(face,Vector2(118,76)*unit,message,HORIZONTAL_ALIGNMENT_LEFT,max_width,roundi(12*unit),GOLD)

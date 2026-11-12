@@ -1,4 +1,5 @@
 extends SceneTree
+const DiveFixture = preload("res://tests/dive_fixture.gd")
 ## Real renderer, batched decoration, terrain collision and existing interactions.
 const Ocean = preload("res://scripts/ocean_config.gd")
 const Geology = preload("res://scripts/ocean_geology.gd")
@@ -55,7 +56,7 @@ func _run() -> void:
 		_test_terrain()
 		await _test_sites_and_rendering(geology, life)
 		_test_pearl_interaction()
-	_check(game.fish.size() == 183 and game.fish_population_count() == 183, "Decorative seabed life does not add ordinary fish or increase the catchable population")
+	_check(game.fish.size() == 207 and game.fish_population_count() == 207, "Decorative seabed life does not add ordinary fish or increase the catchable population")
 	_check(memory._save_data() == progress_before and memory.saves == 0, "Detail inspection and pearl pickup do not mutate or save durable progress")
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	game.free()
@@ -166,11 +167,10 @@ func _test_terrain() -> void:
 
 func _test_sites_and_rendering(geology: Node3D, life: Node3D) -> void:
 	for site in range(Ocean.DIVE_SITES.size()):
-		game.open_gm_menu()
-		game.gm_select_dive_site(site, true)
+		DiveFixture.visit(game,site, true)
 		var forward := Vector3(-sin(game.yaw), 0, -cos(game.yaw))
 		var collision := KinematicCollision3D.new()
-		_check(game.entry_site_index == site and _sphere_clear(game.player.position, 0.65) and not game.player.test_move(Transform3D(Basis.IDENTITY, game.player.position), forward * 5, collision), "Existing GM arrival and its forward swimming approach remain open at site %d" % site)
+		_check(game.entry_site_index == site and _sphere_clear(game.player.position, 0.65) and not game.player.test_move(Transform3D(Basis.IDENTITY, game.player.position), forward * 5, collision), "Existing test arrival and its forward swimming approach remain open at site %d" % site)
 		var stone: MultiMeshInstance3D = geology.get_node_or_null("Site%dPebbles0" % site)
 		var organism: MultiMeshInstance3D = life.get_node_or_null("Site%d/Seagrass" % site)
 		var rendered: bool = stone != null and organism != null

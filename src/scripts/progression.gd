@@ -2,6 +2,7 @@ extends RefCounted
 class_name Progression
 ## Browser saves use the persistent user filesystem; desktop saves stay on M:.
 
+const BuildMode = preload("res://scripts/build_mode.gd")
 const Layout = preload("res://scripts/layout_rules.gd")
 const FishCatalog = preload("res://scripts/fish_catalog.gd")
 const WildlifeCatalog = preload("res://scripts/wildlife_catalog.gd")
@@ -56,7 +57,7 @@ const RENOVATIONS := {
 var save_path: String = WEB_SAVE_PATH if OS.has_feature("web") else SAVE_PATH
 var persistence_enabled: bool = true
 var coins: int = 0
-var gm_infinite_coins: bool = false
+var gm_infinite_coins := false
 var day: int = 1
 var tank_level: int = 0
 var bag_level: int = 0
@@ -109,9 +110,9 @@ func mark_discoveries_seen() -> void:
 ## Returns the amount credited; a first discovery at the coin cap still unlocks.
 func discover_species(id: String, method: String) -> int:
 	var record: Dictionary = WildlifeCatalog.entry(id)
-	if record.is_empty() or method not in ["observed","caught"] or has_discovery(id):
+	if record.is_empty() or method not in ["sketched","caught"] or has_discovery(id):
 		return 0
-	if method == "caught" and not bool(record.catchable):
+	if (method == "caught") != bool(record.catchable):
 		return 0
 	discoveries[id] = {"method":method,"seen":false}
 	var awarded: int = mini(int(record.reward),maxi(0,MAX_COINS-coins))
@@ -135,9 +136,12 @@ func _load_discoveries(data: Dictionary) -> void:
 		if not value is Dictionary:
 			continue
 		var method: Variant = value.get("method")
-		if not method is String or method not in ["observed","caught"]:
+		# Observation is accepted only when loading an already-earned legacy entry.
+		if not method is String or method not in ["observed","caught","sketched"]:
 			continue
 		if method == "caught" and not bool(record.catchable):
+			continue
+		if method == "sketched" and bool(record.catchable):
 			continue
 		# Saves predating unread indicators are already read; malformed fields
 		# likewise cannot manufacture a backlog of notifications.
@@ -266,12 +270,12 @@ func renovate(id: String) -> bool:
 	return true
 
 func can_afford(amount: int) -> bool:
-	return amount >= 0 and (gm_infinite_coins or coins >= amount)
+	return amount >= 0 and ((BuildMode.GM_ENABLED and gm_infinite_coins) or coins >= amount)
 
 func spend_coins(amount: int) -> bool:
 	if not can_afford(amount):
 		return false
-	if not gm_infinite_coins:
+	if not (BuildMode.GM_ENABLED and gm_infinite_coins):
 		coins -= amount
 	return true
 
@@ -589,7 +593,7 @@ func furniture_items() -> Array:
 		if exists:
 			continue
 		var item: Dictionary = {"uid":uid,"kind":gift.kind,"variant":"basic","x":gift.x,"z":gift.z,"rotation":0,"color":0,"placed":false}
-		if gm_infinite_coins:
+		if BuildMode.GM_ENABLED and gm_infinite_coins:
 			item["gm_free"] = true
 		furnishings.append(item)
 		# Decorative gifts stay in storage until the player chooses their position.
@@ -649,7 +653,7 @@ func buy_furniture(kind: String, variant: String = "basic") -> int:
 	var uid: int = next_furniture_uid
 	next_furniture_uid += 1
 	furnishings.append({"uid":uid,"kind":kind,"variant":variant,"x":0.0,"z":0.0,"rotation":0,"color":0,"placed":false})
-	if gm_infinite_coins:
+	if BuildMode.GM_ENABLED and gm_infinite_coins:
 		furnishings[-1]["gm_free"] = true
 	spend_coins(cost)
 	save_game()
@@ -781,7 +785,7 @@ func _load_layout(data: Dictionary) -> void:
 			var point: Vector2 = Layout.snap_position(float(entry.x),float(entry.z)) if finite else Vector2.ZERO
 			var rotation: int = _safe_int(entry.get("rotation"),0,3,0)
 			var item: Dictionary = {"uid":uid,"kind":entry.kind,"variant":entry.get("variant", "basic") if entry.get("variant", "basic") in Layout.variant_ids(entry.kind) else "basic","x":point.x,"z":point.y,"rotation":rotation,"color":_safe_int(entry.get("color"),0,2,0),"placed":false}
-			# This ownership flag survives reload even though the GM switch does not.
+			# Preserve provenance: free debug furniture cannot become refundable money.
 			if entry.get("gm_free") is bool and entry.gm_free:
 				item["gm_free"] = true
 			furnishings.append(item)

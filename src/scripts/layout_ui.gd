@@ -12,7 +12,104 @@ var page: String = "shop"
 var button_anchor := TOP_LEFT
 var _preview_views: Dictionary = {}
 var _last_reason: String = ""
+var mobile_section := "tools"
 const PREVIEW_CACHE_LIMIT := 8
+
+func _mobile_section(value: String) -> void:
+	mobile_section = value
+	_mobile_page = 0
+	rebuild()
+
+func _mobile_add(label: String, action: Callable, disabled: bool = false) -> void:
+	_button(label,Rect2(0,0,100,44),action,false,disabled)
+
+func _mobile_buy(variant: String) -> void:
+	game.buy_layout_furniture(category,variant)
+	if not game.layout_pending_purchase.is_empty():
+		game.layout_panel_visible = false
+		game.hud.rebuild()
+
+func _mobile_select(uid: int) -> void:
+	game.select_furniture(uid)
+	mobile_section = "tools"
+	_mobile_page = 1
+	rebuild()
+
+func _mobile_camera(action: String) -> void:
+	match action:
+		"in": game.layout_zoom = maxf(12,game.layout_zoom-3)
+		"out": game.layout_zoom = minf(52,game.layout_zoom+3)
+		"left": game.layout_camera_yaw -= .25
+		"right": game.layout_camera_yaw += .25
+		"up": game.layout_camera_pitch = minf(deg_to_rad(85),game.layout_camera_pitch+.15)
+		"down": game.layout_camera_pitch = maxf(deg_to_rad(20),game.layout_camera_pitch-.15)
+	game.update_layout_camera()
+
+func _rebuild_mobile_layout() -> void:
+	button_anchor = TOP_LEFT
+	if not game.layout_panel_visible:
+		_mobile_add("展开工具",game.toggle_layout_panel)
+		_mobile_add("保存",game.save_layout)
+		_mobile_add("取消摆放" if game.layout_placing else "取消修改",game.cancel_layout_placement if game.layout_placing else game.cancel_layout)
+		for index in range(controls.size()):
+			place_mobile_button(controls[index] as Button,Rect2(12+index*106,8,100,44))
+		queue_redraw()
+		return
+	var selected: Dictionary = game.layout_work.furniture_by_uid(game.layout_selected)
+	var empty: bool = selected.is_empty()
+	match mobile_section:
+		"shop":
+			_mobile_add("返回布置工具",_mobile_section.bind("tools"))
+			var kinds: Array = Rules.CATALOG.keys()
+			_mobile_add("分类：%s →" % Rules.CATALOG[category].name,set_category.bind(kinds[(kinds.find(category)+1)%kinds.size()]))
+			for variant: String in shop_variants():
+				var product: Dictionary = Rules.variant_data(category,variant)
+				var available: int = game.layout_work.coins+int(game.layout_pending_purchase.get("cost",0))
+				var free: bool = BuildMode.GM_ENABLED and game.layout_work.gm_infinite_coins
+				_mobile_add("%s · %s" % [product.name,"GM 免费" if free else "%dG" % product.cost],_mobile_buy.bind(variant),not free and available < int(product.cost))
+		"owned":
+			_mobile_add("返回布置工具",_mobile_section.bind("tools"))
+			_mobile_add("切换地板",func(): game.set_layout_style("floor",(game.layout_work.floor_style+1)%3))
+			_mobile_add("切换墙面",func(): game.set_layout_style("wall",(game.layout_work.wall_style+1)%3))
+			for item: Dictionary in game.layout_work.furniture_items():
+				_mobile_add(("已摆 · " if item.placed else "收纳 · ")+Rules.item_name(item),_mobile_select.bind(int(item.uid)))
+		"camera":
+			_mobile_add("返回布置工具",_mobile_section.bind("tools"))
+			_mobile_add("视角归中",game.reset_layout_camera)
+			for pair: Array in [["拉近","in"],["拉远","out"],["镜头左转","left"],["镜头右转","right"],["俯视更多","up"],["降低视角","down"]]:
+				_mobile_add(pair[0],_mobile_camera.bind(pair[1]))
+		_:
+			_mobile_add("保存布局",game.save_layout)
+			_mobile_add("取消修改",game.cancel_layout)
+			_mobile_add("家具商店",_mobile_section.bind("shop"))
+			_mobile_add("我的家具",_mobile_section.bind("owned"))
+			_mobile_add("移动选中家具",game.begin_move_furniture,empty)
+			_mobile_add("旋转选中家具",game.rotate_layout,empty)
+			_mobile_add("切换配色",game.color_selected_furniture,empty)
+			_mobile_add("取消摆放",game.cancel_layout_placement,not game.layout_placing)
+			_mobile_add("收起工具 · 点地板放置",game.toggle_layout_panel)
+			_mobile_add("视角调整",_mobile_section.bind("camera"))
+			_mobile_add("收纳家具",game.store_selected_furniture,empty or not selected.get("placed",false))
+			_mobile_add("回收家具 +%dG" % game.layout_work.furniture_refund(game.layout_selected),game.recycle_selected_furniture,empty)
+			_mobile_add("撤销",game.undo_layout,game.layout_history.is_empty())
+			_mobile_add("还原默认摆位",game.reset_layout_draft)
+			if BuildMode.GM_ENABLED:
+				_mobile_add("GM 无限金币："+("开启" if game.progress.gm_infinite_coins else "关闭"),game.toggle_gm_infinite_coins)
+
+	var summary: String = "点选家具，再点空地放置" if empty else Rules.item_name(selected)
+	mobile_menu(controls,"自由布置 · %s" % ("∞ G · GM" if BuildMode.GM_ENABLED and game.layout_work.gm_infinite_coins else "%d G" % game.layout_work.coins),summary,true)
+	queue_redraw()
+
+func _draw_mobile_layout() -> void:
+	if game.layout_panel_visible:
+		draw_mobile_menu()
+	var unit: float = mobile_unit()
+	var screen: Vector2 = ui_size()/unit
+	draw_set_transform(Vector2.ZERO)
+	var left: float = minf(300,screen.x*.46)+8 if game.layout_panel_visible else 12
+	var message: String = game.layout_reason if not game.layout_reason.is_empty() else "点击家具选择；选购后点击地板放置"
+	draw_rect(Rect2(Vector2(left,screen.y-52)*unit,Vector2(maxf(0,screen.x-left-12),44)*unit),Color(.03,.12,.15,.92))
+	draw_string(font,Vector2(left+8,screen.y-25)*unit,message,HORIZONTAL_ALIGNMENT_LEFT,maxf(0,screen.x-left-28)*unit,roundi(12*unit),GOLD)
 
 func _ready() -> void:
 	super._ready()
@@ -90,6 +187,7 @@ func shop_variants() -> Array:
 	return variants
 
 func rebuild() -> void:
+	clear_mobile_menu()
 	for display: TextureRect in _preview_views.values():
 		display.visible = false
 	for c in controls:
@@ -99,10 +197,14 @@ func rebuild() -> void:
 	visible = game.layout_mode
 	if not visible:
 		return
+	if compact_enabled():
+		_rebuild_mobile_layout()
+		return
 	button_anchor = TOP_CENTER
 	_button("展开家具栏  Tab" if not game.layout_panel_visible else "收起家具栏  Tab",Rect2(368,24,162,45),game.toggle_layout_panel)
 	_button("视角归中  F",Rect2(542,24,128,45),game.reset_layout_camera)
-	_button("GM 无限金币："+("开启" if game.progress.gm_infinite_coins else "关闭")+" · F1",Rect2(702,98,280,38),game.toggle_gm_infinite_coins,game.progress.gm_infinite_coins)
+	if BuildMode.GM_ENABLED:
+		_button("GM 无限金币："+("开启" if game.progress.gm_infinite_coins else "关闭")+" · F1",Rect2(702,98,280,38),game.toggle_gm_infinite_coins,game.progress.gm_infinite_coins)
 	button_anchor = TOP_RIGHT
 	_button("保存布局",Rect2(1050,24,170,45),game.save_layout,true)
 	_button("取消修改",Rect2(1234,24,178,45),game.cancel_layout)
@@ -118,7 +220,7 @@ func rebuild() -> void:
 	_button("切换配色",Rect2(1121,839,130,41),game.color_selected_furniture,false,empty)
 	var pending: bool = not game.layout_pending_purchase.is_empty()
 	var refund: int = game.layout_work.furniture_refund(game.layout_selected)
-	_button("取消选购" if pending else ("免费回收" if selected.get("gm_free",false) else ("回收 +%d G" % refund if not empty else "半价回收")),Rect2(1264,839,148,41),game.recycle_selected_furniture,false,empty)
+	_button("取消选购" if pending else ("免费回收" if BuildMode.GM_ENABLED and selected.get("gm_free",false) else ("回收 +%d G" % refund if not empty else "半价回收")),Rect2(1264,839,148,41),game.recycle_selected_furniture,false,empty)
 	if game.layout_panel_visible:
 		button_anchor = TOP_LEFT
 		_button("家具商店",Rect2(20,110,142,40),func(): set_page("shop"),page=="shop")
@@ -135,7 +237,8 @@ func rebuild() -> void:
 				var y: float = 278 + index*128
 				_preview(Rect2(26,y+8,108,116),category,variant)
 				var available: int = game.layout_work.coins + int(game.layout_pending_purchase.get("cost",0))
-				_button("GM 免费选购" if game.layout_work.gm_infinite_coins else "%d G · 选购" % int(product.cost),Rect2(153,y+94,150,28),func(): game.buy_layout_furniture(category,variant),false,not game.layout_work.gm_infinite_coins and available < int(product.cost))
+				var free: bool = BuildMode.GM_ENABLED and game.layout_work.gm_infinite_coins
+				_button("GM 免费选购" if free else "%d G · 选购" % int(product.cost),Rect2(153,y+94,150,28),func(): game.buy_layout_furniture(category,variant),false,not free and available < int(product.cost))
 				index += 1
 		else:
 			var owned = ItemList.new()
@@ -155,7 +258,7 @@ func rebuild() -> void:
 				var status: String = "待放置" if int(game.layout_pending_purchase.get("uid",-1)) == int(item.uid) else ("已摆" if item.placed else "收纳")
 				if game.Progress.GIFT_FURNITURE.has(int(item.uid)):
 					status += " · 赠品"
-				if item.get("gm_free",false):
+				if BuildMode.GM_ENABLED and item.get("gm_free",false):
 					status += " · GM免费"
 				owned.add_item("%s · %s" % [status,Rules.item_name(item)])
 				owned.set_item_metadata(i,int(item.uid))
@@ -182,12 +285,15 @@ func _panel(rect: Rect2, color: Color = Color(0.025,0.12,0.15,0.97)) -> void:
 func _draw() -> void:
 	if not visible or font == null:
 		return
+	if compact_enabled():
+		_draw_mobile_layout()
+		return
 	region(TOP_LEFT)
 	screen_bar(88,Color("09232d"))
 	_text(Vector2(24,40),"一间有你风格的海岸小店",25)
 	_text(Vector2(26,68),"TIDE TABLE  /  家具与空间",13,MINT)
 	region(TOP_CENTER)
-	_text(Vector2(702,39),"∞ G · GM无限" if game.layout_work.gm_infinite_coins else "可用 %d G" % game.layout_work.coins,22,GOLD)
+	_text(Vector2(702,39),"∞ G · GM无限" if BuildMode.GM_ENABLED and game.layout_work.gm_infinite_coins else "可用 %d G" % game.layout_work.coins,22,GOLD)
 	var cost: int = game.progress.coins-game.layout_work.coins
 	_text(Vector2(702,66),("本次支出 %d G" % cost if cost >= 0 else "本次返还 %d G" % -cost)+" · 保存后生效",14,MUTED)
 	if game.layout_panel_visible:
@@ -232,4 +338,3 @@ func _draw() -> void:
 	_text(Vector2(340,883),"中键平移 · Alt+中键旋转 · 滚轮缩放",13,MUTED)
 	region(BOTTOM_RIGHT)
 	_text(Vector2(1100,784),"营业桌位 %d / %d" % [game.layout_work.seats(),4 if game.layout_work.renovation.expansion else 2],16,Color("183c41"))
-

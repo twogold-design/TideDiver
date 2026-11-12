@@ -1,4 +1,5 @@
 extends SceneTree
+const DiveFixture = preload("res://tests/dive_fixture.gd")
 ## Grounded camouflage, real contact/LOS, poison, physical captures and lifecycle isolation.
 const Ocean = preload("res://scripts/ocean_config.gd")
 const FishData = preload("res://scripts/fish_catalog.gd")
@@ -51,16 +52,16 @@ func _run() -> void:
 	var before: Dictionary = memory._save_data().duplicate(true)
 	var actual: Array[Dictionary] = _stonefish()
 	_check(FishData.SPECIES.size() == 14 and FishData.SPECIES[9].id == "stonefish" and FishData.SPECIES[9].behavior == "camouflage", "Stonefish is the tenth canonical catch with stationary camouflage behavior")
-	_check(actual.size() == 12 and game.stonefish_count == actual.size() and game.fish.size() == 183 and game.fish_population_count() == 183, "Twelve stonefish replace ordinary population slots while retaining exactly 183 huntable fish")
+	_check(actual.size() == 12 and game.stonefish_count == actual.size() and game.fish.size() == 207 and game.fish_population_count() == 207, "Twelve stonefish replace ordinary population slots while retaining exactly 207 huntable fish")
 	if actual.size() == 12:
 		_test_natural_homes(actual)
 		await _test_grounded_idle_and_rendering(actual[0])
 		_test_natural_physical_capture(actual[0])
 		await _test_contact_poison_and_recovery()
 		await _test_contact_obstruction()
-		await _test_pause_and_gm()
+		await _test_pause_and_bestiary()
 		_test_inactive_damage_guards()
-		_check(memory._save_data() == before and memory.saves == 0 and game.cargo.is_empty(), "Camouflage, contact damage, poison and GM inspection never mutate or save durable progress")
+		_check(memory._save_data() == before and memory.saves == 0 and game.cargo.is_empty(), "Camouflage, contact damage, poison and fixture inspection never mutate or save durable progress")
 		await _test_physical_capture_and_persistence()
 		_test_fresh_dive_and_new_game()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -263,22 +264,22 @@ func _test_contact_obstruction() -> void:
 	await _physics_frames(1)
 	_check(game.oxygen < 88.1 and game.poison_timer > 5.9 and target.state == "exposed", "Removing the actual wall allows the same body position to trigger contact damage")
 
-func _test_pause_and_gm() -> void:
+func _test_pause_and_bestiary() -> void:
 	game.toggle_pause()
 	var target: Dictionary = _stonefish()[0]
 	var before := _snapshot(target)
 	await _physics_frames(15)
 	_check(game.state == "paused" and _snapshot(target) == before, "Pause freezes stonefish exposure, its actual model, poison, immunity and air in real physics frames")
-	game.open_gm_menu()
+	game.open_bestiary()
 	await _physics_frames(15)
-	_check(game.gm_menu_open and _snapshot(target) == before, "The open GM panel freezes the same real exposed fish and injury timers")
-	game.close_gm_menu()
+	_check(game.bestiary_open and _snapshot(target) == before, "The open bestiary panel freezes the same real exposed fish and injury timers")
+	game.close_bestiary()
 	game.toggle_pause()
-	game.open_gm_menu()
+	game.open_bestiary()
 	var air_before: float = game.oxygen
 	var position_before: Vector3 = target.node.position
-	game.gm_select_dive_site(game.Ocean.site_index("amber_reef"), true)
-	_check(game.state == "dive" and target.state == before.state and target.node.position == position_before and game.oxygen == air_before, "GM transfer preserves the current stonefish exposure, its home position and the remaining air")
+	DiveFixture.visit(game,game.Ocean.site_index("amber_reef"), true)
+	_check(game.state == "dive" and target.state == before.state and target.node.position == position_before and game.oxygen == air_before, "Test relocation preserves the current stonefish exposure, its home position and the remaining air")
 
 func _test_inactive_damage_guards() -> void:
 	var target := _fixture()
@@ -337,7 +338,7 @@ func _test_fresh_dive_and_new_game() -> void:
 	var reset := true
 	for item: Dictionary in _stonefish():
 		reset = reset and item.alive and item.hp == FishData.SPECIES[9].hp and item.state == "camouflaged" and item.node.position.is_equal_approx(item.home) and absf(item.home.y - Ocean.seabed_height(item.home.x, item.home.z) - 0.035) < 0.015
-	_check(_stonefish().size() == 12 and reset and game.fish.size() == 183 and game.poison_timer == 0 and game.hurt_cooldown == 0, "A fresh dive restores twelve healthy rock-edge stonefish and clears old contact effects without increasing population")
+	_check(_stonefish().size() == 12 and reset and game.fish.size() == 207 and game.poison_timer == 0 and game.hurt_cooldown == 0, "A fresh dive restores twelve healthy rock-edge stonefish and clears old contact effects without increasing population")
 	game.toggle_pause()
 	game.request_new_game()
 	game.confirm_new_game()

@@ -30,6 +30,7 @@ func _key(code: Key) -> void:
 	game._unhandled_input(event)
 
 func _run() -> void:
+	root.size = Vector2i(1440,900)
 	var packed: PackedScene = load("res://scenes/main.tscn")
 	if packed == null:
 		printerr("FAIL: main scene could not load")

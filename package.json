@@ -12,6 +12,7 @@
     "test:marine": "node src/tests/web_marine_update.cjs",
     "test:entry-audio": "node src/tests/web_entry_audio.cjs",
     "test:bestiary": "node src/tests/web_bestiary_gm.cjs",
+    "test:mobile": "node src/tests/web_mobile.cjs",
     "test:resolution": "node src/tests/web_resolution.cjs",
     "test:text": "node src/tests/web_text.cjs"
   },

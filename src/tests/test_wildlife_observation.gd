@@ -24,6 +24,7 @@ func _check(value: bool, description: String) -> void:
 		printerr("FAIL: "+description)
 
 func _run() -> void:
+	root.size = Vector2i(1440,900)
 	game = load("res://scenes/main.tscn").instantiate()
 	game.progress = MemoryProgression.new()
 	game.progress.persistence_enabled = false
@@ -66,7 +67,7 @@ func _isolate() -> void:
 
 func _fish(kind: int, point: Vector3) -> Dictionary:
 	var item: Dictionary = game._add_fish(kind,point)
-	item.node.position = point
+	item.node.global_position = point
 	item.previous_position = point
 	item.home = point
 	item.node.visible = true
@@ -82,41 +83,53 @@ func _watch(seconds: float) -> void:
 	for frame in range(frames):
 		game.wildlife_observation.advance(game,seconds/float(frames))
 
+func _ray(point: Vector3) -> Dictionary:
+	game.ray_habitat.visible = true
+	for record: Dictionary in game.ray_habitat.rays:
+		record.node.visible = false
+	var node: Node3D = game.ray_habitat.rays[0].node
+	node.global_position = point
+	node.visible = true
+	return {"node":node}
+
 func _test_timing_and_identity() -> void:
-	var a := _fish(0,WATER+Vector3(-2,0,-10))
-	var b := _fish(0,WATER+Vector3(2,0,-10))
-	_aim(a.node.position)
-	_check(game.wildlife_observation.find_target(game).get("key","") == "fish:%d" % a.node.get_instance_id(), "The central view selects a real visible animal rather than only its species")
-	_watch(2.9)
-	_check(not game.progress.has_discovery("orange") and is_equal_approx(game.wildlife_observation.elapsed,2.9), "Observing the same animal for 2.9 seconds is insufficient")
-	_aim(b.node.position)
-	_watch(.1)
-	_check(game.wildlife_observation.elapsed < .15 and not game.progress.has_discovery("orange"), "Switching to another individual of the same species resets the three-second observation")
+	var item := _fish(0,WATER+Vector3(0,0,-10))
+	_aim(item.node.global_position)
 	var before: int = game.progress.coins
-	_watch(3.0)
-	_check(game.progress.has_discovery("orange") and game.progress.discoveries.orange.method == "observed" and game.progress.coins-before == Catalog.entry("orange").reward, "Three seconds on one real visible fish unlocks its record and pays the stated reward")
-	var saves: int = game.progress.saves
-	_watch(4.0)
-	_check(game.progress.coins-before == Catalog.entry("orange").reward and game.progress.saves == saves, "Continuing to observe an unlocked fish never duplicates a reward or save")
-	_check(game.cargo.is_empty() and game.progress.inventory_total() == 0, "Observing fish does not create captured inventory")
+	_watch(8.0)
+	_check(game.wildlife_observation.target.is_empty() and not game.can_sketch(), "Catchable fish never offer an ornamental sketch")
+	_check(not game.progress.has_discovery("orange") and game.progress.coins == before, "Watching catchable fish never unlocks or rewards discovery")
+	game.record_species("orange","observed")
+	game.record_species("orange","sketched")
+	_check(not game.progress.has_discovery("orange"), "Catchable records reject observation and sketch unlock methods")
+	game._hit_fish(item,99)
+	_check(game.progress.has_discovery("orange") and game.progress.discoveries.orange.method == "caught", "First successful capture unlocks its record")
+	game.cargo.clear()
 	_isolate()
 
 func _test_lost_view_and_wall() -> void:
-	var item := _fish(1,WATER+Vector3(0,0,-10))
-	_aim(item.node.position)
-	_watch(2.99)
+	var item := _ray(WATER+Vector3(0,0,-10))
+	_aim(item.node.global_position)
+	_watch(8.0)
+	_check(game.wildlife_observation.target.get("id","") == "sand_ray" and game.can_sketch(), "A visible ornamental ray offers the manual sketch action")
+	_check(not game.progress.has_discovery("sand_ray"), "Eight seconds of observing ornamental wildlife never unlocks it")
 	game.camera.look_at(game.camera.position+Vector3.RIGHT,Vector3.UP)
-	_watch(.02)
-	_check(not game.progress.has_discovery("blue") and game.wildlife_observation.target.is_empty() and game.wildlife_observation.elapsed == 0, "Turning away in the final frame cannot unlock a stale cached target and clears observation time")
-	item.node.position = WATER+Vector3(0,0,-21)
-	_aim(item.node.position)
+	game.begin_sketch()
+	_check(not game.sketch_active, "Sketch activation revalidates a stale target after looking away")
+	_watch(.1)
+	_check(not game.progress.has_discovery("sand_ray") and game.wildlife_observation.target.is_empty() and game.wildlife_observation.elapsed == 0, "Turning away clears the target without unlocking a record")
+	item.node.global_position = WATER+Vector3(0,0,-21)
+	_aim(item.node.global_position)
 	_watch(3.2)
-	_check(not game.progress.has_discovery("blue") and game.wildlife_observation.target.is_empty(), "An animal beyond twenty metres cannot be observed for the journal")
-	item.node.position = WATER+Vector3(0,0,-10)
-	_aim(item.node.position)
+	_check(not game.progress.has_discovery("sand_ray") and game.wildlife_observation.target.is_empty(), "An animal beyond twenty metres cannot be observed for the journal")
+	item.node.global_position = WATER+Vector3(0,0,-10)
+	_aim(item.node.global_position)
+	_watch(.1)
 	item.node.visible = false
+	game.begin_sketch()
+	_check(not game.sketch_active, "A newly hidden animal cannot open a sketch from a cached candidate")
 	_watch(3.2)
-	_check(not game.progress.has_discovery("blue") and game.wildlife_observation.target.is_empty(), "A hidden animal never contributes observation time")
+	_check(not game.progress.has_discovery("sand_ray") and game.wildlife_observation.target.is_empty(), "A hidden animal cannot remain a sketch candidate")
 	item.node.visible = true
 	var wall := StaticBody3D.new()
 	wall.collision_layer = 1
@@ -130,12 +143,12 @@ func _test_lost_view_and_wall() -> void:
 	await physics_frame
 	await physics_frame
 	_watch(3.2)
-	_check(not game.progress.has_discovery("blue") and game.wildlife_observation.target.is_empty(), "A real solid wall blocks observation from the diver and camera")
+	_check(not game.progress.has_discovery("sand_ray") and game.wildlife_observation.target.is_empty(), "A real solid wall blocks observation from the diver and camera")
 	wall.queue_free()
 	await physics_frame
 	await physics_frame
 	_watch(1.0)
-	_check(game.wildlife_observation.elapsed > .8 and not game.progress.has_discovery("blue"), "Observation starts fresh only after the obstruction is removed")
+	_check(game.can_sketch() and not game.progress.has_discovery("sand_ray"), "Visible wildlife offers a sketch after obstruction is removed")
 	_isolate()
 
 func _key(code: Key) -> void:
@@ -167,13 +180,13 @@ func _click(point: Vector2) -> void:
 	await process_frame
 
 func _test_pause_and_modal_input() -> void:
-	var item := _fish(2,WATER+Vector3(0,0,-10))
-	_aim(item.node.position)
+	var item := _ray(WATER+Vector3(0,0,-10))
+	_aim(item.node.global_position)
 	_watch(1.0)
-	var elapsed: float = game.wildlife_observation.elapsed
+	var candidate: Dictionary = game.wildlife_observation.target.duplicate()
 	game.state = "paused"
 	_watch(6.0)
-	_check(game.wildlife_observation.elapsed == elapsed and not game.progress.has_discovery("lantern"), "Pause freezes partial observation without granting discoveries")
+	_check(game.wildlife_observation.target == candidate and not game.progress.has_discovery("sand_ray"), "Pause preserves the candidate without granting discoveries")
 	game.state = "dive"
 	await _key(KEY_B)
 	_check(game.bestiary_open and game.state == "paused" and game.hud.bestiary_ui.visible and game.hud.buttons.is_empty(), "The real B key opens the journal, pauses the dive and removes the underlying HUD controls")
@@ -183,11 +196,11 @@ func _test_pause_and_modal_input() -> void:
 	var projectiles: int = game.projectiles.size()
 	await _key(KEY_SPACE)
 	await _click(Vector2(240,515))
-	_check(game.bestiary_open and game.projectiles.size() == projectiles and game.oxygen == air and game.wildlife_observation.elapsed == elapsed, "Journal inputs cannot fire a hook, consume air or advance observation behind the modal")
+	_check(game.bestiary_open and game.projectiles.size() == projectiles and game.oxygen == air and game.wildlife_observation.target == candidate, "Journal inputs cannot fire a hook, consume air or change the candidate behind the modal")
 	await _key(KEY_B)
 	_check(not game.bestiary_open and game.state == "dive" and not game.entry_active, "Closing the journal with B resumes the original dive without starting a new entry")
 	_watch(2.2)
-	_check(game.progress.has_discovery("lantern"), "A paused partial observation can finish after resuming the same target")
+	_check(not game.progress.has_discovery("sand_ray") and game.can_sketch(), "Resuming observation still requires a successful sketch")
 	game.state = "dock"
 	game.hud.rebuild()
 	await _key(KEY_B)
@@ -240,7 +253,7 @@ func _test_ornamental() -> void:
 	var inventory: Dictionary = game.progress.inventory.duplicate(true)
 	_check(game.wildlife_observation.find_target(game).get("id","") == "lightning_clam", "The actual ornamental clam inside its cave is an observable target")
 	_watch(3.1)
-	_check(game.progress.has_discovery("lightning_clam") and game.progress.coins-before == Catalog.entry("lightning_clam").reward, "Three seconds of watching the real clam unlocks its ornamental catalog reward")
+	_check(not game.progress.has_discovery("lightning_clam") and game.progress.coins == before and game.can_sketch(), "Watching the real clam offers a sketch without automatically granting its reward")
 	_check(game.progress.inventory == inventory and game.cargo.is_empty(), "Ornamental discovery never creates a captured clam or cargo item")
 
 func _test_discovery_feedback() -> void:
@@ -248,14 +261,14 @@ func _test_discovery_feedback() -> void:
 	game.progress.mark_discoveries_seen()
 	game.discovery_notifications.clear()
 	game.discovery_notification_timer = 0.0
-	game.record_species("reef_clown","observed")
+	game.record_species("reef_clown","sketched")
 	game.tell("普通采集提示",2.0)
 	_check(game.discovery_notifications.size() == 1 and game.discovery_notifications[0].name == Catalog.entry("reef_clown").name and game.discovery_notification_timer == 5.0, "A first discovery retains its independent five-second card after an ordinary tell message")
 	game.record_species("tuna","caught")
 	_check(game.discovery_notifications.size() == 2 and game.progress.unread_discoveries() == 2, "Distinct discoveries queue in order and each sets one unread record")
-	game.record_species("reef_clown","observed")
+	game.record_species("reef_clown","sketched")
 	game.record_species("tuna","caught")
-	_check(game.discovery_notifications.size() == 2 and game.progress.unread_discoveries() == 2, "Duplicate observation or capture does not add notification cards or unread counts")
+	_check(game.discovery_notifications.size() == 2 and game.progress.unread_discoveries() == 2, "Duplicate sketch or capture does not add notification cards or unread counts")
 	game._advance_discovery_notifications(4.9)
 	_check(game.discovery_notifications.size() == 2 and game.discovery_notifications[0].name == Catalog.entry("reef_clown").name, "A queued card remains visible until its five-second duration finishes")
 	var remaining: float = game.discovery_notification_timer
@@ -271,7 +284,7 @@ func _test_discovery_feedback() -> void:
 	_check(game.bestiary_open and game.progress.unread_discoveries() == 0 and game.discovery_notifications.is_empty() and game.discovery_notification_timer == 0.0, "Opening the journal marks discoveries read and clears notification state")
 	game.close_bestiary()
 	_check(game.state == "dive" and game.progress.unread_discoveries() == 0 and not game.bestiary_button_label().contains("●"), "Closing the journal keeps the cleared unread indicator cleared")
-	game.record_species("reef_chromis","observed")
+	game.record_species("reef_chromis","sketched")
 	_check(game.progress.unread_discoveries() == 1 and game.bestiary_button_label().contains("新1") and game.bestiary_button_label(true).contains("● 1"), "A later discovery lights the full and compact journal indicators again")
 	game.open_bestiary()
 	_check(game.discovery_notifications.is_empty() and game.discovery_notification_timer == 0.0 and game.progress.unread_discoveries() == 0, "Opening the journal also dismisses a still-active discovery card")
@@ -287,8 +300,8 @@ func _capture_discovery_feedback() -> void:
 	game.start_dive(false,false)
 	game._clear_loot_feedback()
 	game._physics_process(0.0)
-	game.record_species("reef_butterfly","observed")
-	game.record_species("reef_tang","observed")
+	game.record_species("reef_butterfly","sketched")
+	game.record_species("reef_tang","sketched")
 	game.tell("拾取珍珠 · +1",2.0)
 	game._apply_underwater_lighting(maxf(0.0,-game.player.position.y))
 	game.hud.rebuild()

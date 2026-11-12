@@ -63,7 +63,7 @@ func _run() -> void:
 		await _test_pause_and_reset()
 		_test_capture_isolation()
 		_check(game.fish.size() == fish_before and game.fish_population_count() == fish_before and game.pickups.size() == pickups_before,"Ambient ecology never adds capture targets or loot to the real gameplay population")
-		_check(game.cargo.is_empty() and memory._save_data() == before and memory.saves == 0,"Viewing, animation, GM and firing through ambient animals never change cargo or durable progress")
+		_check(game.cargo.is_empty() and memory._save_data() == before and memory.saves == 0,"Viewing, animation, fixture positioning and firing through ambient animals never change cargo or durable progress")
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	game.free()
 	await process_frame
@@ -211,10 +211,10 @@ func _test_pause_and_reset() -> void:
 		await physics_frame
 	game.set_physics_process(false)
 	_check(game.state=="paused" and _snapshot()==before,"Real pause freezes ambient instance transforms and every appendage shader")
-	game.open_gm_menu()
+	game.open_bestiary()
 	game._physics_process(1.0)
-	_check(game.gm_menu_open and _snapshot()==before,"An open GM menu also freezes the ambient ecology")
-	game.close_gm_menu()
+	_check(game.bestiary_open and _snapshot()==before,"An open bestiary menu also freezes the ambient ecology")
+	game.close_bestiary()
 	game.toggle_pause()
 	life.reset()
 	var original: Array = _snapshot()

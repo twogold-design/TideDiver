@@ -1,4 +1,5 @@
 extends SceneTree
+const DiveFixture = preload("res://tests/dive_fixture.gd")
 ## Actual local controls, joint poses and movement measured in physics frames.
 const Ocean = preload("res://scripts/ocean_config.gd")
 const DiverArt = preload("res://scripts/diver_art.gd")
@@ -64,10 +65,10 @@ func _run() -> void:
 		await _test_directional_poses()
 		await _test_smooth_release_and_diagonal()
 		await _test_heading_and_collision()
-		await _test_pause_and_gm_freeze()
+		await _test_pause_and_fixture_freeze()
 		await _test_current_idle()
 		await _test_lifecycle_resets()
-		_check(memory._save_data() == progress_before and memory.saves == 0, "Swimming animation and GM tests do not mutate or save durable progress")
+		_check(memory._save_data() == progress_before and memory.saves == 0, "Swimming animation and fixture tests do not mutate or save durable progress")
 	_release_actions()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	game.free()
@@ -134,7 +135,7 @@ func _test_heading_and_collision() -> void:
 	wall.free()
 	await physics_frame
 
-func _test_pause_and_gm_freeze() -> void:
+func _test_pause_and_fixture_freeze() -> void:
 	await _sample(["swim_back", "swim_left"])
 	game.toggle_pause()
 	var paused_pose: Dictionary = _joint_transforms(rig)
@@ -144,13 +145,13 @@ func _test_pause_and_gm_freeze() -> void:
 	await _advance_frames(20)
 	_check(game.state == "paused" and _joint_transforms(rig) == paused_pose and game.diver_motion.phase == phase_before and game.diver_motion.motion_input == input_before and game.player.position == position_before, "Pause freezes the entire real rig, animation phase and body position")
 	game.toggle_pause()
-	game.open_gm_menu()
-	var gm_pose: Dictionary = _joint_transforms(rig)
+	game.open_bestiary()
+	var book_pose: Dictionary = _joint_transforms(rig)
 	Input.action_press("swim_right")
 	await _advance_frames(20)
 	_release_actions()
-	_check(game.gm_menu_open and game.state == "paused" and _joint_transforms(rig) == gm_pose and game.diver_motion.phase == phase_before and game.player.position == position_before, "The GM menu freezes every real rig joint despite held movement controls")
-	game.close_gm_menu()
+	_check(game.bestiary_open and game.state == "paused" and _joint_transforms(rig) == book_pose and game.diver_motion.phase == phase_before and game.player.position == position_before, "The bestiary menu freezes every real rig joint despite held movement controls")
+	game.close_bestiary()
 
 func _test_current_idle() -> void:
 	var point := Vector3(Ocean.canyon_center_x(-250), -50, -250)
@@ -169,9 +170,8 @@ func _test_lifecycle_resets() -> void:
 	_check(_is_reset() and not game.entry_active, "The entry joints return smoothly to the neutral swimming pose before control resumes")
 	_test_entry_joint_continuity()
 	await _sample(["swim_left"])
-	game.open_gm_menu()
-	game.gm_select_dive_site(game.Ocean.site_index("amber_reef"), true)
-	_check(_is_reset() and not game.entry_active and game.state == "dive", "GM transfer clears the old motion before showing the new dive location")
+	DiveFixture.visit(game,game.Ocean.site_index("amber_reef"), true)
+	_check(_is_reset() and not game.entry_active and game.state == "dive", "Test relocation clears the old motion before showing the new dive location")
 	await _sample(["swim_back", "swim_right"])
 	game.state = "dock"
 	game.start_dive(false, false)

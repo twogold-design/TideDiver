@@ -1,4 +1,5 @@
 extends SceneTree
+const DiveFixture = preload("res://tests/dive_fixture.gd")
 ## Real wreck collision, rendered decorative shoals, and sand-ray lifecycle integration.
 const Ocean = preload("res://scripts/ocean_config.gd")
 
@@ -57,7 +58,7 @@ func _run() -> void:
 		await _test_school_geometry_and_rendering()
 		await _test_harpoon_isolation_and_hull()
 		_test_wreck_camera()
-		await _test_pause_and_gm()
+		await _test_pause_and_bestiary()
 		_check(game.fish.size() == fish_before and game.fish_population_count() == fish_before and game.pickups.size() == pickups_before, "Decorative rays and internal shoals never add huntable fish or pickups")
 		_check(memory._save_data() == progress_before and memory.saves == 0 and game.cargo.is_empty(), "Exploring and firing through decorative animals neither changes inventory nor writes progress")
 		_test_ray_lifecycle_reset()
@@ -394,7 +395,7 @@ func _test_wreck_camera() -> void:
 			contained = contained and game.camera.position.distance_to(game.player.position) < 5.0
 	_check(clear and unobstructed and contained, "The actual following camera keeps its volume and sightline out of hull walls across internal passages and four viewing directions")
 
-func _test_pause_and_gm() -> void:
+func _test_pause_and_bestiary() -> void:
 	rays.advance(0.02, rays.rays[0].home + Vector3(0, 3, 4))
 	game.player.position = wreck.to_global(Vector3(0, 6, 0))
 	game.player.velocity = Vector3.ZERO
@@ -406,13 +407,13 @@ func _test_pause_and_gm() -> void:
 	await _physics_frames(8)
 	_check(game.state == "paused" and _ray_snapshot() == ray_before and _school_snapshot() == school_before and game.clock == clock_before, "The real pause state freezes ray states, all visible joints, fish instances and tail animation")
 	game.toggle_pause()
-	game.open_gm_menu()
+	game.open_bestiary()
 	ray_before = _ray_snapshot()
 	school_before = _school_snapshot()
 	await _physics_frames(8)
-	_check(game.gm_menu_open and game.state == "paused" and _ray_snapshot() == ray_before and _school_snapshot() == school_before, "An open GM menu freezes both decorative animal systems in actual physics frames")
-	game.gm_select_dive_site(game.Ocean.site_index("pearl_atoll"), true)
-	_check(game.state == "dive" and not game.gm_menu_open and _ray_snapshot() == ray_before, "GM teleport within a dive preserves the existing ray state instead of resetting the habitat")
+	_check(game.bestiary_open and game.state == "paused" and _ray_snapshot() == ray_before and _school_snapshot() == school_before, "An open bestiary menu freezes both decorative animal systems in actual physics frames")
+	DiveFixture.visit(game,game.Ocean.site_index("pearl_atoll"), true)
+	_check(game.state == "dive" and not game.bestiary_open and _ray_snapshot() == ray_before, "Test relocation within a dive preserves the existing ray state instead of resetting the habitat")
 
 func _test_ray_lifecycle_reset() -> void:
 	game.player.position = wreck.to_global(Vector3(7.8, 6, 9))
@@ -438,12 +439,11 @@ func _test_ray_lifecycle_reset() -> void:
 	game.yaw = wreck.rotation.y + PI * 0.5
 	game.pitch = 0
 	game._update_swim_camera()
-	var hidden_before_gm: bool = not rig.visible
-	game.open_gm_menu()
-	game.gm_select_dive_site(game.Ocean.site_index("merchant_wreck"), false)
+	var hidden_before_fixture: bool = not rig.visible
+	DiveFixture.visit(game,game.Ocean.site_index("merchant_wreck"), false)
 	visible_at_start = rig.is_visible_in_tree()
 	game._update_entry(0.75)
-	_check(hidden_before_gm and visible_at_start and game.entry_active and rig.is_visible_in_tree(), "GM boat entry also restores the real diver throughout its jump after a cramped wreck view")
+	_check(hidden_before_fixture and visible_at_start and game.entry_active and rig.is_visible_in_tree(), "A positioned boat entry also restores the real diver throughout its jump after a cramped wreck view")
 	game._update_entry(3.2)
 	var first: Dictionary = rays.rays[0]
 	rays.advance(0.02, first.home + Vector3(0, 3, 4))

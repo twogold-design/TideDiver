@@ -1,4 +1,5 @@
 extends SceneTree
+const DiveFixture = preload("res://tests/dive_fixture.gd")
 const Entry = preload("res://scripts/dive_entry.gd")
 class MemoryProgression extends "res://scripts/progression.gd":
 	func load_game() -> void:
@@ -80,12 +81,14 @@ func run() -> void:
 	check(final_camera.origin.distance_to(game.camera.position)<.001 and final_camera.basis.is_equal_approx(game.camera.basis),"Animated camera hands over to the actual swimming camera without a cut")
 	check(not game.entry_active and not game.entry_lens.visible and game.oxygen==air and game.depth_record==0,"Swimming resumes without entry overlays or air/depth rewards")
 	check(game.progress._save_data()==initial_save,"Entry visuals do not alter saved progression")
+	game.state = "dock"
 	game.start_dive(true,false,5)
 	game._update_entry(1.9)
-	game.open_gm_menu()
-	check(not game.entry_lens.visible,"GM menu hides water film in the same frame")
-	game.gm_select_dive_site(5,true)
-	check(not game.entry_lens.visible and not game.entry_active,"Direct GM travel leaves no entry film")
+	game.toggle_pause()
+	check(not game.entry_lens.visible,"Pausing during entry hides water film in the same frame")
+	DiveFixture.visit(game,5,true)
+	check(not game.entry_lens.visible and not game.entry_active,"Direct Test travel leaves no entry film")
+	game.state = "dock"
 	game.start_dive(true,false,5)
 	game._update_entry(1.9)
 	game.finish_dive()

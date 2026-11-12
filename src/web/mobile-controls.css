@@ -1,0 +1,51 @@
+html.tide-touch { overscroll-behavior:none; -webkit-text-size-adjust:100%; }
+.tide-touch body { overscroll-behavior:none; }
+.tide-touch header { height:44px; padding:0 max(8px,env(safe-area-inset-right)) 0 max(8px,env(safe-area-inset-left)); }
+.tide-touch header strong { font-size:12px; letter-spacing:.03em; }
+.tide-touch header strong span { display:none; }
+.tide-touch nav { gap:5px; }
+.tide-touch nav button { min-height:44px; min-width:44px; padding:5px 10px; }
+.tide-touch #stage { height:calc(100dvh - 44px); }
+.tide-touch.is-diving header { display:none; }
+.tide-touch.is-diving #stage,.tide-touch #stage:fullscreen { height:100dvh; }
+.tide-touch .card { max-height:calc(100% - 12px); overflow:auto; padding:18px 24px; }
+.tide-touch .card h1 { font-size:32px; margin:8px 0; }
+.tide-touch .card p { line-height:1.5; margin:8px 0; }
+.tide-touch .card .footnote { margin-top:12px; }
+.tide-touch dialog { max-height:88dvh; overflow:auto; padding:18px; }
+.tide-touch dialog button { min-height:44px; }
+#touch-layer { position:absolute; inset:0; z-index:4; touch-action:none; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; overflow:hidden; }
+#touch-layer[hidden],#touch-rotate[hidden],#touch-entry-note[hidden],#touch-topbar[hidden] { display:none; }
+#touch-sketch[hidden] { display:none; }
+#touch-sketch { position:absolute; top:max(64px,calc(env(safe-area-inset-top) + 56px)); left:50%; transform:translateX(-50%); min-width:150px; border-color:#f5c779 !important; }
+#touch-look { position:absolute; inset:0; touch-action:none; }
+#touch-layer button { min-height:48px; min-width:48px; font-size:14px; line-height:1; padding:8px; touch-action:none; color:#e9f5ec; border:1px solid #a9ead282; background:#092c3bbd; box-shadow:0 2px 5px #02131a30; }
+#touch-layer button.pressed { background:#a9ead2e8; color:#123c44; border-color:#e7fff3; }
+#touch-topbar { position:absolute; display:flex; gap:6px; left:50%; transform:translateX(-50%); top:max(8px,env(safe-area-inset-top)); }
+#touch-topbar button { min-height:44px; min-width:48px; padding:8px 10px; font-size:13px; }
+#touch-joystick { position:absolute; width:122px; height:122px; left:max(20px,calc(env(safe-area-inset-left) + 12px)); bottom:max(20px,calc(env(safe-area-inset-bottom) + 12px)); border:1px solid #b8e8df9c; border-radius:50%; background:#092c3b63; touch-action:none; }
+.stick-ring { position:absolute; inset:19px; border:1px solid #b8e8df44; border-radius:50%; }
+#touch-stick { position:absolute; width:47px; height:47px; left:50%; top:50%; border:1px solid #d5fff1b3; border-radius:50%; background:#a9ead285; transform:translate(-50%,-50%); pointer-events:none; }
+.stick-caption { position:absolute; width:100%; text-align:center; bottom:4px; font-size:11px; color:#d5eee8; pointer-events:none; }
+#touch-swim { position:absolute; left:max(154px,calc(env(safe-area-inset-left) + 146px)); bottom:max(24px,calc(env(safe-area-inset-bottom) + 16px)); display:grid; gap:8px; }
+#touch-actions { position:absolute; right:max(14px,calc(env(safe-area-inset-right) + 10px)); bottom:max(20px,calc(env(safe-area-inset-bottom) + 12px)); display:grid; grid-template-columns:52px 60px 52px; grid-template-rows:52px 60px; gap:8px; align-items:stretch; }
+#touch-actions [data-action="ascend"] { grid-column:1; grid-row:1; }
+#touch-actions [data-action="descend"] { grid-column:1; grid-row:2; }
+#touch-actions .touch-shoot { grid-column:2; grid-row:2; border-radius:50%; background:#b78a4fc9; border-color:#ffe1a3; font-size:16px; }
+#touch-actions [data-action="knife"] { grid-column:3; grid-row:2; }
+#touch-actions .touch-interact { grid-column:2 / 4; grid-row:1; }
+#touch-look-hint { position:absolute; bottom:max(4px,env(safe-area-inset-bottom)); left:50%; transform:translateX(-50%); font-size:10px; color:#c5e3e1aa; pointer-events:none; white-space:nowrap; }
+#touch-entry-note { position:absolute; bottom:max(28px,env(safe-area-inset-bottom)); left:50%; transform:translateX(-50%); padding:9px 20px; background:#0a303cc9; border-radius:20px; font-size:14px; }
+#touch-layer.entering #touch-joystick,#touch-layer.entering #touch-swim,#touch-layer.entering #touch-actions,#touch-layer.entering #touch-look-hint { visibility:hidden; }
+#touch-rotate { position:absolute; inset:0; z-index:8; display:grid; place-items:center; padding:24px; text-align:center; background:#071e28f7; touch-action:manipulation; }
+#touch-rotate > div { max-width:350px; }
+#touch-rotate .rotate-icon { font-size:70px; color:#a9ead2; }
+#touch-rotate h2 { font-size:23px; font-weight:500; }
+#touch-rotate p { font-size:15px; }
+#touch-rotate button { min-height:48px; margin-top:20px; padding:12px 24px; }
+@media (max-width:600px) {
+  #touch-joystick { width:105px; height:105px; left:max(10px,env(safe-area-inset-left)); }
+  #touch-swim { left:max(123px,calc(env(safe-area-inset-left) + 113px)); }
+  #touch-actions { right:max(8px,env(safe-area-inset-right)); grid-template-columns:48px 52px 48px; gap:5px; }
+  #touch-topbar { gap:4px; }
+}

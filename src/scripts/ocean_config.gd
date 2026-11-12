@@ -40,7 +40,7 @@ const ZONES := [
 
 # Boat origins keep the stern jump on the open-water approach to each landmark.
 const DIVE_SITES := [
-	{"id":"tidal_cove","name":"潮汐湾近岸", "origin":Vector3(0,0,0)},
+	{"id":"tidal_cove","name":"潮溪湾近岸", "origin":Vector3(0,0,0)},
 	{"id":"twin_gates","name":"双门遗迹 · 潮流大峡谷", "origin":Vector3(-226,0,-290)},
 	{"id":"merchant_wreck","name":"远航沉船", "origin":Vector3(310,0,-190)},
 	{"id":"amber_reef","name":"琥珀珊瑚礁", "origin":Vector3(-180,0,75)},
@@ -55,7 +55,7 @@ static func site_index(id: String) -> int:
 	return -1
 
 static func exploration_areas() -> Array:
-	var result: Array = [{"id":"tidal_cove","name":"潮汐湾 · 近岸","center":Vector3(0,-22,0),"radius":COASTAL_RADIUS,"core_radius":42.0}]
+	var result: Array = [{"id":"tidal_cove","name":"潮溪湾 · 近岸","center":Vector3(0,-22,0),"radius":COASTAL_RADIUS,"core_radius":42.0}]
 	result.append_array(ZONES)
 	return result
 
@@ -228,6 +228,17 @@ static func pickup_points() -> Array:
 			var position: Vector3 = point.position+Vector3(-1.5 if item_index==0 else 1.5,0,0)
 			position.y = seabed_height(position.x,position.z)+(3.0 if kinds[item_index]=="oxygen" else 1.0)
 			result.append({"kind":kinds[item_index],"position":position,"site_index":site_index("pearl_atoll"),"exploration":true,"atoll_activity":true,"name":point.name})
+	# Append shallow side-route rewards without changing any existing loot index.
+	var coastal_loot := [
+		{"kind":"conch","offset":Vector2(-36,17),"name":"海草沙坡"},
+		{"kind":"sea_glass","offset":Vector2(-45,-5),"name":"海草沙坡"},
+		{"kind":"ancient_coin","offset":Vector2(38,17),"name":"浅礁贝床"},
+		{"kind":"pearl","offset":Vector2(43,-20),"name":"浅礁贝床"},
+	]
+	for spec: Dictionary in coastal_loot:
+		var offset: Vector2 = spec.offset
+		var position := Vector3(offset.x,seabed_height(offset.x,offset.y)+1.0,offset.y)
+		result.append({"kind":spec.kind,"position":position,"site_index":0,"exploration":true,"coastal_activity":true,"name":spec.name})
 	return result
 
 ## Three short, connected activities complement the two existing outer discoveries.
@@ -252,6 +263,42 @@ static func atoll_fish_spawns() -> Array:
 		var point := Vector3(center.x+offsets[index].x,0,center.z+offsets[index].y)
 		point.y = minf(-6.0,seabed_height(point.x,point.z)+8.0+float(index%3)*1.5)
 		result.append({"kind":kinds[index],"position":point,"atoll_activity":true})
+	return result
+
+## Gentle huntable residents extend the first dive toward both shallow side routes.
+## Keep the central five tutorial fish clear and avoid adding predators to the cove.
+static func coastal_fish_spawns() -> Array:
+	var positions: Array[Vector3] = [
+		Vector3(-25,-11,8),Vector3(-38,-15,-4),Vector3(-49,-20,14),
+		Vector3(-36,-13,28),Vector3(-20,-19,-27),
+		Vector3(23,-12,12),Vector3(37,-16,-6),Vector3(48,-20,-18),
+		Vector3(33,-14,27),Vector3(19,-18,-32),
+	]
+	var kinds := [0,10,12,1,3,0,10,12,4,1]
+	var result: Array = []
+	for index in range(positions.size()):
+		var point: Vector3 = positions[index]
+		point.y = minf(-6.0,maxf(point.y,seabed_height(point.x,point.z)+5.0))
+		result.append({"kind":kinds[index],"position":point,"coastal_activity":true})
+	return result
+
+## Fourteen individual hunting targets occupy the approach, flanks and sandy gully.
+## The tall central pillars sit around x = +/-15; homes use the open middle or outside.
+static func spire_fish_spawns() -> Array:
+	var center: Vector3 = ZONES[3].center
+	var offsets: Array[Vector3] = [
+		Vector3(0,10,-48),Vector3(-21,5,-46),Vector3(23,2,-44),
+		Vector3(-3,7,-28),Vector3(4,1,-12),Vector3(0,-4,7),
+		Vector3(-31,4,-15),Vector3(-36,-2,8),Vector3(-43,-5,30),
+		Vector3(28,8,-22),Vector3(37,2,1),Vector3(34,-3,25),
+		Vector3(12,0,43),Vector3(-11,-6,49),
+	]
+	var kinds := [10,12,1,0,11,4,10,12,11,3,1,10,12,11]
+	var result: Array = []
+	for index in range(offsets.size()):
+		var point: Vector3 = center+offsets[index]
+		point.y = minf(-6.0,maxf(point.y,seabed_height(point.x,point.z)+7.0))
+		result.append({"kind":kinds[index],"position":point,"spires_activity":true})
 	return result
 
 static func zone_for_position(point: Vector3) -> Dictionary:

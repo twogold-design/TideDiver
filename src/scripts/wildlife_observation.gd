@@ -1,7 +1,6 @@
 extends RefCounted
-## Track one visible animal, not just its species, through three seconds of aiming.
+## Find visible ornamental animals for manual sketching; looking never unlocks one.
 const Catalog = preload("res://scripts/wildlife_catalog.gd")
-const DURATION := 3.0
 const RANGE := 20.0
 var target: Dictionary = {}
 var elapsed := 0.0
@@ -13,7 +12,7 @@ func reset() -> void:
 	scan_left = 0.0
 
 func advance(game: Node, delta: float) -> void:
-	if game.state == "paused" or game.bestiary_open:
+	if game.state in ["paused","sketch"] or game.bestiary_open:
 		return
 	if game.state != "dive" or game.entry_active or game.gm_menu_open:
 		reset()
@@ -27,26 +26,12 @@ func advance(game: Node, delta: float) -> void:
 		if candidate.get("key","") != target.get("key",""):
 			elapsed = 0.0
 		target = candidate
-	if target.is_empty() or game.progress.has_discovery(target.id):
-		return
-	elapsed = minf(DURATION,elapsed+minf(delta,.1))
-	if elapsed >= DURATION:
-		# A last-frame turn or newly occluding wall must not complete a cached aim.
-		var confirmed: Dictionary = find_target(game)
-		if confirmed.get("key","") == target.key:
-			game.record_species(target.id,"observed")
-		else:
-			reset()
 
 func find_target(game: Node) -> Dictionary:
 	var result: Dictionary = {}
 	var center: Vector2 = game.get_viewport().get_visible_rect().size*.5
 	var origin: Vector3 = game.camera.project_ray_origin(center)
 	var forward: Vector3 = game.camera.project_ray_normal(center)
-	for item: Dictionary in game.fish:
-		if item.alive and item.node.is_visible_in_tree():
-			var point: Vector3 = item.node.to_global(item.node.get_meta("harpoon_center",Vector3.ZERO))
-			_consider(game,result,game.FishData.SPECIES[item.kind].id,"fish:%d" % item.node.get_instance_id(),point,origin,forward)
 	if game.reef_fish.is_visible_in_tree() and game.player.position.distance_to(game.reef_fish.global_position) < 120.0:
 		for fish: Dictionary in game.reef_fish.residents:
 			if not fish.visual.is_visible_in_tree():
@@ -69,13 +54,18 @@ func find_target(game: Node) -> Dictionary:
 	return result
 
 func _consider(game: Node, best: Dictionary, id: String, key: String, point: Vector3, origin: Vector3, direction: Vector3) -> void:
+	var entry: Dictionary = Catalog.entry(id)
+	if entry.is_empty() or entry.catchable or game.progress.has_discovery(id):
+		return
 	if game.player.position.distance_squared_to(point) > RANGE*RANGE:
+		return
+	if game.camera.is_position_behind(point) or not game.get_viewport().get_visible_rect().grow(-12).has_point(game.camera.unproject_position(point)):
 		return
 	var offset: Vector3 = point-origin
 	var along: float = offset.dot(direction)
 	if along <= 0:
 		return
-	var width: float = maxf(.38,along*.045)
+	var width: float = maxf(.60,along*.35)
 	var error: float = (offset-direction*along).length()/width
 	var score: float = error+along*.002
 	if error > 1.0 or score >= float(best.get("score",INF)):

@@ -1,5 +1,6 @@
 extends SceneTree
-## Real GM switch callbacks and pooled exhalation lifecycle without player saves.
+const DiveFixture = preload("res://tests/dive_fixture.gd")
+## Real cylinder consumption and pooled exhalation lifecycle without player saves.
 const Bubbles = preload("res://scripts/diver_bubbles.gd")
 class MemoryProgression extends "res://scripts/progression.gd":
 	var saves := 0
@@ -41,64 +42,38 @@ func _run() -> void:
 	await physics_frame
 	await process_frame
 	var before: Dictionary = memory._save_data().duplicate(true)
-	_test_air_switch()
+	_test_air_cost()
 	await _test_bubbles()
-	_check(memory._save_data() == before and memory.saves == 0,"GM testing and bubbles do not write progress or add saved cheat settings")
+	_check(memory._save_data() == before and memory.saves == 0,"Cylinder and bubble tests do not write progress or add saved cheat settings")
 	_test_reset()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	game.free()
 	await process_frame
-	print("%s: Tide Diver GM air and breathing bubbles (%d checks)." % ["PASS" if failures == 0 else "FAIL",checks])
+	print("%s: Tide Diver air consumption and breathing bubbles (%d checks)." % ["PASS" if failures == 0 else "FAIL",checks])
 	quit(0 if failures == 0 else 1)
 
-func _test_air_switch() -> void:
-	_check(not game.gm_infinite_air,"Infinite air starts disabled")
-	game.toggle_gm_infinite_air()
-	_check(not game.gm_infinite_air,"The switch requires the actual GM panel")
-	game.open_gm_menu()
-	var toggle: Button = _button("无限气瓶量")
-	_check(toggle != null and toggle.text.ends_with("关闭"),"GM exposes an initially disabled air switch")
-	if toggle == null:
-		return
-	toggle.pressed.emit()
-	_check(game.gm_infinite_air and game.gm_menu_open and _button("无限气瓶量").text.ends_with("开启"),"Clicking enables the setting and updates the still-open panel")
-	game.gm_select_dive_site(0,true)
+func _test_air_cost() -> void:
+	game.start_dive(false,false)
 	game.player.position = Vector3(0,-10,10)
-	game.oxygen = 0.1
+	game.oxygen = 100
 	game._update_dive(0.5)
-	_check(game.state == "dive" and game.oxygen == memory.oxygen_max(),"Ordinary breathing cannot trigger rescue with infinite air on")
+	_check(game.state == "dive" and game.oxygen < 100,"Ordinary breathing consumes the cylinder reserve")
+	game.oxygen = 50
 	game.hurt_cooldown = 0
 	game.take_hunt_damage(12,true,"石头鱼")
-	_check(game.oxygen == memory.oxygen_max() and game.poison_timer == 6.0 and game.hurt_flash > 0 and game.hunt_warning.contains("免除耗气"),"Touch damage retains poison and visible warning while removing the air cost")
+	_check(game.oxygen == 38 and game.poison_timer == 6.0 and game.hurt_flash > 0,"Touch damage applies air cost, poison and visible feedback")
 	game._update_hunting_status(1.0)
-	_check(game.oxygen == memory.oxygen_max() and game.poison_timer == 5.0,"Poison time advances without consuming infinite air")
+	_check(is_equal_approx(game.oxygen,36.5) and game.poison_timer == 5.0,"Poison advances and consumes the normal cylinder reserve")
 	var hazard: Dictionary = game.hazards[0]
 	var hazard_before: Vector3 = hazard.node.position
 	hazard.node.position = game.player.position
 	game.hurt_cooldown = 0
 	game._update_dive(0.0)
-	_check(game.oxygen == memory.oxygen_max() and game.notice.contains("免除耗气"),"Jellyfish contact also respects infinite air and explains it")
+	_check(is_equal_approx(game.oxygen,24.5) and game.notice.contains("气瓶量减少"),"Jellyfish contact consumes air and explains the injury")
 	hazard.node.position = hazard_before
-	game.open_gm_menu()
-	game.gm_select_dive_site(game.Ocean.site_index("amber_reef"),true)
-	_check(game.gm_infinite_air and game.oxygen == memory.oxygen_max(),"Changing GM destinations retains the enabled switch")
-	game.open_gm_menu()
-	_button("无限气瓶量").pressed.emit()
-	_check(not game.gm_infinite_air and _button("无限气瓶量").text.ends_with("关闭"),"Clicking again disables the same switch")
-	game.close_gm_menu()
 	game.poison_timer = 0
 	game.hurt_cooldown = 0
-	game.oxygen = 50
-	game.take_hunt_damage(12,true,"石头鱼")
-	game._update_hunting_status(1.0)
-	_check(is_equal_approx(game.oxygen,36.5),"Disabling restores real contact damage and poison costs immediately")
-	game.poison_timer = 0
-	game.player.position = Vector3(0,-10,10)
-	game._update_dive(0.5)
-	_check(game.oxygen < 36.5,"Normal breathing resumes after disabling")
-	game.open_gm_menu()
-	_button("无限气瓶量").pressed.emit()
-	game.close_gm_menu()
+	game.oxygen = 100
 
 func _test_bubbles() -> void:
 	var bubbles: Node3D = game.diver_bubbles
@@ -130,11 +105,11 @@ func _test_bubbles() -> void:
 	game.toggle_pause()
 	game._physics_process(2.0)
 	_check(bubbles.particles == saved and bubbles.breath_timer == timer,"Pausing freezes every bubble and the breathing cadence")
-	game.open_gm_menu()
+	game.open_bestiary()
 	game._physics_process(1.0)
-	_check(bubbles.particles == saved,"GM menu also freezes the exhalation trail")
-	game.gm_select_dive_site(0,true)
-	_check(bubbles.particles.is_empty() and bubbles.batch.visible_instance_count == 0,"GM teleport clears bubbles from the previous location")
+	_check(bubbles.particles == saved,"The bestiary also freezes the exhalation trail")
+	DiveFixture.visit(game,0,true)
+	_check(bubbles.particles.is_empty() and bubbles.batch.visible_instance_count == 0,"Test relocation clears bubbles from the previous location")
 	game.player.position = Vector3(0,-10,10)
 	for step in range(120):
 		game._physics_process(1.0/60.0)
@@ -144,11 +119,11 @@ func _test_bubbles() -> void:
 	await process_frame
 	await RenderingServer.frame_post_draw
 	root.get_texture().get_image().save_png(output.path_join("breath-trail.png"))
-	game.open_gm_menu()
+	game.open_bestiary()
 	await process_frame
 	await RenderingServer.frame_post_draw
-	root.get_texture().get_image().save_png(output.path_join("gm-infinite-air.png"))
-	game.close_gm_menu()
+	root.get_texture().get_image().save_png(output.path_join("bestiary-paused-bubbles.png"))
+	game.close_bestiary()
 	rig = game.player.get_child(0).global_transform
 	for step in range(360):
 		bubbles.advance(1.0/60.0,rig,false,0.0,Vector3.ZERO)
@@ -175,4 +150,4 @@ func _test_reset() -> void:
 	game.state = "paused"
 	game.request_new_game()
 	game.confirm_new_game()
-	_check(not game.gm_infinite_air and game.diver_bubbles.particles.is_empty(),"Starting a new game resets the GM option and clears all bubbles")
+	_check(game.oxygen == memory.oxygen_max() and game.diver_bubbles.particles.is_empty(),"Starting a new game refills the cylinder and clears all bubbles")

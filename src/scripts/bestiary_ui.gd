@@ -85,6 +85,11 @@ func rebuild() -> void:
 	preview_image.visible = visible
 	if not visible:
 		return
+	if compact_enabled():
+		_rebuild_mobile()
+		return
+	# A desktop resize restores the specimen frame after the compact layout.
+	place_control(preview_image,Rect2(586,270,690,244),CENTER)
 	var entries: Array = Catalog.entries()
 	page = clampi(page,0,maxi(0,ceili(float(entries.size())/PAGE_SIZE)-1))
 	selected = clampi(selected,0,entries.size()-1)
@@ -127,11 +132,14 @@ func _paragraph(point: Vector2, value: String, width: float, size: int = 18, col
 func _draw() -> void:
 	if not visible or font == null:
 		return
+	if compact_enabled():
+		_draw_mobile()
+		return
 	region(CENTER)
 	screen_overlay(Color(.015,.055,.075,.90))
 	draw_style_box(_style(Color("0e2a35"),Color("436872")),Rect2(100,58,1240,784))
 	_text(Vector2(132,116),"海洋图鉴",32)
-	_text(Vector2(132,153),"凝视同一生物 3 秒，或成功捕获 1 条，即可收录。",17,MUTED)
+	_text(Vector2(132,153),"可捕获鱼首次捕获收录；观赏生物完成轮廓描绘后收录。",17,MUTED)
 	var entries: Array = Catalog.entries()
 	var unlocked := 0
 	for item: Dictionary in entries:
@@ -149,7 +157,8 @@ func _draw() -> void:
 	_text(Vector2(586,246),str(entry.name) if known else "未知的海洋居民",26,CREAM if known else MUTED)
 	_text(Vector2(1268,245),"可捕获" if bool(entry.catchable) else "观赏生物",16,MINT if entry.catchable else GOLD,true)
 	_text(Vector2(586,531),"生活习性" if known else "探索线索",16,MINT)
-	_paragraph(Vector2(586,562),str(entry.description) if known else "到潜点寻找它的身影，稳定观察或成功捕获后，可查看完整记录。",684,18,CREAM if known else MUTED)
+	var hint: String = "首次成功捕获它，即可解锁完整记录。" if entry.catchable else "在潜点发现它后，点击描绘按钮，沿轮廓画完即可解锁。"
+	_paragraph(Vector2(586,562),str(entry.description) if known else hint,684,18,CREAM if known else MUTED)
 	_text(Vector2(586,635),"常见区域",16,MINT)
 	_paragraph(Vector2(586,665),str(entry.habitat),684,18)
 	draw_rect(Rect2(586,693,692,1),Color("315560"))
@@ -157,7 +166,7 @@ func _draw() -> void:
 	if known:
 		var record: Dictionary = game.progress.discoveries.get(entry.id,{})
 		var method: String = str(record.get("method","observed"))
-		status = "捕获记录已收录" if method == "caught" else "观察记录已收录"
+		status = "捕获记录已收录" if method == "caught" else ("描绘记录已收录" if method == "sketched" else "观察记录已收录")
 		status += "  ·  不重复奖励"
 	_text(Vector2(586,731),status,19,GOLD if not known else MINT)
 	_text(Vector2(586,756),"新发现自动获得金币奖励，无需额外点击领取。",14,MUTED)
@@ -265,3 +274,58 @@ func _process(delta: float) -> void:
 	if visible and is_instance_valid(pivot):
 		_turn += delta*.23
 		pivot.rotation.y = _turn
+
+func _rebuild_mobile() -> void:
+	var entries: Array = Catalog.entries()
+	selected = clampi(selected,0,entries.size()-1)
+	var unit := mobile_unit()
+	var screen := ui_size()/unit
+	_button("上一种",Rect2(),_mobile_select.bind(-1),false,selected == 0)
+	_button("返回游戏",Rect2(),game.close_bestiary,true)
+	_button("下一种",Rect2(),_mobile_select.bind(1),false,selected == entries.size()-1)
+	var width: float = (screen.x-48)/3
+	for index in range(buttons.size()):
+		place_mobile_button(buttons[index],Rect2(12+index*(width+12),screen.y-54,width,46))
+	preview_image.remove_meta("layout_anchor")
+	preview_image.position = Vector2(12,62)*unit
+	preview_image.size = Vector2(screen.x*.40-24,maxf(80,screen.y-132))*unit
+	_refresh_specimen(entries[selected])
+	queue_redraw()
+
+func _mobile_select(amount: int) -> void:
+	selected += amount
+	rebuild()
+
+func _mobile_paragraph(point: Vector2, value: String, width: float, size: int, color: Color) -> void:
+	var unit := mobile_unit()
+	var actual_size := roundi(size*unit)
+	var line := ""
+	for character: String in value:
+		if character == "\n" or font.get_string_size(line+character,HORIZONTAL_ALIGNMENT_LEFT,-1,actual_size).x > width*unit:
+			draw_string(font,point*unit,line,HORIZONTAL_ALIGNMENT_LEFT,-1,actual_size,color)
+			point.y += size+7
+			line = ""
+		if character != "\n":
+			line += character
+	if not line.is_empty():
+		draw_string(font,point*unit,line,HORIZONTAL_ALIGNMENT_LEFT,-1,actual_size,color)
+
+func _draw_mobile() -> void:
+	var unit := mobile_unit()
+	var screen := ui_size()/unit
+	var entries: Array = Catalog.entries()
+	var entry: Dictionary = entries[selected]
+	var known: bool = game.progress.has_discovery(entry.id)
+	draw_set_transform(Vector2.ZERO)
+	draw_rect(Rect2(Vector2.ZERO,ui_size()),Color("0e2a35"))
+	draw_string(font,Vector2(12,29)*unit,"海洋图鉴 · %d / %d" % [selected+1,entries.size()],HORIZONTAL_ALIGNMENT_LEFT,-1,roundi(20*unit),MINT)
+	draw_string(font,Vector2(screen.x*.4,29)*unit,"已收录 %d / %d" % [game.progress.discoveries.size(),entries.size()],HORIZONTAL_ALIGNMENT_LEFT,-1,roundi(15*unit),MUTED)
+	var left: float = screen.x*.4+12
+	var width: float = screen.x-left-16
+	_mobile_paragraph(Vector2(left,76),str(entry.name) if known else "未知的海洋居民",width,20,CREAM)
+	_mobile_paragraph(Vector2(left,108),"可捕获 · 首次捕获收录" if entry.catchable else "观赏生物 · 描绘轮廓收录",width,13,GOLD)
+	var hint: String = "首次成功捕获它，即可解锁。" if entry.catchable else "发现它后点描绘按钮，沿轮廓画完即可解锁。"
+	var details: String = str(entry.description) if known else hint
+	details += "\n出没："+str(entry.habitat)
+	_mobile_paragraph(Vector2(left,136 if screen.y >= 330 else 124),details,width,14 if screen.y >= 330 else 12,CREAM)
+	_mobile_paragraph(Vector2(left,screen.y-76),"已收录 · 不重复奖励" if known else "首次收录奖励 +%d G" % entry.reward,width,14,GOLD)

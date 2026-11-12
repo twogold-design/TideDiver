@@ -1,4 +1,5 @@
 extends SceneTree
+const DiveFixture = preload("res://tests/dive_fixture.gd")
 ## Real depth lighting, neutral GPU samples and all shore-return lifecycle paths.
 const Ocean = preload("res://scripts/ocean_config.gd")
 const Lighting = preload("res://scripts/depth_lighting.gd")
@@ -52,9 +53,9 @@ func _run() -> void:
 	_test_actual_camera_depth()
 	_test_canyon_fill()
 	await _test_neutral_gpu_luminance()
-	_test_entry_and_gm_updates()
+	_test_entry_and_fixture_updates()
 	await _test_pause_and_menu_freeze()
-	_check(memory._save_data() == progress_before and memory.saves == 0, "Depth changes, rendered probes, entry, GM and pause never modify or save durable progress")
+	_check(memory._save_data() == progress_before and memory.saves == 0, "Depth changes, rendered probes, entry, fixture positioning and pause never modify or save durable progress")
 	_test_shore_restoration()
 	var report := FileAccess.open(output.path_join("luminance.json"), FileAccess.WRITE)
 	if report != null:
@@ -170,7 +171,7 @@ func _render_reference(depth: float, lamp_on: bool, distance: float, label: Stri
 			samples += 1
 	return total / samples
 
-func _test_entry_and_gm_updates() -> void:
+func _test_entry_and_fixture_updates() -> void:
 	game.state = "dock"
 	game.start_dive(true, false)
 	_check(game.entry_active and _light_levels_match(Lighting.profile(0.0)), "Starting boat entry immediately clears the previous deep-water lighting")
@@ -187,10 +188,9 @@ func _test_entry_and_gm_updates() -> void:
 		previous = current
 	_check(bounded and continuous and not game.entry_active and _matches_profile(Lighting.profile(maxf(0.0, -game.camera.global_position.y),game.camera.global_position)), "The complete entry camera blends smoothly into its measured underwater lighting and ends with the matching profile")
 	for site: int in range(Ocean.DIVE_SITES.size()):
-		game.open_gm_menu()
-		game.gm_select_dive_site(site, true)
+		DiveFixture.visit(game,site, true)
 		var depth: float = maxf(0.0, -game.camera.global_position.y)
-		_check(game.state == "dive" and not game.entry_active and _matches_profile(Lighting.profile(depth,game.camera.global_position)), "GM direct visit applies the actual camera's lighting before the next swimming frame at site %d" % site)
+		_check(game.state == "dive" and not game.entry_active and _matches_profile(Lighting.profile(depth,game.camera.global_position)), "A positioned direct visit applies the actual camera's lighting before the next swimming frame at site %d" % site)
 
 func _test_pause_and_menu_freeze() -> void:
 	_set_swim_camera_depth(75)
@@ -199,10 +199,10 @@ func _test_pause_and_menu_freeze() -> void:
 	var camera_before: Transform3D = game.camera.transform
 	await _physics_frames(15)
 	_check(game.state == "paused" and _snapshot() == before and game.camera.transform == camera_before, "Pause freezes all actual depth-lighting properties and camera position in real physics frames")
-	game.open_gm_menu()
+	game.open_bestiary()
 	await _physics_frames(15)
-	_check(game.gm_menu_open and _snapshot() == before and game.camera.transform == camera_before, "An open GM panel keeps deep-water illumination frozen")
-	game.close_gm_menu()
+	_check(game.bestiary_open and _snapshot() == before and game.camera.transform == camera_before, "An open bestiary panel keeps deep-water illumination frozen")
+	game.close_bestiary()
 	game.toggle_pause()
 
 func _test_shore_restoration() -> void:

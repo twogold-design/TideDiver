@@ -22,6 +22,7 @@ func check(value: bool, message: String) -> void:
 		printerr("FAIL: "+message)
 
 func _run() -> void:
+	root.size = Vector2i(1440,900)
 	_test_economy()
 	var game: Node = load("res://scenes/main.tscn").instantiate()
 	var progress := MemoryProgression.new()

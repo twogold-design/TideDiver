@@ -4,4 +4,5 @@ src/saves/
 src/artifacts/
 node_modules/
 .runtime/
+/build-info.json
 *.log

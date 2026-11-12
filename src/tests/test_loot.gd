@@ -119,13 +119,13 @@ func _test_economy_and_distribution() -> void:
 	_check(result.earned == 96 and rescued.inventory_total() == 0 and rescued.total_fish == 0, "Rescue applies the existing35 percent rule to canonical collectible and legacy chest values")
 	var points: Array = Ocean.pickup_points()
 	var types: Dictionary = {}
-	var valid := points.size() == 59
+	var valid := points.size() == 63
 	for point: Dictionary in points:
 		types[point.kind] = int(types.get(point.kind,0))+1
 		valid = valid and not Loot.pickup_info(point.kind).is_empty() and point.position.y >= Ocean.seabed_height(point.position.x,point.position.z)+0.99
 	for id in SEABED_ITEMS:
 		valid = valid and types.has(id)
-	_check(valid and types.get("chest",0) == 11 and types.get("oxygen",0) == 27 and types.get("pearl",0) > 0, "The 59 outer-ocean points retain air stations, chests, pearls and all four finds")
+	_check(valid and types.get("chest",0) == 11 and types.get("oxygen",0) == 27 and types.get("pearl",0) > 0, "The 63 configured ocean points retain air stations, chests, pearls and all four finds, including the four coastal rewards")
 
 func _test_actual_pickups() -> void:
 	var game: Node = load("res://scenes/main.tscn").instantiate()
@@ -140,7 +140,7 @@ func _test_actual_pickups() -> void:
 	await physics_frame
 	await process_frame
 	game.start_dive(false,false)
-	_check(game.pickups.size() == 71 and game.fish.size() == game.fish_population_count() and game.pickups[0].kind == "pearl" and game.pickups[9].kind == "oxygen" and game.pickups[10].kind == "oxygen", "The real ocean includes71 pickups, the expected huntable fish and the original first pearl and two indexed air stations")
+	_check(game.pickups.size() == 75 and game.fish.size() == game.fish_population_count() and game.pickups[0].kind == "pearl" and game.pickups[9].kind == "oxygen" and game.pickups[10].kind == "oxygen", "The real ocean includes 75 pickups, the expected huntable fish and the original first pearl and two indexed air stations")
 	for id in SEABED_ITEMS:
 		var selected: Dictionary = {}
 		for item: Dictionary in game.pickups:
