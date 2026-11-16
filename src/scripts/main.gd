@@ -129,6 +129,8 @@ var capture_name: String = "gameplay"
 var smoke_mode: bool = false
 var sound_player: AudioStreamPlayer
 var splash_player: AudioStreamPlayer
+var scene_audio: Node
+var underwater_audio_started := false
 var muted: bool = false
 var restaurant_node: Node3D
 var ocean_root: Node3D
@@ -1151,7 +1153,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			toggle_pause()
 		if event.physical_keycode == KEY_M:
 			muted = not muted
-			tell("音效已关闭" if muted else "音效已开启", 3)
+			tell("声音已关闭" if muted else "声音已开启", 3)
 		if state == "dive":
 			if event.physical_keycode == KEY_F:
 				interact()
@@ -1174,6 +1176,7 @@ func _physics_process(delta: float) -> void:
 	if state != "dive" or entry_active or bestiary_open or gm_menu_open:
 		touch_input.reset()
 	_sync_entry_audio()
+	_sync_scene_audio(delta)
 	if bestiary_open or sketch_active:
 		return
 	entry_lens.update_view(entry_time,camera.position.y,state == "dive" and entry_active)
@@ -1267,7 +1270,7 @@ func _update_entry(delta: float) -> void:
 		entry_lens.visible = false
 		camera.fov = 66
 		environment.fog_density = 0.024
-		tell("摇杆游动 · 拖动转向 · 小刀割海草 · 水面点交互返航" if mobile_controls else "WASD 游泳 · Q 下潜 / E 上浮 · 左键鱼叉 · 右键小刀割海草", 7)
+		tell("摇杆游动 · 拖动转向 · 小刀割海草 · 上浮后点呼叫接驳船返航" if mobile_controls else "WASD 游泳 · Q 下潜 / E 上浮 · 左键鱼叉 · 右键小刀割海草", 7)
 
 func _play_splash() -> void:
 	if muted:
@@ -1608,7 +1611,8 @@ func shoot() -> void:
 		var aim_point: Vector3 = target.node.to_global(target.node.get_meta("harpoon_center",Vector3.ZERO))
 		distance = (aim_point-origin).dot(direction)
 	var aim: Vector3 = origin+direction*distance
-	var start: Vector3 = player.position+Vector3(0.58,-0.15,-1.5).rotated(Vector3.UP,yaw)
+	var muzzle: Node3D = player.get_child(0).get_node("ArmLeft/HarpoonMuzzle")
+	var start: Vector3 = muzzle.global_position
 	var obstruction := get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(player.position,start,1,[player.get_rid()]))
 	if not obstruction.is_empty():
 		Harpoon.impact(self,obstruction.position,false)
@@ -1697,17 +1701,27 @@ func nearest_pickup() -> Dictionary:
 				distance = d
 	return best
 
+func can_call_boat() -> bool:
+	return state == "dive" and not entry_active and not sketch_active and not bestiary_open and not gm_menu_open and not new_game_confirmation and not rescue_result_visible and not summary_visible and not layout_mode and player.position.y >= -3.5
+
+func call_boat() -> void:
+	# Revalidate at the actual tap; the surface button can be a frame behind.
+	if not can_call_boat():
+		return
+	touch_input.reset()
+	finish_dive(false)
+
 func interact() -> void:
 	if entry_active:
 		return
 	if state != "dive":
 		return
 	if player.position.y >= -3.5:
-		finish_dive(false)
+		call_boat()
 		return
 	var item: Dictionary = nearest_pickup()
 	if item.is_empty():
-		tell("靠近发光物品按 F 采集；上浮至 3 米内按 F 返航。", 4)
+		tell("靠近发光物品点交互采集；上浮后点呼叫接驳船返航。" if mobile_controls else "靠近发光物品按 F 采集；上浮至 3 米内按 F 返航。", 4)
 		return
 	var kind: String = item.kind
 	if kind == "chest":
@@ -1837,7 +1851,7 @@ func context_hint() -> String:
 	if entry_active:
 		return "正在入水 · 感受海水的浮力"
 	if player.position.y >= -3.5:
-		return "F  呼叫接驳船 · 返航入库"
+		return "" if mobile_controls else "F  呼叫接驳船 · 返航入库"
 	var item: Dictionary = nearest_pickup()
 	if not item.is_empty():
 		if item.kind == "chest":
@@ -1985,6 +1999,10 @@ func tell(message: String, seconds: float) -> void:
 	notice_timer = seconds
 
 func _setup_sound() -> void:
+	scene_audio = preload("res://scripts/scene_audio.gd").new()
+	scene_audio.name = "SceneAudio"
+	add_child(scene_audio)
+	_sync_scene_audio(0.0)
 	sound_player = AudioStreamPlayer.new()
 	sound_player.volume_db = -18
 	add_child(sound_player)
@@ -1993,6 +2011,15 @@ func _setup_sound() -> void:
 	splash_player.stream = preload("res://assets/audio/dive_splash.wav")
 	splash_player.volume_db = -18
 	add_child(splash_player)
+
+func _sync_scene_audio(delta: float) -> void:
+	if not is_instance_valid(scene_audio):
+		return
+	if state not in ["dive", "paused", "sketch"]:
+		underwater_audio_started = false
+	elif not entry_active or (entry_splashed and camera.position.y <= 0.0):
+		underwater_audio_started = true
+	scene_audio.update_scene(state, muted, underwater_audio_started, delta)
 
 func _play_tone(freq: float, duration: float) -> void:
 	if muted or not is_instance_valid(sound_player):

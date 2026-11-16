@@ -21,10 +21,16 @@ func handle(game: Node, action: String, data: Dictionary) -> void:
 		return
 	if action == "release":
 		reset()
+		if game.sketch_active and is_instance_valid(game.sketch_ui):
+			game.sketch_ui.end_stroke()
 		return
 	if action == "sketch":
 		reset()
 		game.begin_sketch()
+		return
+	if action == "call_boat":
+		reset()
+		game.call_boat()
 		return
 	if action == "pause":
 		reset()

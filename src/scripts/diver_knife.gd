@@ -1,5 +1,5 @@
 extends RefCounted
-## Left-hand utility knife; the right hand keeps the harpoon grip.
+## Right-hand utility knife; the left hand keeps the harpoon grip.
 const Art = preload("res://scripts/furniture_art.gd")
 const Loot = preload("res://scripts/loot_catalog.gd")
 const COOLDOWN := .65
@@ -9,11 +9,11 @@ var arm: Node3D
 var slice_sound: AudioStreamWAV
 
 func setup(rig: Node3D) -> void:
-	arm = rig.get_node("ArmLeft")
+	arm = rig.get_node("ArmRight")
 	model = Node3D.new()
 	model.name = "HarvestKnife"
 	arm.add_child(model)
-	model.position = Vector3(-.25,-.18,-.57)
+	model.position = Vector3(.25,-.18,-.57)
 	var steel: Material = Art._mat(Color("d3ebe7"),0,.23,.7)
 	Art._box(model,Vector3.ZERO,Vector3(.075,.065,.22),Art._mat(Color("243b3d")),.015)
 	Art._box(model,Vector3(0,0,-.12),Vector3(.15,.045,.035),steel,.008)
@@ -43,9 +43,9 @@ func advance(game: Node, delta: float) -> void:
 	model.visible = game.state == "dive" and not game.entry_active
 	if remaining > 0:
 		var swing: float = sin((1.0-remaining/COOLDOWN)*PI)
-		arm.rotation.y += swing*1.2
+		arm.rotation.y -= swing*1.2
 		arm.rotation.x -= swing*.45
-		model.rotation.z = swing*-.45
+		model.rotation.z = swing*.45
 	else:
 		model.rotation = Vector3.ZERO
 

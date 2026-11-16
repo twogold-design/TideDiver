@@ -37,6 +37,8 @@ func _run() -> void:
 	game.set_process(false)
 	await physics_frame
 	game.start_dive(false,false)
+	var rig: Node3D = game.player.get_child(0)
+	check(game.diver_knife.arm == rig.get_node("ArmRight") and game.diver_knife.model.get_parent() == rig.get_node("ArmRight"),"The utility knife belongs to the right hand")
 	var meadow: Node3D = game.reef_plants
 	check(meadow.harvests.size()==632,"All visible grass and ribbon-algae sources across dive sites are registered")
 	var plant: Dictionary = meadow.harvests[0]
@@ -70,8 +72,10 @@ func _run() -> void:
 	check(not plant.active and game.cargo.size()==1 and game.cargo[0].id=="seagrass","A real right click cuts one grass clump and adds its canonical cargo")
 	check(game.loot_feedback_title=="海草收割成功" and game.effects.size()>=8,"Harvest displays loot feedback, floating fragments and collection art")
 	game.diver_motion.advance(.1,Vector3.ZERO,false)
+	var gun_arm_pose: Transform3D = rig.get_node("ArmLeft").transform
 	game.diver_knife.advance(game,.15)
 	check(game.diver_knife.model.visible and absf(game.diver_knife.arm.rotation.y)>.4,"The diver actually swings the visible knife arm")
+	check(rig.get_node("ArmLeft").transform.is_equal_approx(gun_arm_pose),"Swinging the right-hand knife does not move the left gun arm")
 	var stump: Transform3D = plant.batch.get_instance_transform(plant.index)
 	check(stump.basis.y.length()<plant.pose.basis.y.length()*.2,"The cut plant becomes a short visible stump")
 	click_knife()

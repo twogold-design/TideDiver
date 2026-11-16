@@ -79,11 +79,12 @@ func _run() -> void:
 		_check(not signatures.has(signature),"Distinct species outline: "+record.id)
 		signatures[signature] = true
 		_trace(ui)
-		_check(ui.trace_complete and ui.completion_ratio() >= .95,"Clockwise outline can finish: "+record.id)
+		_check(ui.trace_complete and ui.completion_ratio() >= Sketch.COMPLETE_COVERAGE,"Clockwise outline can finish: "+record.id)
 		ui.restart()
 		_trace(ui,true)
 		_check(ui.trace_complete,"Counterclockwise outline can finish: "+record.id)
 	_check(signals == 0,"Tracing waits for explicit continue gesture before leaving the drawing")
+	_test_easy_drawing()
 	ui.open_entry("sand_ray")
 	var points: PackedVector2Array = ui.contour_points()
 	ui.begin_stroke(points[0])
@@ -142,6 +143,46 @@ func _run() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	print("%s: Tide Diver wildlife sketch (%d checks)." % ["PASS" if failures == 0 else "FAIL",checks])
 	quit(0 if failures == 0 else 1)
+
+func _test_easy_drawing() -> void:
+	ui.open_entry("sand_ray")
+	var points: PackedVector2Array = ui.contour_points()
+	var start: int = points.size()/3
+	ui.begin_stroke(points[start])
+	_check(ui.resume_point().distance_to(points[start]) < 1.0,"The first stroke may start at an arbitrary outline point")
+	points = ui.contour_points()
+	for index in range(1,points.size()):
+		ui.continue_stroke(points[index])
+	ui.end_stroke()
+	_check(ui.trace_complete,"Drawing from an arbitrary starting point completes normally")
+	ui.open_entry("reef_chromis")
+	points = ui.contour_points()
+	var offset := Vector2(0,12.0/maxf(.01,ui.get_global_transform_with_canvas().get_scale().y))
+	ui.begin_stroke(points[0]+offset)
+	# Starting near the line may choose the next nearby vertex as the origin.
+	points = ui.contour_points()
+	for index in range(1,points.size()):
+		ui.continue_stroke(points[index]+offset)
+	ui.end_stroke()
+	_check(ui.trace_complete,"A reasonably imprecise twelve-pixel offset stroke still completes")
+	ui.open_entry("sand_ray")
+	points = ui.contour_points()
+	var quarter: int = points.size()/4
+	ui.begin_stroke(points[0])
+	for index in range(1,quarter):
+		ui.continue_stroke(points[index])
+	var resume: Vector2 = ui.resume_point()
+	ui.continue_stroke(Vector2(-100,-100))
+	ui.continue_stroke(resume)
+	for index in range(quarter,points.size()):
+		ui.continue_stroke(points[index])
+	ui.end_stroke()
+	_check(ui.trace_complete,"Returning to the endpoint after a large deviation resumes without lifting the pen")
+	ui.open_entry("sand_ray")
+	points = ui.contour_points()
+	var enough: int = ceili(float(points.size()-1)*.72)+1
+	_trace(ui,false,0,enough)
+	_check(ui.trace_complete and ui.completion_ratio() >= .70 and ui.completion_ratio() < .75,"Roughly seventy percent of the contour is sufficient without tracing the full circle")
 
 func _test_gameplay() -> void:
 	game = load("res://scenes/main.tscn").instantiate()

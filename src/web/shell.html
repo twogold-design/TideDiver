@@ -36,11 +36,11 @@
   </main>
   <dialog id="instructions">
     <h2>海边生活 · 操作说明</h2>
-    <p><b>手机触屏：</b>建议横屏。左下摇杆控制游动，右侧空白处拖动转向，可同时操作。按住“上浮 / 下潜 / 加速 / 静潜”，点击“鱼叉 / 小刀 / 交互”；靠近水面点“交互”返航，顶部可打开暂停和图鉴。</p>
+    <p><b>手机触屏：</b>点击开始进入全屏横屏；浏览器不支持方向锁定时，画面也会自动横向铺满。左下摇杆控制游动，右侧空白处拖动转向，可同时操作。按住“上浮 / 下潜 / 加速 / 静潜”，点击“鱼叉 / 小刀 / 交互”；靠近水面时点击临时出现的“呼叫接驳船”返航入库。右上角可暂停、打开图鉴；操作说明和全屏收在“更多”内。</p>
     <p><b>图鉴：</b><kbd>B</kbd> 打开海洋图鉴。可捕获鱼首次捕获后收录；发现观赏生物后点击“描绘轮廓”按钮，或按 <kbd>R</kbd>，用鼠标或手指沿轮廓描绘，完成后解锁图鉴、获得首次奖励并继续潜水。</p>
     <p><b>潜水：</b><kbd>W A S D</kbd> 游动，鼠标转向，<kbd>E</kbd> 上浮 / <kbd>Q</kbd> 下潜，<kbd>Shift</kbd> 加速，<kbd>Ctrl</kbd> 潜行。左键或空格发射鱼钩，右键挥动小刀，靠近海草可切割收获。<kbd>F</kbd> 交互、靠近水面返航。</p>
     <p><b>布置：</b>左键选择和摆放，右键取消。<kbd>G</kbd> 移动，<kbd>R</kbd> 旋转，<kbd>Delete</kbd> 半价回收。中键平移，<kbd>Alt + 中键</kbd> 旋转视角，滚轮缩放，<kbd>F</kbd> 视角归中。</p>
-    <p><b>暂停：</b><kbd>P</kbd> 暂停 / 继续，<kbd>Esc</kbd> 释放鼠标并暂停潜水，点击“继续探索”重新控制视角。<kbd>M</kbd> 切换音效。</p>
+    <p><b>暂停：</b><kbd>P</kbd> 暂停 / 继续，<kbd>Esc</kbd> 释放鼠标并暂停潜水，点击“继续探索”重新控制视角。<kbd>M</kbd> 切换音乐和音效。</p>
     <p id="storage-note">同一浏览器、同一网址会自动保留进度；清除网站数据会删除存档。隐私窗口或禁止网站存储时可能无法保留进度。</p>
     <form method="dialog"><button class="primary">知道了</button></form>
   </dialog>
@@ -61,6 +61,20 @@
     let failed = false;
     let renderedPixelRatio = 0;
     function resize() {
+      if (window.tideMobileEnabled) {
+        // CSS rotation swaps the visual bounds; the engine needs unrotated dimensions.
+        const ratio = Math.min(2,window.devicePixelRatio || 1);
+        renderedPixelRatio = ratio;
+        const width = stage.clientWidth;
+        const height = stage.clientHeight;
+        canvas.style.width = width + 'px'; canvas.style.height = height + 'px';
+        canvas.style.left = '0px'; canvas.style.top = '0px';
+        const pixelWidth = Math.max(1,Math.round(width * ratio));
+        const pixelHeight = Math.max(1,Math.round(height * ratio));
+        if (canvas.width !== pixelWidth) canvas.width = pixelWidth;
+        if (canvas.height !== pixelHeight) canvas.height = pixelHeight;
+        return;
+      }
       const bounds = stage.getBoundingClientRect();
       // Match physical display pixels; a fixed DPR cap makes high-DPI screens blurry.
       const ratio = window.tideMobileEnabled ? Math.min(2,window.devicePixelRatio || 1) : (window.devicePixelRatio || 1);
@@ -82,6 +96,7 @@
     }
     new ResizeObserver(resize).observe(stage); resize();
     window.addEventListener('resize', resize);
+    document.addEventListener('tide-layout', resize);
     document.addEventListener('fullscreenchange', resize);
     // Moving between monitors can change DPR without changing the CSS viewport.
     function watchResolution() {
@@ -108,6 +123,7 @@
     start.addEventListener('click', async () => {
       if (failed) { location.reload(); return; }
       if (started) return;
+      if (window.tideMobileEnabled) void window.tideEnterLandscape();
       const missing = Engine.getMissingFeatures({threads: $GODOT_THREADS_ENABLED});
       if (missing.length) { fail('当前浏览器无法运行游戏，请开启硬件加速并使用支持 WebGL 2 的浏览器。'); return; }
       started = true; start.disabled = true; start.textContent = '正在准备海岸…';
@@ -132,6 +148,11 @@
     });
     document.getElementById('instructions').addEventListener('close', () => canvas.focus());
     document.getElementById('fullscreen').addEventListener('click', async () => {
+      if (window.tideMobileEnabled) {
+        await window.tideEnterLandscape();
+        canvas.focus();
+        return;
+      }
       try { if (document.fullscreenElement) await document.exitFullscreen(); else await stage.requestFullscreen(); }
       catch { document.getElementById('fullscreen').textContent = '请用浏览器全屏'; }
       canvas.focus();

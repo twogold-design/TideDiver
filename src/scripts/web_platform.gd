@@ -166,6 +166,7 @@ func _publish_mobile_state() -> void:
 		return
 	var snapshot := {"state":game.state,"entryActive":game.entry_active,"bestiaryOpen":game.bestiary_open,"layoutMode":game.layout_mode,"ready":not _warming_up,"blocked":game.new_game_confirmation or game.rescue_result_visible or game.summary_visible}
 	snapshot["canSketch"] = game.can_sketch()
+	snapshot["canCallBoat"] = game.can_call_boat()
 	snapshot["sketchActive"] = game.sketch_active
 	if preload("res://scripts/build_mode.gd").GM_ENABLED:
 		snapshot["gmOpen"] = game.gm_menu_open

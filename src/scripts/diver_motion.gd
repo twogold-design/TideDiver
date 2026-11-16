@@ -61,8 +61,8 @@ func advance(delta: float, local_input: Vector3, boosting: bool) -> void:
 		knee_bend -= reverse * (0.35 + (0.5 + 0.5 * cos(phase)) * 0.40)
 		knee_bend -= lateral * (0.14 + (0.5 + 0.5 * sin(phase + index * PI)) * 0.16)
 		_knees[index].rotation = Vector3(knee_bend, -side * reverse * sweep * 0.18, 0)
-		# The left hand sculls for balance; the gun hand uses a smaller stroke.
-		var arm_weight: float = 1.0 if index == 0 else 0.3
+		# The right hand sculls for balance; the left gun hand uses a smaller stroke.
+		var arm_weight: float = 0.3 if index == 0 else 1.0
 		var arm := Vector3(sin(phase * 0.5) * 0.012, 0, 0)
 		arm.x += reverse * (0.08 + wave * 0.10) * arm_weight
 		arm.y = (-side * reverse * (0.16 + sweep * 0.22) - strafe * 0.12) * arm_weight

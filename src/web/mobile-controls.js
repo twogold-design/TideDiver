@@ -14,11 +14,15 @@
   layer.innerHTML = `
     <div id="touch-look" aria-label="在右侧空白处拖动转向"></div>
     <div id="touch-topbar">
-      <button type="button" data-action="pause" aria-label="暂停潜水">暂停</button>
-      <button type="button" data-action="bestiary" aria-label="查看海洋图鉴">图鉴</button>
-      <button type="button" data-action="help" aria-label="触屏操作说明">帮助</button>
-      <button type="button" data-action="fullscreen" aria-label="切换全屏">全屏</button>
+      <button type="button" data-action="pause" aria-label="暂停潜水" title="暂停"><span class="tool-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14"/></svg></span></button>
+      <button type="button" data-action="bestiary" aria-label="查看海洋图鉴" title="图鉴"><span class="tool-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 6v15M12 6C9 3 5 3 3 4v15c3-1 6-1 9 2 3-3 6-3 9-2V4c-2-1-6-1-9 2Z"/></svg></span></button>
+      <button type="button" data-action="tools" aria-label="更多工具" aria-expanded="false" aria-controls="touch-tools" title="更多"><span class="tool-icon">⋯</span></button>
     </div>
+    <div id="touch-tools" hidden aria-label="更多游戏工具">
+      <button type="button" data-action="help" aria-label="触屏操作说明">操作说明</button>
+      <button type="button" data-action="fullscreen" aria-label="切换全屏">全屏显示</button>
+    </div>
+    <button type="button" id="touch-call-boat" data-action="call_boat" hidden aria-label="呼叫接驳船，返航入库"><span>呼叫接驳船</span><small>返航入库 · 保留全部渔获</small></button>
     <button type="button" id="touch-sketch" data-action="sketch" hidden aria-label="描绘观赏生物轮廓">描绘轮廓</button>
     <div id="touch-joystick" role="application" aria-label="移动摇杆，拖动控制前后左右">
       <span class="stick-ring"></span><span id="touch-stick"></span><span class="stick-caption">移动</span>
@@ -37,12 +41,6 @@
     <span id="touch-look-hint">右侧空白处拖动转向</span>
     <div id="touch-entry-note" hidden>正在入水…</div>`;
   stage.appendChild(layer);
-  const rotation = document.createElement('section');
-  rotation.id = 'touch-rotate';
-  rotation.hidden = true;
-  rotation.setAttribute('aria-label', '横屏游玩建议');
-  rotation.innerHTML = '<div><span aria-hidden="true" class="rotate-icon">↻</span><h2>横过手机，潜得更自在</h2><p>横屏可获得更宽的视野，也方便双手同时游动与转向。</p><button type="button">继续使用竖屏</button></div>';
-  stage.appendChild(rotation);
   const stick = document.getElementById('touch-stick');
   const joystick = document.getElementById('touch-joystick');
   const topbar = document.getElementById('touch-topbar');
@@ -52,16 +50,62 @@
   let movePointer = null;
   let lookPointer = null;
   let playable = false;
+  let toolsOpen = false;
   let lastMode = '';
-  let portraitDismissed = false;
-  let portraitPauseRequested = false;
-  let lastPortrait = innerHeight > innerWidth;
   let lastSize = `${innerWidth}:${innerHeight}`;
+  let layoutSize = '';
+
+  function updateLayout() {
+    const width = innerWidth;
+    const height = innerHeight;
+    const signature = `${width}:${height}`;
+    if (signature === layoutSize) return;
+    layoutSize = signature;
+    releaseAll();
+    const rotated = height > width;
+    window.tideMobileLayout = { rotated, width: rotated ? height : width, height: rotated ? width : height };
+    const style = document.documentElement.style;
+    style.setProperty('--tide-viewport-width', width + 'px');
+    style.setProperty('--tide-game-width', window.tideMobileLayout.width + 'px');
+    style.setProperty('--tide-game-height', window.tideMobileLayout.height + 'px');
+    document.documentElement.classList.toggle('tide-rotated', rotated);
+    document.dispatchEvent(new Event('tide-layout'));
+  }
+  // Inverse of the clockwise fallback rotation, shared by joystick and look.
+  window.tideStagePoint = (clientX, clientY) => {
+    const rect = stage.getBoundingClientRect();
+    return window.tideMobileLayout.rotated
+      ? { x: (clientY - rect.top) * stage.clientWidth / rect.height, y: (rect.right - clientX) * stage.clientHeight / rect.width }
+      : { x: (clientX - rect.left) * stage.clientWidth / rect.width, y: (clientY - rect.top) * stage.clientHeight / rect.height };
+  };
+  // The export hook uses the same inverse for Godot GUI and drawing touches.
+  window.tideCanvasPoint = (event, rect, canvas) => [
+    (event.clientY - rect.top) * canvas.width / rect.height,
+    (rect.right - event.clientX) * canvas.height / rect.width,
+  ];
+  window.tideEnterLandscape = async () => {
+    // Invoke synchronously from Start's click, before downloading resources.
+    const host = document.documentElement;
+    try {
+      if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+        const request = host.requestFullscreen || host.webkitRequestFullscreen;
+        if (request) await request.call(host);
+      }
+    } catch { /* Embedded browsers can forbid fullscreen; keep the game playable. */ }
+    try { if (screen.orientation?.lock) await screen.orientation.lock('landscape'); }
+    catch { /* The rotated layout below also works without orientation locking. */ }
+    updateLayout();
+  };
 
   function send(action, payload = {}) {
     if (typeof window.tideMobileCommand === 'function') {
       window.tideMobileCommand(action, JSON.stringify(payload));
     }
+  }
+  function setToolsOpen(open) {
+    toolsOpen = open;
+    document.getElementById('touch-tools').hidden = !open;
+    topbar.querySelector('[data-action="tools"]').setAttribute('aria-expanded', String(open));
   }
   function releasePointer(id) {
     const pointer = pointers.get(id);
@@ -90,9 +134,11 @@
   }
   function moveStick(event) {
     const bounds = joystick.getBoundingClientRect();
-    const radius = bounds.width * .34;
-    let x = (event.clientX - bounds.left - bounds.width / 2) / radius;
-    let y = (event.clientY - bounds.top - bounds.height / 2) / radius;
+    const radius = joystick.clientWidth * .34;
+    const center = window.tideStagePoint(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2);
+    const point = window.tideStagePoint(event.clientX, event.clientY);
+    let x = (point.x - center.x) / radius;
+    let y = (point.y - center.y) / radius;
     const length = Math.hypot(x, y);
     if (length > 1) { x /= length; y /= length; }
     if (length < .10) { x = 0; y = 0; }
@@ -112,19 +158,22 @@
       const action = button.dataset.action;
       pointers.set(event.pointerId, { type: 'button', action, button });
       button.classList.add('pressed');
-      if (action === 'help') { releaseAll(); document.getElementById('help').click(); }
-      else if (action === 'fullscreen') { releaseAll(); document.getElementById('fullscreen').click(); }
+      if (action === 'tools') { releaseAll(); setToolsOpen(!toolsOpen); }
+      else if (action === 'help') { setToolsOpen(false); releaseAll(); document.getElementById('help').click(); }
+      else if (action === 'fullscreen') { setToolsOpen(false); releaseAll(); document.getElementById('fullscreen').click(); }
       else if (holdActions.has(action)) send(action, { pressed: true });
-      else { send(action); if (action === 'pause' || action === 'bestiary' || action === 'sketch') releaseAll(); }
+      else { setToolsOpen(false); send(action); if (['pause','bestiary','sketch','call_boat'].includes(action)) releaseAll(); }
       return;
     }
+    if (toolsOpen) { setToolsOpen(false); releaseAll(); return; }
     if (event.target.closest('#touch-joystick') && movePointer === null) {
       movePointer = event.pointerId;
       pointers.set(event.pointerId, { type: 'move' });
       moveStick(event);
-    } else if (lookPointer === null && event.clientX >= stage.getBoundingClientRect().left + stage.clientWidth * .35) {
+    } else if (lookPointer === null && window.tideStagePoint(event.clientX, event.clientY).x >= stage.clientWidth * .35) {
       lookPointer = event.pointerId;
-      pointers.set(event.pointerId, { type: 'look', x: event.clientX, y: event.clientY });
+      const point = window.tideStagePoint(event.clientX, event.clientY);
+      pointers.set(event.pointerId, { type: 'look', x: point.x, y: point.y });
     }
   }, { passive: false });
   layer.addEventListener('pointermove', event => {
@@ -133,8 +182,9 @@
     if (!playable || !pointer) return;
     if (pointer.type === 'move') moveStick(event);
     else if (pointer.type === 'look') {
-      send('look', { dx: event.clientX - pointer.x, dy: event.clientY - pointer.y });
-      pointer.x = event.clientX; pointer.y = event.clientY;
+      const point = window.tideStagePoint(event.clientX, event.clientY);
+      send('look', { dx: point.x - pointer.x, dy: point.y - pointer.y });
+      pointer.x = point.x; pointer.y = point.y;
     }
   }, { passive: false });
   for (const name of ['pointerup', 'pointercancel', 'lostpointercapture']) {
@@ -148,28 +198,22 @@
   document.addEventListener('visibilitychange', () => { if (document.hidden) releaseAll(); });
   document.addEventListener('tide-pause', releaseAll);
   document.addEventListener('fullscreenchange', releaseAll);
-  rotation.querySelector('button').addEventListener('click', () => { portraitDismissed = true; sync(); });
+  document.addEventListener('fullscreenchange', updateLayout);
+  document.addEventListener('webkitfullscreenchange', updateLayout);
+  window.addEventListener('resize', updateLayout);
+  screen.orientation?.addEventListener('change', updateLayout);
   function sync() {
+    updateLayout();
     const state = window.tideMobileState || {};
     const ready = window.tideGameReady === true;
     const diving = ready && state.state === 'dive' && !state.bestiaryOpen && !state.gmOpen && !state.layoutMode && !state.blocked;
-    const portrait = innerHeight > innerWidth;
     const size = `${innerWidth}:${innerHeight}`;
     if (size !== lastSize) { releaseAll(); lastSize = size; }
-    if (portrait !== lastPortrait) { releaseAll(); portraitDismissed = false; lastPortrait = portrait; }
-    rotation.hidden = !portrait || portraitDismissed;
-    if (rotation.hidden) portraitPauseRequested = false;
-    else if (diving && !portraitPauseRequested) {
-      // Request once before crossing the bridge: it may publish the paused state
-      // synchronously or on the next engine frame. Never toggle it back on a poll.
-      portraitPauseRequested = true;
-      releaseAll();
-      send('pause');
-    }
     const entry = diving && !!state.entryActive;
-    const mode = `${diving}:${entry}:${rotation.hidden}`;
-    if (mode !== lastMode) { releaseAll(); lastMode = mode; }
-    playable = diving && !entry && rotation.hidden;
+    const mode = `${diving}:${entry}`;
+    if (mode !== lastMode) { releaseAll(); setToolsOpen(false); lastMode = mode; }
+    playable = diving && !entry;
+    document.getElementById('touch-call-boat').hidden = !playable || !state.canCallBoat;
     document.getElementById('touch-sketch').hidden = !playable || !state.canSketch;
     layer.hidden = !diving;
     layer.classList.toggle('entering', entry);
@@ -178,7 +222,7 @@
     topbar.hidden = entry;
     document.documentElement.classList.toggle('is-diving', diving || !!state.sketchActive);
   }
-  document.getElementById('status').textContent = '手机支持触屏游玩，建议横屏；左侧摇杆移动，右侧拖动转向。';
+  document.getElementById('status').textContent = '点击开始进入横屏游戏；左侧摇杆移动，右侧拖动转向。';
   sync();
   setInterval(sync, 50);
 })();

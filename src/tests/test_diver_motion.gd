@@ -54,6 +54,8 @@ func _run() -> void:
 	await process_frame
 	game.start_dive(false, false)
 	rig = game.player.get_child(0)
+	var muzzle: Node3D = rig.get_node_or_null("ArmLeft/HarpoonMuzzle")
+	_check(muzzle != null and rig.to_local(muzzle.global_position).x < 0,"The harpoon muzzle is attached to the diver's left arm on negative local X")
 	for label in JOINT_PATHS:
 		var joint: Node3D = rig.get_node_or_null(JOINT_PATHS[label])
 		if joint != null:
@@ -85,7 +87,8 @@ func _test_directional_poses() -> void:
 	var backward: Dictionary = await _sample(["swim_back"])
 	_check(left.pose.rig.z > 0.15 and right.pose.rig.z < -0.15 and absf(left.pose.rig.z + right.pose.rig.z) < 0.02, "Left and right controls produce mirrored visible body banks")
 	_check(left.pose.leg_left.y > 0.10 and left.pose.leg_right.y > 0.10 and right.pose.leg_left.y < -0.10 and right.pose.leg_right.y < -0.10, "Both fins scull sideways in opposite directions for left and right swimming")
-	_check(left.pose.arm_left.distance_to(right.pose.arm_left) > 0.10, "The balancing arm visibly changes its sculling pose with lateral direction")
+	_check(left.pose.arm_right.distance_to(right.pose.arm_right) > 0.10, "The right balancing arm visibly changes its sculling pose with lateral direction")
+	_check(left.pose.arm_left.distance_to(right.pose.arm_left) < left.pose.arm_right.distance_to(right.pose.arm_right)*.5, "The left gun arm keeps a smaller swimming stroke than the right utility arm")
 	_check(backward.pose.rig.x > 0.12 and absf(forward.pose.rig.x) < 0.04, "Reverse swimming visibly lifts the chest instead of reusing the forward pose")
 	var forward_bend: float = forward.pose.knee_left.x + forward.pose.knee_right.x
 	var reverse_bend: float = backward.pose.knee_left.x + backward.pose.knee_right.x
@@ -100,7 +103,7 @@ func _test_directional_poses() -> void:
 	for sample in [left, right, forward, backward]:
 		unchanged_speed = unchanged_speed and absf(sample.displacement.length() / sample.elapsed - 6.2) < 0.03 and sample.collisions == 0
 	_check(unchanged_speed and left.displacement.x < -3 and right.displacement.x > 3 and forward.displacement.z < -3 and backward.displacement.z > 3, "The new poses preserve the original four movement directions and 6.2 metre swimming speed: " + "; ".join(motion_diagnostics))
-	_check(left_aim.length() > 0.9 and left_aim.distance_to(right_aim) < 0.001 and left.yaw == 0 and right.yaw == 0, "Body banking leaves actual launched-hook aim and the camera heading unchanged: left aim=%s yaw=%.6f; right aim=%s yaw=%.6f" % [left_aim,left.yaw,right_aim,right.yaw])
+	_check(left_aim.length() > 0.9 and left_aim.distance_to(right_aim) < 0.05 and left.yaw == 0 and right.yaw == 0, "Banked muzzle positions converge toward the unchanged camera aim: left aim=%s yaw=%.6f; right aim=%s yaw=%.6f" % [left_aim,left.yaw,right_aim,right.yaw])
 
 func _test_smooth_release_and_diagonal() -> void:
 	var held: Dictionary = await _sample(["swim_left"])
@@ -120,6 +123,7 @@ func _test_heading_and_collision() -> void:
 	var ray: Vector3 = game.camera.project_ray_normal(root.get_visible_rect().size * 0.5)
 	_check(turned.displacement.z > 3 and absf(turned.displacement.x) < 0.02 and turned.pose.rig.z > 0.15 and game.diver_motion.motion_input.x < -0.9, "With a quarter-turn view, left swimming moves in the camera's local direction and keeps its local pose")
 	_check(absf(game.yaw - PI / 2) < 0.001 and ray.x < -0.9 and absf(ray.z) < 0.02, "Directional animation does not rotate the aiming camera away from its existing heading")
+	_check(_launch_direction().x < -.9,"The real left muzzle and launched hook follow a quarter-turn heading")
 	var wall := StaticBody3D.new()
 	wall.position = CALM + Vector3(2, 0, 0)
 	var collision := CollisionShape3D.new()
@@ -186,8 +190,12 @@ func _test_entry_joint_continuity() -> void:
 		previous[label] = joints[label].rotation
 	var continuous := true
 	var local_only := true
+	var left_fold := 0.0
+	var right_fold := 0.0
 	for frame in range(385):
 		DiverArt.animate_entry(rig,float(frame)/120.0)
+		left_fold = maxf(left_fold,absf(joints.arm_left.rotation.y))
+		right_fold = maxf(right_fold,absf(joints.arm_right.rotation.y))
 		local_only = local_only and rig.transform==rig_pose
 		for label: String in joints:
 			var rotation: Vector3 = joints[label].rotation
@@ -196,6 +204,7 @@ func _test_entry_joint_continuity() -> void:
 			previous[label] = rotation
 	_check(continuous, "All entry transitions remain continuous at 120 Hz without abrupt joint jumps or extreme angles")
 	_check(local_only and _is_reset(), "Entry articulation changes only local joint rotation and ends exactly at the reset pose")
+	_check(left_fold < right_fold*.8 and left_fold > .05,"The left gun arm uses a smaller elbow fold during water entry")
 
 func _sample(actions: Array, frames: int = 30, start: Vector3 = CALM, heading: float = 0) -> Dictionary:
 	_release_actions()
@@ -257,8 +266,16 @@ func _is_reset() -> bool:
 	return game.diver_motion.motion_input.is_zero_approx() and absf(game.diver_motion.phase) < 0.001 and _joint_transforms(rig) == neutral_pose
 
 func _launch_direction() -> Vector3:
+	var center: Vector2 = game.get_viewport().get_visible_rect().size*.5
+	var origin: Vector3 = game.camera.project_ray_origin(center)
+	var ray: Vector3 = game.camera.project_ray_normal(center)
+	var aim: Vector3 = origin+ray*((game.player.position-origin).dot(ray)+game.SPEAR_RANGE)
+	var muzzle: Node3D = rig.get_node_or_null("ArmLeft/HarpoonMuzzle")
 	game.shoot()
 	var direction: Vector3 = game.projectiles[0].velocity.normalized() if not game.projectiles.is_empty() else Vector3.ZERO
+	var start: Vector3 = game.projectiles[0].node.global_position if not game.projectiles.is_empty() else Vector3.ZERO
+	_check(muzzle != null and start.distance_to(muzzle.global_position) < .001,"A shot starts at the actual animated left muzzle, including body banking and heading")
+	_check(direction.distance_to((aim-start).normalized()) < .001,"The animated muzzle launches toward the camera crosshair convergence point")
 	game._clear_projectiles()
 	return direction
 

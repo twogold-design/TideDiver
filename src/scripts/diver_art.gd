@@ -99,15 +99,19 @@ static func build() -> Node3D:
 	_move_parts(root, root.get_node("ArmLeft"), watch_parts)
 	# Barrel, hand grip, line spool, elastic bands, and the actual muzzle alignment.
 	var weapon_parts: int = root.get_child_count()
-	Art._bar(root, Vector3(0.58, -0.18, -0.64), Vector3(0.58, -0.18, -1.52), 0.055, rubber)
-	Art._bar(root, Vector3(0.58, -0.18, -0.90), Vector3(0.58, -0.35, -0.82), 0.045, dark)
-	Art._bar(root, Vector3(0.58, -0.15, -1.05), Vector3(0.58, -0.15, -1.79), 0.013, silver)
-	Art._bar(root, Vector3(0.58, -0.15, -1.79), Vector3(0.62, -0.15, -1.71), 0.011, silver)
+	Art._bar(root, Vector3(-0.58, -0.18, -0.64), Vector3(-0.58, -0.18, -1.52), 0.055, rubber)
+	Art._bar(root, Vector3(-0.58, -0.18, -0.90), Vector3(-0.58, -0.35, -0.82), 0.045, dark)
+	Art._bar(root, Vector3(-0.58, -0.15, -1.05), Vector3(-0.58, -0.15, -1.79), 0.013, silver)
+	Art._bar(root, Vector3(-0.58, -0.15, -1.79), Vector3(-0.62, -0.15, -1.71), 0.011, silver)
 	for side: float in [-1.0, 1.0]:
-		Detail.tube(root, [Vector3(0.58 + side * 0.07, -0.18, -1.45), Vector3(0.58 + side * 0.08, -0.17, -1.10), Vector3(0.58, -0.15, -1.02)], 0.015, yellow)
-	var reel := Art._cylinder(root, Vector3(0.58, -0.28, -1.09), 0.075, 0.075, yellow)
+		Detail.tube(root, [Vector3(-0.58 + side * 0.07, -0.18, -1.45), Vector3(-0.58 + side * 0.08, -0.17, -1.10), Vector3(-0.58, -0.15, -1.02)], 0.015, yellow)
+	var reel := Art._cylinder(root, Vector3(-0.58, -0.28, -1.09), 0.075, 0.075, yellow)
 	reel.rotation.z = PI / 2
-	_move_parts(root, root.get_node("ArmRight"), weapon_parts)
+	var muzzle := Marker3D.new()
+	muzzle.name = "HarpoonMuzzle"
+	muzzle.position = Vector3(-0.58, -0.15, -1.79)
+	root.add_child(muzzle)
+	_move_parts(root, root.get_node("ArmLeft"), weapon_parts)
 	Detail.batch_joints(root)
 	return root
 
@@ -133,11 +137,11 @@ static func animate_entry(rig: Node3D, time: float, impact_time: float = 1.35, d
 		knee.rotation = Vector3(-.76*crouch-.40*brace-maxf(0,-side*stroke)*.25,0,0)*recover
 		# Draw the elbows in for entry. The weapon arm folds less than the free arm
 		# so the existing harpoon remains to the side of the mask, not through it.
-		var arm_fold: float = 1.0 if index==0 else .58
+		var arm_fold: float = .58 if index==0 else 1.0
 		arm.rotation = Vector3(.12*crouch+.26*streamline+.10*brace,
 			side*(.24*crouch+.38*streamline)*arm_fold,
 			-side*(.08*crouch+.055*brace))*recover
-		arm.rotation.x += side*stroke*.045
+		arm.rotation.x += side*stroke*.045*arm_fold
 
 static func _entry_pulse(time: float, start: float, peak: float, release: float, end: float) -> float:
 	return smoothstep(start,peak,time)*(1.0-smoothstep(release,end,time))

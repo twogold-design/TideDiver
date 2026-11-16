@@ -1,11 +1,11 @@
 extends Control
-## A paused field sketch. Only an ordered, near-outline drag can finish discovery.
+## A relaxed field sketch: broad brush tolerance and a partial outline are enough.
 signal completed(id: String)
 signal cancelled
 const Contours = preload("res://scripts/wildlife_contours.gd")
 const Catalog = preload("res://scripts/wildlife_catalog.gd")
 const PixelText = preload("res://scripts/pixel_text.gd")
-const COMPLETE_COVERAGE := .95
+const COMPLETE_COVERAGE := .70
 const INK := Color("a9ead2")
 const GUIDE := Color("77aeb5")
 const CREAM := Color("e8f3ed")
@@ -22,9 +22,9 @@ var _last_pointer := Vector2.ZERO
 var _pointer_inside := false
 var _touch_id := -1
 var _unit := 1.0
-var _tolerance := 12.0
+var _tolerance := 24.0
 var _canvas := Rect2()
-var _status := "从发光圆点起笔，沿轮廓描绘"
+var _status := "从轮廓任意位置起笔，画出约七成即可"
 var _font: Font = preload("res://assets/fonts/ui_font.tres")
 var _restart_button: Button
 var _cancel_button: Button
@@ -94,7 +94,7 @@ func restart() -> void:
 	_finished = false
 	if is_instance_valid(_cancel_button):
 		_cancel_button.text = "返回潜水"
-	_status = "从发光圆点起笔，沿轮廓描绘"
+	_status = "从轮廓任意位置起笔，画出约七成即可"
 	queue_redraw()
 
 func completion_ratio() -> float:
@@ -131,7 +131,7 @@ func _layout() -> void:
 	_points.clear()
 	for point in _normalized:
 		_points.append(_canvas.get_center()+point*fit)
-	_tolerance = clampf(minf(_canvas.size.x,_canvas.size.y)*.045,6*_unit,12*_unit)
+	_tolerance = clampf(minf(_canvas.size.x,_canvas.size.y)*.09,18*_unit,28*_unit)
 	_drawing = false
 	_touch_id = -1
 	if is_instance_valid(_restart_button):
@@ -149,9 +149,33 @@ func begin_stroke(point: Vector2) -> void:
 	_pointer = point
 	_pointer_inside = true
 	_last_pointer = point
+	if _progress == 0.0:
+		_choose_start(point)
 	_drawing = point.distance_to(resume_point()) <= _tolerance*1.35
-	_status = "沿轮廓慢慢描绘，可抬笔后从亮点接续" if _drawing else "请从发光圆点接着描绘"
+	_status = "轻轻沿轮廓描绘，偏一点也没关系" if _drawing else "靠近轮廓亮点即可接着画"
 	queue_redraw()
+
+func _choose_start(point: Vector2) -> void:
+	# Rotate both representations so resizing preserves the chosen start point.
+	var count := _points.size()-1
+	var nearest := 0
+	var distance := INF
+	for i in range(count):
+		var candidate := point.distance_squared_to(_points[i])
+		if candidate < distance:
+			nearest = i
+			distance = candidate
+	if distance > pow(_tolerance*1.35,2) or nearest == 0:
+		return
+	var screen := PackedVector2Array()
+	var normalized := PackedVector2Array()
+	for i in range(count):
+		screen.append(_points[(nearest+i)%count])
+		normalized.append(_normalized[(nearest+i)%count])
+	screen.append(screen[0])
+	normalized.append(normalized[0])
+	_points = screen
+	_normalized = normalized
 
 func continue_stroke(point: Vector2) -> void:
 	_pointer = point
@@ -188,7 +212,7 @@ func _accept_point(point: Vector2) -> void:
 	var best_index := signed_progress
 	# Restrict matching to nearby ordered segments: crossing fins or a folded tail
 	# does not let the brush jump to an unrelated part of the outline.
-	for segment in range(int(floor(signed_progress))-5,int(floor(signed_progress))+6):
+	for segment in range(int(floor(signed_progress))-10,int(floor(signed_progress))+11):
 		var start: Vector2 = _points[posmod(segment,count)]
 		var finish: Vector2 = _points[posmod(segment+1,count)]
 		var span := finish-start
@@ -199,8 +223,8 @@ func _accept_point(point: Vector2) -> void:
 			best_distance = error
 			best_index = float(segment)+fraction
 	if best_distance > _tolerance*_tolerance:
-		_drawing = false
-		_status = "画笔离开轮廓了，从发光圆点继续即可"
+		# Keep the stroke alive: returning to the guide resumes without another press.
+		_status = "进度已保留，移回亮点附近就能继续"
 		return
 	if _direction == 0:
 		if absf(best_index) < .25:
@@ -209,7 +233,7 @@ func _accept_point(point: Vector2) -> void:
 	var candidate: float = best_index*float(_direction)
 	if candidate > _progress:
 		_progress = minf(float(count),candidate)
-		_status = "轮廓完成 %d%% · 可抬笔接续" % roundi(completion_ratio()*100)
+		_status = "描绘进度 %d%% · 可抬笔接续" % mini(100,roundi(completion_ratio()/COMPLETE_COVERAGE*100))
 	if completion_ratio() >= COMPLETE_COVERAGE:
 		_finished = true
 		_drawing = false
@@ -289,7 +313,7 @@ func _draw() -> void:
 	var title := "描绘 · " + str(Catalog.entry(species_id).get("name","海洋生物"))
 	var title_size: int = roundi((18 if short else 26)*_unit)
 	draw_string(_font,Vector2(18,26 if short else 40)*_unit,title,HORIZONTAL_ALIGNMENT_LEFT,-1,title_size,CREAM)
-	var percentage := "%d%%" % roundi(completion_ratio()*100)
+	var percentage := "%d%%" % mini(100,roundi(completion_ratio()/COMPLETE_COVERAGE*100))
 	draw_string(_font,Vector2(size.x-72*_unit,(26 if short else 40)*_unit),percentage,HORIZONTAL_ALIGNMENT_LEFT,-1,roundi(18*_unit),INK)
 	draw_string(_font,Vector2(18,49 if short else 71)*_unit,_status,HORIZONTAL_ALIGNMENT_LEFT,size.x-36*_unit,roundi(12*_unit),GUIDE)
 	draw_rect(_canvas,Color(.05,.16,.20,.72))
@@ -297,7 +321,9 @@ func _draw() -> void:
 		return
 	draw_colored_polygon(_points,Color(.17,.34,.37,.4))
 	draw_polyline(_points,GUIDE,2.2*_unit,true)
-	if _progress > 0:
+	if _finished:
+		draw_polyline(_points,INK,4.0*_unit,true)
+	elif _progress > 0:
 		var traced := PackedVector2Array([_points[0]])
 		for i in range(1,int(floor(_progress))+1):
 			traced.append(_at_index(float(i*_direction)))

@@ -11,8 +11,10 @@
     "test:local": "node src/tests/web_smoke.cjs --file",
     "test:marine": "node src/tests/web_marine_update.cjs",
     "test:entry-audio": "node src/tests/web_entry_audio.cjs",
+    "test:scene-audio": "node src/tests/web_scene_audio.cjs",
     "test:bestiary": "node src/tests/web_bestiary_gm.cjs",
     "test:mobile": "node src/tests/web_mobile.cjs",
+    "test:mobile-landscape": "node src/tests/test_mobile_landscape.cjs",
     "test:resolution": "node src/tests/web_resolution.cjs",
     "test:text": "node src/tests/web_text.cjs"
   },

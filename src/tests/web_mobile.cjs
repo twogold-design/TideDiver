@@ -62,12 +62,24 @@ fs.mkdirSync(output, { recursive: true });
   }
   async function menu(index) {
     await page.waitForTimeout(400); // Let the mobile header and Godot canvas resize settle.
-    const canvas = await page.locator('#canvas').boundingBox();
-    const width = (canvas.width - 32) / 2;
-    const x = canvas.x + 12 + (index % 2) * (width + 8) + width / 2;
-    const y = canvas.y + 76 + Math.floor(index / 2) * 52 + 23;
-    await page.touchscreen.tap(x, y);
+    const p = await canvasPoint('menu', index);
+    await page.touchscreen.tap(p.x, p.y);
     await page.waitForTimeout(500);
+  }
+  async function canvasPoint(kind, index = 0) {
+    return page.evaluate(({ kind, index }) => {
+      const stage = document.getElementById('stage');
+      const canvas = document.getElementById('canvas');
+      const rect = Element.prototype.getBoundingClientRect.call(stage);
+      const matrix = new DOMMatrix(getComputedStyle(stage).transform);
+      const corners = [[0,0],[stage.clientWidth,0],[0,stage.clientHeight],[stage.clientWidth,stage.clientHeight]];
+      const left = Math.min(...corners.map(([x,y]) => matrix.a*x+matrix.c*y));
+      const top = Math.min(...corners.map(([x,y]) => matrix.b*x+matrix.d*y));
+      const width = (canvas.clientWidth-32)/2;
+      const x = canvas.offsetLeft + (kind === 'book' ? canvas.clientWidth/2 : 12+(index%2)*(width+8)+width/2);
+      const y = canvas.offsetTop + (kind === 'book' ? canvas.clientHeight-31 : 76+Math.floor(index/2)*52+23);
+      return {x:rect.left+matrix.a*x+matrix.c*y-left,y:rect.top+matrix.b*x+matrix.d*y-top};
+    }, {kind,index});
   }
   try {
     await page.goto(process.argv.includes('--http') ? 'http://127.0.0.1:8060/' : pathToFileURL(path.join(root, 'index.html')).href);
@@ -83,7 +95,10 @@ fs.mkdirSync(output, { recursive: true });
     await page.locator('#touch-joystick').waitFor({ state: 'visible' });
     assert.equal(await page.evaluate(() => document.pointerLockElement), null, 'Mobile swimming works without pointer lock');
     await shot('dive-controls');
-    for (const name of ['ascend', 'descend', 'boost', 'stealth', 'shoot', 'knife', 'interact', 'pause', 'bestiary']) await center(`#touch-layer [data-action="${name}"]`);
+    for (const name of ['ascend', 'descend', 'boost', 'stealth', 'shoot', 'knife', 'interact', 'pause', 'bestiary', 'tools']) await center(`#touch-layer [data-action="${name}"]`);
+    assert.equal(await page.locator('#touch-topbar > button').count(),3,'Only pause, bestiary and tools occupy the compact top bar');
+    assert.deepEqual(await page.locator('#touch-topbar > button').evaluateAll(buttons=>buttons.map(button=>button.dataset.action)),['pause','bestiary','tools']);
+    await page.locator('#touch-call-boat').waitFor({state:'hidden'});
     const stick = await center('#touch-joystick');
     const ascend = await center('[data-action="ascend"]');
     samples.before = await stats();
@@ -115,6 +130,8 @@ fs.mkdirSync(output, { recursive: true });
     await page.waitForFunction(() => window.tideRenderStats.playerPosition[1] < -7, null, {timeout: 12000});
     await finger('touchEnd', 8);
     await page.waitForFunction(() => !window.tideRenderStats.touchHeld.descend);
+    assert.equal(await page.evaluate(()=>window.tideMobileState.canCallBoat),false,'A submerged diver cannot call the boat');
+    await page.locator('#touch-call-boat').waitFor({state:'hidden'});
     await action('interact');
     assert.equal(await page.evaluate(() => window.tideMobileState.state), 'dive', 'Underwater interaction remains within normal dive rules');
     await action('pause');
@@ -126,37 +143,80 @@ fs.mkdirSync(output, { recursive: true });
     await page.locator('#touch-layer').waitFor({ state: 'visible' });
     await action('bestiary');
     await page.waitForFunction(() => window.tideMobileState.bestiaryOpen === true);
+    await page.locator('#touch-layer').waitFor({ state: 'hidden' });
     await shot('bestiary-landscape');
     // Dedicated mobile journal controls use a full-width, three-button bottom row.
-    const bookBox = await page.locator('#canvas').boundingBox();
-    await page.touchscreen.tap(bookBox.x + bookBox.width / 2, bookBox.y + bookBox.height - 31);
+    const bookClose = await canvasPoint('book');
+    await page.touchscreen.tap(bookClose.x, bookClose.y);
     await page.waitForFunction(() => window.tideMobileState.bestiaryOpen === false, null, { timeout: 5000 });
     await page.locator('#touch-layer').waitFor({ state: 'visible' });
     const stick2 = await center('#touch-joystick');
     await finger('touchStart', 7, stick2.x, stick2.y - 35);
     await page.waitForFunction(() => window.tideRenderStats.touchMove[1] < -.5);
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.locator('#touch-rotate').waitFor({ state: 'visible' });
+    await page.waitForTimeout(500);
+    assert.equal(await page.locator('#touch-rotate').count(), 0, 'Portrait never shows a rotate-phone gate');
+    assert.equal(await page.evaluate(() => window.tideMobileState.state), 'dive', 'Rotating the device keeps the dive running');
+    assert(await page.evaluate(() => document.getElementById('canvas').clientWidth > document.getElementById('canvas').clientHeight), 'Portrait fallback retains a landscape game canvas');
     await page.waitForFunction(() => window.tideRenderStats.touchMove.every(value => Math.abs(value) < .01));
     await finger('touchCancel');
-    await shot('portrait-guidance');
+    await shot('portrait-landscape-fallback');
+    const portraitStick = await center('#touch-joystick');
+    const forward = await page.evaluate(() => {
+      const m = new DOMMatrix(getComputedStyle(document.getElementById('stage')).transform);
+      return { x:m.c*-35, y:m.d*-35 };
+    });
+    await finger('touchStart', 9, portraitStick.x, portraitStick.y);
+    await finger('touchMove', 9, portraitStick.x+forward.x, portraitStick.y+forward.y);
+    await page.waitForFunction(() => window.tideRenderStats.touchMove[1] < -.5 && Math.abs(window.tideRenderStats.touchMove[0]) < .15);
+    await finger('touchCancel');
+    await action('pause');
+    await page.waitForFunction(() => window.tideMobileState.state === 'paused');
+    await menu(1);
+    await page.waitForFunction(() => window.tideMobileState.state === 'dive');
+    await action('bestiary');
+    await page.waitForFunction(() => window.tideMobileState.bestiaryOpen === true);
+    await page.locator('#touch-layer').waitFor({ state: 'hidden' });
+    const rotatedBookClose = await canvasPoint('book');
+    await page.touchscreen.tap(rotatedBookClose.x, rotatedBookClose.y);
+    await page.waitForFunction(() => window.tideMobileState.bestiaryOpen === false);
     await page.setViewportSize({ width: 844, height: 390 });
-    await page.locator('#touch-rotate').waitFor({ state: 'hidden' });
+    await page.waitForTimeout(500);
     if (await page.evaluate(() => window.tideMobileState.state === 'paused')) await menu(1);
     await page.locator('#touch-layer').waitFor({ state: 'visible' });
     assert.equal(await page.evaluate(() => document.pointerLockElement), null);
-    await action('pause');
-    await page.waitForFunction(() => window.tideMobileState.state === 'paused');
-    await menu(2); // Normal rescue settlement back to the dock.
+    await page.setViewportSize({width:667,height:300});
+    await page.waitForTimeout(400);
+    const compactBar=await page.locator('#touch-topbar').boundingBox();
+    assert(compactBar.x>=667-148 && compactBar.y<=8 && compactBar.height===44,'Compact toolbar stays at the upper-right with a 44px hit area');
+    assert(compactBar.x>667-160,'Toolbar stays to the right of the backpack text plate');
+    await shot('compact-dive-667');
+    // A real surface ascent exposes the normal pickup action. Keep the ascent
+    // finger down while calling, so the return must clear all held input itself.
+    const surfaceAscent=await center('[data-action="ascend"]');
+    await finger('touchStart',11,surfaceAscent.x,surfaceAscent.y);
+    await page.waitForFunction(()=>window.tideRenderStats.playerPosition[1]>=-3.5 && window.tideMobileState.canCallBoat===true,null,{timeout:15000});
+    await page.locator('#touch-call-boat').waitFor({state:'visible'});
+    await shot('surface-call-boat');
+    samples.surface=await stats();
+    const boat=await center('#touch-call-boat');
+    await finger('touchStart',12,boat.x,boat.y);
     await page.waitForFunction(() => window.tideMobileState.state === 'dock', null, { timeout: 15000 });
-    await menu(0); // Dismiss the rescue result.
+    await page.waitForFunction(()=>!window.tideRenderStats.rescueResult && window.tideRenderStats.touchMove.every(value=>Math.abs(value)<.01) && Object.values(window.tideRenderStats.touchHeld).every(value=>!value));
+    assert.equal(await page.evaluate(()=>window.tideMobileState.blocked),false,'Calling the boat returns normally without a rescue settlement modal');
+    assert.equal(await page.evaluate(()=>window.tideMobileState.canCallBoat),false,'The pickup action becomes unavailable after returning');
+    await page.locator('#touch-call-boat').waitFor({state:'hidden'});
+    await finger('touchCancel');
+    await shot('boat-return-dock');
+    await page.setViewportSize({width:844,height:390});
+    await page.waitForTimeout(400);
     await menu(4); // Restaurant.
     await page.waitForFunction(() => window.tideMobileState.state === 'restaurant');
     await shot('restaurant-landscape');
     await menu(0);
     await page.waitForFunction(() => window.tideMobileState.state === 'dock');
     assert.deepEqual(errors, [], 'No browser, script, shader, or resource errors');
-    console.log('PASS: mobile dock and restaurant menus, multi-touch movement/look/ascent, cancellation, harpoon/knife/interaction, pause/resume, journal, orientation, and no pointer lock.');
+    console.log('PASS: compact mobile tools, real surface boat pickup, held-input reset, dock/restaurant menus, multitouch, weapons, pause/journal and rotated landscape.');
   } finally {
     samples.last = await stats().catch(() => null);
     samples.pointerEvents = await page.evaluate(() => window.touchTrace).catch(() => null);

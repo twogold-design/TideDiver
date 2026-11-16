@@ -536,7 +536,7 @@ func _draw_hud() -> void:
 	_panel(Rect2(290,768,1035,43),Color(0.025,0.12,0.16,0.85))
 	_text(Vector2(308,794),"WASD 游泳  Q/E 潜浮  Shift 冲刺  Ctrl 慢游  左键/空格 鱼叉  右键 小刀  F 互动  Esc 暂停",15,MUTED)
 	region(BOTTOM_LEFT)
-	_text(Vector2(42,882),"M  音效开关   ·   "+("F1  GM 自选潜点" if BuildMode.GM_ENABLED else "B  海洋图鉴"),12,MUTED)
+	_text(Vector2(42,882),"M  声音开关   ·   "+("F1  GM 自选潜点" if BuildMode.GM_ENABLED else "B  海洋图鉴"),12,MUTED)
 	region(BOTTOM_RIGHT)
 	_text(Vector2(1200,882),"TIDAL BAY / 01",13,MUTED,true)
 	if game.hurt_cooldown > 1.8:
@@ -624,11 +624,17 @@ func _draw_mobile_dive() -> void:
 	draw_offset = Vector2.ZERO
 	var face = font
 	var air := "∞" if BuildMode.GM_ENABLED and game.gm_infinite_air else "%d%%" % ceili(game.oxygen/game.progress.oxygen_max()*100)
-	draw_rect(Rect2(Vector2(8,8)*unit,Vector2(screen.x-16,40)*unit),Color(.025,.10,.14,.75))
+	var cargo_x: float = screen.x - (300 if mobile_enabled() else 145)
+	if mobile_enabled():
+		# Small translucent text plates leave the middle of the view unobscured.
+		draw_rect(Rect2(Vector2(8,8)*unit,Vector2(184,25)*unit),Color(.025,.10,.14,.40))
+		draw_rect(Rect2(Vector2(cargo_x-8,8)*unit,Vector2(148,40 if game.progress.unread_discoveries() > 0 else 25)*unit),Color(.025,.10,.14,.40))
+	else:
+		draw_rect(Rect2(Vector2(8,8)*unit,Vector2(screen.x-16,40)*unit),Color(.025,.10,.14,.75))
 	draw_string(face,Vector2(18,26)*unit,"气瓶 %s · %.1fm" % [air,-game.player.position.y],HORIZONTAL_ALIGNMENT_LEFT,-1,roundi(13*unit),LIGHT)
-	draw_string(face,Vector2(screen.x-145,26)*unit,"背包 %d/%dkg" % [game.weight(),game.progress.capacity()],HORIZONTAL_ALIGNMENT_LEFT,-1,roundi(13*unit),LIGHT)
+	draw_string(face,Vector2(cargo_x,26)*unit,"背包 %d/%dkg" % [game.weight(),game.progress.capacity()],HORIZONTAL_ALIGNMENT_LEFT,-1,roundi(13*unit),LIGHT)
 	if game.progress.unread_discoveries() > 0:
-		draw_string(face,Vector2(screen.x-145,43)*unit,"图鉴新收录 %d" % game.progress.unread_discoveries(),HORIZONTAL_ALIGNMENT_LEFT,-1,roundi(11*unit),GOLD)
+		draw_string(face,Vector2(cargo_x,43)*unit,"图鉴新收录 %d" % game.progress.unread_discoveries(),HORIZONTAL_ALIGNMENT_LEFT,-1,roundi(11*unit),GOLD)
 	if not mobile_enabled():
 		draw_string(face,Vector2(18,43)*unit,"B 图鉴 · Esc 暂停"+(" · F1 GM" if BuildMode.GM_ENABLED else ""),HORIZONTAL_ALIGNMENT_LEFT,-1,roundi(11*unit),MUTED)
 		draw_rect(Rect2(Vector2(8,screen.y-34)*unit,Vector2(screen.x-16,26)*unit),Color(.025,.10,.14,.75))
@@ -657,6 +663,8 @@ func _draw_mobile_dive() -> void:
 		message = "左侧摇杆移动 · 右侧滑动转向 · 点击操作按钮"
 	if mobile_enabled():
 		message = message.replace("按 F", "点交互").replace("按F", "点交互")
+		if game.can_call_boat():
+			message = "" # The HTML surface-only call button replaces this hint.
 	if not message.is_empty():
 		var max_width: float = (screen.x-230)*unit
 		draw_rect(Rect2(Vector2(110,54)*unit,Vector2(screen.x-220,32)*unit),Color(.025,.10,.14,.80))

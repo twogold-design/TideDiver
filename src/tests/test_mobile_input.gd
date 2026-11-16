@@ -99,6 +99,38 @@ func _run() -> void:
 	check(game.touch_input.movement == Vector2.ZERO and game.touch_input.held.is_empty(), "Losing application focus clears held movement and boost")
 	game.state = "dive"
 	game.player.position.y = -2
+	check(game.can_call_boat() and game.context_hint().is_empty(), "Mobile surface pickup uses a dedicated action instead of a keyboard-only hint")
+	game.mobile_controls = false
+	check(game.context_hint().contains("F  呼叫接驳船"), "Desktop still shows the keyboard boat call hint")
+	game.mobile_controls = true
+	game.player.position.y = -3.5001
+	command("call_boat")
+	check(not game.can_call_boat() and game.state == "dive", "A stale surface tap cannot call the boat below the depth boundary")
+	game.player.position.y = -3.5
+	check(game.can_call_boat(), "The surface call is available exactly at the original 3.5 metre boundary")
+	for flag: String in ["entry_active","sketch_active","bestiary_open","gm_menu_open","new_game_confirmation","rescue_result_visible","summary_visible","layout_mode"]:
+		game.set(flag,true)
+		command("call_boat")
+		check(not game.can_call_boat() and game.state == "dive", "Boat calls are blocked during "+flag)
+		game.set(flag,false)
+	for blocked_state: String in ["paused","dock","restaurant","rescuing"]:
+		game.state = blocked_state
+		command("call_boat")
+		check(not game.can_call_boat() and game.state == blocked_state, "Boat calls are blocked in state "+blocked_state)
+	game.state = "dive"
+	game.cargo = [{"id":"orange","weight":1,"value":12}]
+	var stored_before: int = game.progress.inventory.orange
+	var day_before: int = game.progress.day
+	var coins_before: int = game.progress.coins
+	command("move",{"x":1,"y":0})
+	command("ascend",{"pressed":true})
+	command("call_boat")
+	check(game.state == "dock" and not game.last_result.rescued and game.last_result.count == 1 and game.progress.inventory.orange == stored_before+1 and game.progress.coins == coins_before, "The temporary boat action returns normally and stores the full catch without a rescue fee")
+	check(game.touch_input.movement == Vector2.ZERO and game.touch_input.held.is_empty() and game.cargo.is_empty(), "Calling the boat releases held touches and clears settled cargo")
+	command("call_boat")
+	check(game.progress.day == day_before+1 and game.progress.inventory.orange == stored_before+1 and not game.can_call_boat(), "Repeated boat taps cannot duplicate settlement or cargo")
+	game.start_dive(false,false)
+	game.player.position.y = -2
 	command("interact")
 	check(game.state == "dock", "The touch interact action returns from the surface through normal dive settlement")
 	game.mobile_controls = false
