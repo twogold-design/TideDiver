@@ -6,6 +6,7 @@ const ReefArt = preload("res://scripts/reef_fish_art.gd")
 const MarineArt = preload("res://scripts/marine_life_art.gd")
 const RayArt = preload("res://scripts/ray_art.gd")
 const ThresherArt = preload("res://scripts/thresher_shark.gd")
+const WhaleSharkArt = preload("res://scripts/whale_shark_art.gd")
 const CaveArt = preload("res://scripts/crevice_art.gd")
 const PAGE_SIZE := 7
 const CREAM := Color("e8f3ed")
@@ -243,6 +244,8 @@ func _model(entry: Dictionary) -> Node3D:
 		var shark := ThresherArt.new()
 		shark._assemble()
 		return shark
+	if id == "whale_shark":
+		return WhaleSharkArt.build()
 	if id == "lightning_clam":
 		return CaveArt._clam()
 	var visual := MeshInstance3D.new()

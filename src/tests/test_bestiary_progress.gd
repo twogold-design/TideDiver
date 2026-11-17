@@ -34,9 +34,14 @@ func _test_catalog() -> void:
 		complete = complete and not ids.has(record.id) and not str(record.name).is_empty() and not str(record.habitat).is_empty() and not str(record.description).is_empty() and int(record.reward) > 0
 		ids[record.id] = true
 		catchable += 1 if record.catchable else 0
-	_check(Catalog.entries().size() == 29 and ids.size() == 29 and catchable == 14, "The field guide contains fourteen huntable fish and fifteen named ornamental species")
+	_check(Catalog.entries().size() == 30 and ids.size() == 30 and catchable == 14, "The field guide contains fourteen huntable fish and sixteen named ornamental species")
 	_check(complete, "Every unique catalog record has a name, habitat, description and a positive first-discovery reward")
 	_check(Catalog.entry("not_a_species").is_empty() and Catalog.entry("moray").kind == 7 and not Catalog.entry("lightning_clam").catchable, "Catalog lookup keeps canonical fish IDs and excludes the clam from captures")
+	var whale: Dictionary = Catalog.entry("whale_shark")
+	_check(not whale.catchable and whale.kind == -1 and whale.reward == 120 and whale.habitat.contains("深水"), "The giant whale shark is a deep-water ornamental record with its own reward")
+	var whale_progress := MemoryProgression.new()
+	_check(whale_progress.discover_species("whale_shark","caught") == 0 and whale_progress.discover_species("whale_shark","observed") == 0, "The whale shark cannot be unlocked by capture or passive observation")
+	_check(whale_progress.discover_species("whale_shark","sketched") == 120 and whale_progress.discover_species("whale_shark","sketched") == 0 and whale_progress.coins == 120 and whale_progress.saves == 1, "A whale shark sketch unlocks and rewards exactly once")
 
 func _test_rewards() -> void:
 	var p := MemoryProgression.new()

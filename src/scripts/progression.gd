@@ -240,6 +240,33 @@ func sell_valuables() -> int:
 	save_game()
 	return earned
 
+func non_cooking_fish_sale() -> Dictionary:
+	var count := 0
+	var value := 0
+	for fish: Dictionary in FishCatalog.SPECIES:
+		var id: String = fish.id
+		if RECIPES.has(id):
+			continue
+		var amount: int = maxi(0,int(inventory.get(id,0)))
+		count += amount
+		value += amount * int(GOODS[id].value)
+	return {"count":count,"value":value}
+
+func sell_non_cooking_fish() -> int:
+	if service_active:
+		return 0
+	var sale := non_cooking_fish_sale()
+	var earned: int = sale.value
+	# Credit the entire sale or leave the stock intact, just like a single sale.
+	if earned <= 0 or coins + earned > MAX_COINS:
+		return 0
+	for fish: Dictionary in FishCatalog.SPECIES:
+		if not RECIPES.has(fish.id):
+			inventory[fish.id] = 0
+	coins += earned
+	save_game()
+	return earned
+
 func renovations_complete() -> bool:
 	for id: String in RENOVATIONS:
 		if not bool(renovation.get(id,false)):

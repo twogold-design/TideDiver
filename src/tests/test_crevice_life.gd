@@ -45,7 +45,7 @@ func _run() -> void:
 		game.free()
 		quit(1)
 		return
-	_check(game.fish.size() == 207 and game.fish_population_count() == 207, "Rock-dwelling morays reuse the established 207-fish population")
+	_check(game.fish.size() == 213 and game.fish_population_count() == 213, "Rock-dwelling morays reuse the established 213-fish population")
 	_test_natural_homes()
 	var target: Dictionary = game.fish[habitat.dens[0].slot]
 	_test_peeking(target)
@@ -248,7 +248,7 @@ func _test_capture_and_lifecycle() -> void:
 	for den: Dictionary in game.crevice_habitat.dens:
 		var item: Dictionary = game.fish[den.slot]
 		fresh = fresh and item.alive and item.hp == FishData.SPECIES[7].hp
-	_check(fresh and game.fish.size() == 207, "A new dive restores healthy den residents without duplicating fish")
+	_check(fresh and game.fish.size() == 213, "A new dive restores healthy den residents without duplicating fish")
 
 func _test_clam() -> void:
 	var cave: Node3D = game.crevice_habitat.clam_den

@@ -144,6 +144,15 @@ func rebuild() -> void:
 		_button("上一页",Rect2(54,625,78,32),func(): _change_warehouse_page(-1),false,warehouse_page == 0)
 		_button("下一页",Rect2(206,625,78,32),func(): _change_warehouse_page(1),false,warehouse_page >= _warehouse_page_count() - 1)
 		_button("仅出售珍珠与宝藏",Rect2(54,701,230,44),game.sell_valuables,false,int(game.progress.inventory.get("pearl",0))+int(game.progress.inventory.get("chest",0)) == 0)
+		var fish_sale: Dictionary = game.progress.non_cooking_fish_sale()
+		var sale_empty: bool = int(fish_sale.count) <= 0
+		var sale_over_cap: bool = int(fish_sale.value) > P.MAX_COINS-game.progress.coins
+		var sale_tip: String = "出售 %d 条无菜谱鱼类，收入 %d G。可烹饪鱼类及其他物品全部保留。" % [fish_sale.count,fish_sale.value]
+		if sale_empty:
+			sale_tip = "仓库暂无不可烹饪鱼类。可烹饪鱼类及其他物品全部保留。"
+		elif sale_over_cap:
+			sale_tip += "\n金币将超过上限，暂时无法全额出售；鱼类仍保留在仓库。"
+		_button("一键出售不可烹饪鱼类",Rect2(54,752,230,44),game.sell_non_cooking_fish,false,sale_empty or sale_over_cap,sale_tip)
 		button_anchor = CENTER_RIGHT
 		if game.restaurant_tab == "renovation":
 			i = 0
@@ -269,7 +278,7 @@ func _draw() -> void:
 
 func _draw_management() -> void:
 	region(CENTER_LEFT)
-	_panel(Rect2(32,110,276,660))
+	_panel(Rect2(32,110,276,700))
 	_text(Vector2(54,144),"岸上仓库",23)
 	_text(Vector2(54,169),"前三种鱼可烹饪，其余仅售卖",14,MUTED)
 	var i: int = 0
@@ -323,8 +332,8 @@ func _draw_management() -> void:
 	var reason: String = game.service_block_reason()
 	_text(Vector2(371,699),reason if not reason.is_empty() else "准备就绪。开门后点击订单制作，再点击上菜。",14,GOLD)
 	region(CENTER_LEFT)
-	_panel(Rect2(32,786,276,43))
-	_text(Vector2(48,813),"累计营收 %d G · 服务 %d 位" % [game.progress.restaurant_income,game.progress.total_served],14,MINT)
+	_panel(Rect2(32,822,276,43))
+	_text(Vector2(48,849),"累计营收 %d G · 服务 %d 位" % [game.progress.restaurant_income,game.progress.total_served],14,MINT)
 
 func _draw_service() -> void:
 	region(TOP_LEFT)

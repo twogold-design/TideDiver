@@ -34,7 +34,7 @@ func _run() -> void:
 	game.start_dive(false)
 	await physics_frame
 	check(game.entry_site_index == 0,"The first departure still starts at the sheltered cove")
-	check(game.fish.size() == 207 and game.fish_population_count() == 207,"Exactly twenty-four catchable residents augment the existing population")
+	check(game.fish.size() == 213 and game.fish_population_count() == 213,"Twenty-four coastal/spire residents and six wreck barracudas augment the existing population")
 	for site: String in ["tidal_cove","southern_spires"]:
 		var added: Array = residents(site)
 		var coastal: bool = site == "tidal_cove"

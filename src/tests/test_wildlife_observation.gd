@@ -42,6 +42,7 @@ func _run() -> void:
 	await _test_pause_and_modal_input()
 	_test_captures()
 	_test_ornamental()
+	_test_whale_shark()
 	await _test_discovery_feedback()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	game.free()
@@ -61,6 +62,7 @@ func _isolate() -> void:
 	game.marine_life.visible = false
 	game.ray_habitat.visible = false
 	game.canyon_shark.visible = false
+	game.whale_shark.visible = false
 	game.crevice_habitat.visible = false
 	game.wildlife_observation.reset()
 	game._clear_projectiles()
@@ -255,6 +257,32 @@ func _test_ornamental() -> void:
 	_watch(3.1)
 	_check(not game.progress.has_discovery("lightning_clam") and game.progress.coins == before and game.can_sketch(), "Watching the real clam offers a sketch without automatically granting its reward")
 	_check(game.progress.inventory == inventory and game.cargo.is_empty(), "Ornamental discovery never creates a captured clam or cargo item")
+
+func _test_whale_shark() -> void:
+	_isolate()
+	var whale: Node3D = game.whale_shark
+	whale.spawned = true
+	whale.global_position = WATER+Vector3(0,0,-14)
+	whale.visible = true
+	_aim(whale.global_position)
+	var before: int = game.progress.coins
+	_watch(4.0)
+	_check(game.wildlife_observation.target.get("id","") == "whale_shark" and game.can_sketch(), "The actual giant whale shark offers its own manual sketch when visible nearby")
+	_check(not game.progress.has_discovery("whale_shark") and game.progress.coins == before, "Watching a whale shark does not bypass the ornamental sketch rule")
+	var preview: Node3D = game.hud.bestiary_ui._model(Catalog.entry("whale_shark"))
+	var bounds: AABB = game.hud.bestiary_ui._bounds(preview,Transform3D.IDENTITY)
+	_check(bounds.size.z >= 15.0 and bounds.size.x > 6.0, "The whale shark journal preview uses the large dedicated model rather than a generic fish")
+	preview.free()
+	whale.visible = false
+	game.wildlife_observation.reset()
+	_watch(.1)
+	_check(game.wildlife_observation.target.is_empty(), "A hidden whale shark cannot remain a sketch target")
+	whale.visible = true
+	whale.global_position = WATER+Vector3(0,0,-25)
+	_aim(whale.global_position)
+	_watch(.1)
+	_check(game.wildlife_observation.target.is_empty(), "Whale shark sketching retains the existing twenty-metre observation range")
+	_isolate()
 
 func _test_discovery_feedback() -> void:
 	_isolate()

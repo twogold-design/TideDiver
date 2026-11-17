@@ -56,7 +56,7 @@ func _run() -> void:
 		_test_terrain()
 		await _test_sites_and_rendering(geology, life)
 		_test_pearl_interaction()
-	_check(game.fish.size() == 207 and game.fish_population_count() == 207, "Decorative seabed life does not add ordinary fish or increase the catchable population")
+	_check(game.fish.size() == 213 and game.fish_population_count() == 213, "Decorative seabed life does not add ordinary fish or increase the catchable population")
 	_check(memory._save_data() == progress_before and memory.saves == 0, "Detail inspection and pearl pickup do not mutate or save durable progress")
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	game.free()

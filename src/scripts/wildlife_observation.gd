@@ -48,6 +48,8 @@ func find_target(game: Node) -> Dictionary:
 			_consider(game,result,"sand_ray","ray:%d" % ray.node.get_instance_id(),ray.node.to_global(Vector3(0,.12,0)),origin,forward)
 	if game.canyon_shark.spawned and game.canyon_shark.is_visible_in_tree():
 		_consider(game,result,"thresher_shark","thresher",game.canyon_shark.global_position,origin,forward)
+	if game.whale_shark.spawned and game.whale_shark.is_visible_in_tree():
+		_consider(game,result,"whale_shark","whale_shark",game.whale_shark.global_position,origin,forward)
 	var cave: Node3D = game.crevice_habitat.clam_den
 	if is_instance_valid(cave) and cave.is_visible_in_tree():
 		_consider(game,result,"lightning_clam","clam",cave.to_global(Vector3(0,.8,-.6)),origin,forward)

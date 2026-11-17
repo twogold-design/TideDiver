@@ -2,6 +2,7 @@ extends RefCounted
 ## Local reactive fish simulation. Only the game physics clock advances behaviour.
 const FishData = preload("res://scripts/fish_catalog.gd")
 const Ocean = preload("res://scripts/ocean_config.gd")
+const BarracudaPatrol = preload("res://scripts/barracuda_patrol.gd")
 const SWIM_CADENCE := [4.7,5.8,3.5,10.0,3.4,3.0,7.6,5.0,4.4,0.0,6.4,3.9,7.0,8.2]
 
 static func prepare(item: Dictionary) -> void:
@@ -124,16 +125,21 @@ static func advance(game: Node, item: Dictionary, delta: float) -> void:
 		"inflate":
 			speed *= 0.2
 		_:
-			var phase: float = float(item.phase)+game.clock*0.13
-			var roam: float = 16.0 if int(item.kind) >= 3 else 7.0
-			var destination: Vector3 = item.home+Vector3(sin(phase)*roam,sin(phase*0.7)*3.0,cos(phase)*roam)
-			# An island ridge is a boundary to swim around, never a higher patrol floor.
-			if Ocean.seabed_height(destination.x,destination.z)+3.0 > -5.0:
-				destination = item.home
-			desired = (destination-node.position).normalized()
-			if behavior == "ambush":
-				speed *= 0.25
-	if item.state != "charge":
+			if int(item.kind) != 13:
+				var phase: float = float(item.phase)+game.clock*0.13
+				var roam: float = 16.0 if int(item.kind) >= 3 else 7.0
+				var destination: Vector3 = item.home+Vector3(sin(phase)*roam,sin(phase*0.7)*3.0,cos(phase)*roam)
+				# An island ridge is a boundary to swim around, never a higher patrol floor.
+				if Ocean.seabed_height(destination.x,destination.z)+3.0 > -5.0:
+					destination = item.home
+				desired = (destination-node.position).normalized()
+				if behavior == "ambush":
+					speed *= 0.25
+	if int(item.kind) == 13 and item.state in ["patrol","recover"]:
+		var cruise: Dictionary = BarracudaPatrol.steer(game,item,delta)
+		item.direction = cruise.direction
+		speed *= float(cruise.speed_scale)
+	elif item.state != "charge":
 		item.direction = (item.direction as Vector3).lerp(desired,minf(1,delta*3.5)).normalized()
 	var motion: Vector3 = (item.direction as Vector3)*speed*delta
 	var next: Vector3 = node.position+motion
@@ -146,10 +152,14 @@ static func advance(game: Node, item: Dictionary, delta: float) -> void:
 	# Sweep ahead so both fleeing fish and charging predators turn before solid reefs.
 	var margin: float = maxf(0.9,float(data.radius))
 	var lookahead: Vector3 = next+(item.direction as Vector3)*margin
-	if water_column and _wet_path(node.position,lookahead,margin) and _clear(game,node.position,lookahead):
+	var path_clear: bool = BarracudaPatrol.movement_clear(game,node.position,next,item.direction) if int(item.kind) == 13 else (_wet_path(node.position,lookahead,margin) and _clear(game,node.position,lookahead))
+	if water_column and path_clear:
 		node.position = next
 	else:
-		item.direction = (item.direction as Vector3).rotated(Vector3.UP,1.45)
+		if int(item.kind) == 13:
+			BarracudaPatrol.blocked(item)
+		else:
+			item.direction = (item.direction as Vector3).rotated(Vector3.UP,1.45)
 		if item.state == "charge":
 			item.state = "recover"
 			item.timer = 3.5

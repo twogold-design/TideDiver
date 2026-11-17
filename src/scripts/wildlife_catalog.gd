@@ -4,7 +4,7 @@ const Fish = preload("res://scripts/fish_catalog.gd")
 const FISH_HABITATS := [
 	"潮溪湾近岸、各潜点浅水区", "近岸礁区、外海巡游水域", "深水沙坡与峡谷", "开放水域与散游鱼群",
 	"礁石与珊瑚外围", "礁石及沉船外围", "外海开阔水域", "各潜点岩洞与石缝",
-	"外海礁区", "各潜点海床的岩石边缘", "外礁与珊瑚外围", "岩礁与沉船外围", "沙坡和沉船外缘", "外海开阔水域",
+	"外海礁区", "各潜点海床的岩石边缘", "外礁与珊瑚外围", "岩礁与沉船外围", "沙坡和沉船外缘", "远航沉船两舷、外海开阔水域",
 ]
 const FISH_REWARDS := [25,25,50,25,50,50,80,80,80,80,25,50,25,80]
 const ORNAMENTAL := [
@@ -23,6 +23,7 @@ const ORNAMENTAL := [
 	{"id":"sand_ray","name":"埋沙鳐鱼","reward":80,"habitat":"月贝环礁的月光沙台附近","description":"平时伏在沙下，靠近后会扬起细沙游走。静潜能让观察更从容。"},
 	{"id":"thresher_shark","name":"长尾鲨","reward":80,"habitat":"双门遗迹的潮流大峡谷，偶尔出现","description":"修长的尾部在峡谷水流中划出弧线，远远跟随也能完成观察。"},
 	{"id":"lightning_clam","name":"闪电贝","reward":80,"habitat":"琥珀珊瑚礁沙道边的独立石洞","description":"红橙色触须围着双瓣贝壳，留意外套膜边缘扫过的蓝白闪带。"},
+	{"id":"whale_shark","name":"鲸鲨","reward":120,"habitat":"双门遗迹与远航沉船之间，北部外海的深水盆地","description":"巨大的灰蓝色身影缓缓巡游，宽扁的头部和背上的浅色斑点格外醒目。它不会攻击潜水员，可在一旁描绘，留下这次深海相遇。"},
 ]
 static var _entries: Array[Dictionary] = []
 static var _by_id: Dictionary = {}

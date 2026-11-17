@@ -29,6 +29,7 @@ const DiveEntry = preload("res://scripts/dive_entry.gd")
 var entry_lens: ColorRect
 const SandRays = preload("res://scripts/ray_habitat.gd")
 const CanyonShark = preload("res://scripts/thresher_shark.gd")
+const WhaleShark = preload("res://scripts/whale_shark.gd")
 const StonefishHabitat = preload("res://scripts/stonefish_habitat.gd")
 const MorayHabitat = preload("res://scripts/moray_habitat.gd")
 const DepthLighting = preload("res://scripts/depth_lighting.gd")
@@ -47,6 +48,7 @@ const COASTAL_KINDS = [0,1,3,4,6,2,10,12]
 const ENTRY_SCHOOL_KINDS = [0,1,3,4,6]
 const ENTRY_FISH_PER_SCHOOL = 2
 const OUTER_FISH_PER_ZONE = 20
+const WRECK_BARRACUDA_COUNT := 6
 const Harpoon = preload("res://scripts/harpoon.gd")
 const Cuisine = preload("res://scripts/cuisine.gd")
 const TRANSIT_SCHOOLS = 8
@@ -62,6 +64,7 @@ var storm_school: Node3D
 var ray_habitat: Node3D
 var explorable_wreck: Node3D
 var canyon_shark: Node3D
+var whale_shark: Node3D
 var stonefish_count: int = 0
 var crevice_habitat: Node3D
 var _camera_probe: SphereShape3D
@@ -392,6 +395,7 @@ func _setup_world() -> void:
 	ray_habitat = SandRays.new()
 	ocean_root.add_child(ray_habitat)
 	canyon_shark = CanyonShark.build(ocean_root)
+	whale_shark = WhaleShark.build(ocean_root)
 	storm_school = StormSchool.new()
 	storm_school.position = StormSchool.CENTER
 	ocean_root.add_child(storm_school)
@@ -440,6 +444,7 @@ func _spawn_population() -> void:
 	ReefPlants.animate_shared(0.0)
 	ray_habitat.reset()
 	canyon_shark.begin_dive(wildlife_rng.randi())
+	whale_shark.begin_dive(wildlife_rng.randi())
 	for item in fish:
 		item.node.queue_free()
 	for item in pickups:
@@ -500,6 +505,7 @@ func _spawn_population() -> void:
 		var resident: Dictionary = _add_fish(spec.kind,spec.position)
 		if not resident.is_empty():
 			resident["habitat_site"] = "tidal_cove" if spec.get("coastal_activity",false) else "southern_spires"
+	_spawn_wreck_barracudas()
 	for point in Ocean.pickup_points():
 		var pickup_position: Vector3 = explorable_wreck.to_global(point.wreck_local) if point.has("wreck_local") else point.position
 		_add_pickup(pickup_position,point.kind)
@@ -523,7 +529,42 @@ func _spawn_population() -> void:
 		crevice_habitat = MorayHabitat.create(self)
 	crevice_habitat.populate(self)
 func fish_population_count() -> int:
-	return COASTAL_FISH_COUNT+OUTER_FISH_PER_ZONE*Ocean.ZONES.size()+TRANSIT_SCHOOLS*TRANSIT_FISH_PER_SCHOOL+ENTRY_SCHOOL_KINDS.size()*ENTRY_FISH_PER_SCHOOL+Ocean.atoll_fish_spawns().size()+Ocean.coastal_fish_spawns().size()+Ocean.spire_fish_spawns().size()
+	return COASTAL_FISH_COUNT+OUTER_FISH_PER_ZONE*Ocean.ZONES.size()+TRANSIT_SCHOOLS*TRANSIT_FISH_PER_SCHOOL+ENTRY_SCHOOL_KINDS.size()*ENTRY_FISH_PER_SCHOOL+Ocean.atoll_fish_spawns().size()+Ocean.coastal_fish_spawns().size()+Ocean.spire_fish_spawns().size()+WRECK_BARRACUDA_COUNT
+
+func _spawn_wreck_barracudas() -> void:
+	# Three spaced lanes on each side of the hull, not a dense ring around it.
+	var landing := dive_origin + Vector3(0,-6,25)
+	for index in range(WRECK_BARRACUDA_COUNT):
+		var side := -1.0 if index % 2 == 0 else 1.0
+		var band := index / 2
+		var lateral: float = side * (24.0 + float(band) * 11.0)
+		var start: Vector3 = explorable_wreck.to_global(Vector3(lateral,9.0+float(band)*3.0,-42.0))
+		var finish: Vector3 = explorable_wreck.to_global(Vector3(lateral,9.0+float(band)*3.0,42.0))
+		var height := start.y
+		for step in range(15):
+			var sample := start.lerp(finish,float(step)/14.0)
+			height = maxf(height,Ocean.seabed_height(sample.x,sample.z)+7.0)
+		start.y = minf(height,-10.0)
+		finish.y = start.y
+		var fraction: float = [0.25,0.5,0.75][band]
+		if side > 0:
+			fraction = 1.0-fraction
+		var point := start.lerp(finish,fraction)
+		# Keep initial predator placement outside the entry's protected radius.
+		if Vector2(point.x-landing.x,point.z-landing.z).length() < 45.0:
+			for candidate_fraction: float in [0.2,0.5,0.8,0.05,0.95]:
+				var candidate := start.lerp(finish,candidate_fraction)
+				if Vector2(candidate.x-landing.x,candidate.z-landing.z).length() >= 45.0:
+					point = candidate
+					break
+		var resident: Dictionary = _add_fish(13,point)
+		if resident.is_empty():
+			continue
+		resident["wreck_barracuda"] = true
+		resident["habitat_site"] = "merchant_wreck"
+		resident["barracuda_lane"] = [start,finish]
+		resident.direction = (finish-start).normalized()*side
+		resident.node.look_at(resident.node.position+resident.direction,Vector3.UP)
 
 func _add_fish(kind: int, point: Vector3) -> Dictionary:
 	var p := point
@@ -1511,6 +1552,7 @@ func _animate_ocean(_delta: float) -> void:
 	storm_school.animate(clock,player.position)
 	explorable_wreck.get_node("WreckFishSchool").animate(clock,player.position)
 	canyon_shark.animate(clock,player.position)
+	whale_shark.animate(clock,player.position)
 	var ray_sensitivity: float = 0.55 if _swim_action_pressed("stealth") else (1.35 if _swim_action_pressed("boost") else 1.0)
 	ray_habitat.advance(_delta,player.position,state == "dive" and not entry_active,ray_sensitivity)
 	for item in fish:
@@ -1819,6 +1861,9 @@ func ocean_edge_distance() -> float:
 func ocean_zone_name() -> String:
 	var area: Dictionary = Ocean.exploration_area_for_position(player.position)
 	if area.is_empty():
+		var basin := WhaleShark.HABITAT_CENTER
+		if player.position.y < -40.0 and Vector2(player.position.x-basin.x,player.position.z-basin.z).length() < 85.0:
+			return "北部深水盆地"
 		return "蓝海航道"
 	var nearest: String = area.name
 	if area.id == "southern_spires":
@@ -1874,6 +1919,8 @@ func context_hint() -> String:
 		observed = marine_life.nearby_species(player.position)
 	if observed.is_empty():
 		observed = reef_fish.nearby_species(player.position,player.get_rid())
+	if observed.is_empty() and whale_shark.spawned and whale_shark.is_visible_in_tree() and player.position.distance_to(whale_shark.global_position) < 28.0:
+		observed = "鲸鲨"
 	if not observed.is_empty():
 		return "观察 · %s" % observed
 	return ""
@@ -2144,6 +2191,20 @@ func sell_valuables() -> void:
 		return
 	var earned: int = progress.sell_valuables()
 	tell("珍珠与宝藏出售收入 %d G，鱼类已保留。" % earned,4)
+	hud.rebuild()
+
+func sell_non_cooking_fish() -> void:
+	if layout_mode or state != "restaurant":
+		return
+	var sale: Dictionary = progress.non_cooking_fish_sale()
+	var earned: int = progress.sell_non_cooking_fish()
+	if earned > 0:
+		tell("已出售 %d 条不可烹饪鱼类 · 收入 %d G，做菜用鱼已保留。" % [sale.count,earned],5)
+		_play_tone(650,0.1)
+	elif int(sale.count) == 0:
+		tell("暂无可出售的不可烹饪鱼类。",3)
+	else:
+		tell("金币已接近上限，鱼类已保留。",4)
 	hud.rebuild()
 
 func renovate_shop(id: String) -> void:
