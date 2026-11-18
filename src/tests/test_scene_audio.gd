@@ -27,22 +27,23 @@ func run() -> void:
 	var menu_stream: AudioStream = audio.music_player.stream
 	check(audio.music_player.playing and menu_stream != null, "Main menu starts its own music player")
 	check(menu_stream.loop, "Main menu music loops in the decoder")
-	check(audio.music_player.playback_type == AudioServer.PLAYBACK_TYPE_STREAM, "Music uses mixer streaming rather than Web ended-callback looping")
+	var expected_playback: AudioServer.PlaybackType = AudioServer.PLAYBACK_TYPE_SAMPLE if OS.has_feature("web") else AudioServer.PLAYBACK_TYPE_STREAM
+	check(audio.music_player.playback_type == expected_playback, "Web music uses independent browser playback while native music uses the mixer")
 	check(not audio.underwater_player.playing, "No underwater ambience on shore")
 	var normal_volume: float = audio.music_player.volume_linear
 	audio.update_scene("restaurant", false, false, 0.25)
 	check(audio.music_player.stream == menu_stream, "Outgoing track remains assigned during the fade")
 	check(audio.music_player.volume_linear < normal_volume and audio.music_player.volume_linear > 0.0, "Music audibly fades before switching")
-	audio.update_scene("restaurant", false, false, 0.24)
-	check(audio.music_player.stream == menu_stream, "The fade does not end before half a second")
-	audio.update_scene("restaurant", false, false, 0.011)
+	audio.update_scene("restaurant", false, false, 0.549)
+	check(audio.music_player.stream == menu_stream and audio.music_player.playing and audio.music_player.volume_linear > 0.0, "The outgoing music is still playing at 0.799 seconds")
+	audio.update_scene("restaurant", false, false, 0.002)
 	var restaurant_stream: AudioStream = audio.music_player.stream
-	check(restaurant_stream != menu_stream and audio.music_player.playing, "Restaurant music starts after the 0.5 second outgoing fade")
+	check(restaurant_stream != menu_stream and audio.music_player.playing, "Restaurant music starts at 0.801 seconds after the 0.8 second outgoing fade")
 	check(restaurant_stream.loop, "Restaurant music loops in the decoder")
 	for state: String in ["service", "service_paused", "restaurant"]:
 		audio.update_scene(state, false, false, 1.0)
 		check(audio.music_player.stream == restaurant_stream and audio.music_player.playing, "Restaurant music remains playing in "+state)
-	audio.update_scene("dock", false, false, 0.501)
+	audio.update_scene("dock", false, false, 0.801)
 	check(audio.music_current == "dock" and audio.music_player.playing, "Returning to dock selects the main music after its outgoing fade")
 	menu_stream = audio.music_player.stream
 	audio.update_scene("dock", true, false, 0.0)
@@ -52,7 +53,7 @@ func run() -> void:
 	await test_repeated_mute(audio, audio.music_player, "dock", false)
 	# A pending switch must never start a stale destination after another action.
 	audio.update_scene("restaurant", false, false, 0.20)
-	audio.update_scene("dive", false, false, 0.501)
+	audio.update_scene("dive", false, false, 0.801)
 	check(not audio.music_player.playing, "Rapid menu-to-restaurant-to-dive switching never leaves menu music playing")
 	check(not audio.underwater_player.playing, "Starting a dive above water waits for immersion")
 	audio.update_scene("dive", false, true, 0.0)
@@ -77,7 +78,7 @@ func run() -> void:
 	audio.update_scene("dock", false, false, 0.0)
 	check(not audio.underwater_player.playing and audio.music_current == "dock", "Normal return stops underwater audio and restores menu music")
 	audio.update_scene("restaurant", false, false, 0.1)
-	audio.update_scene("dock", false, false, 0.501)
+	audio.update_scene("dock", false, false, 0.801)
 	check(audio.music_player.playing and audio.music_current == "dock", "Reversing a pending music switch does not play the abandoned destination")
 	audio.free()
 	await test_main_scene()
@@ -103,6 +104,64 @@ func test_repeated_mute(audio: Node, player: AudioStreamPlayer, scene: String, s
 	await create_timer(0.06).timeout
 	check(player.get_playback_position() >= paused_position, "Resumed "+scene+" playback continues forward instead of restarting")
 
+func press_panel_button(panel: Node, label: String) -> bool:
+	for button: Button in panel.buttons:
+		if button.text == label and not button.disabled and button.is_visible_in_tree():
+			button.pressed.emit()
+			return true
+	check(false,"A visible enabled UI button exists: " + label)
+	return false
+
+func check_restaurant_playback(game: Node, stream: AudioStream, playback: AudioStreamPlayback, label: String) -> void:
+	game._physics_process(0.016)
+	var player: AudioStreamPlayer = game.scene_audio.music_player
+	check(player.playing and player.stream == stream and player.get_stream_playback() == playback and game.scene_audio.music_current == "restaurant" and game.scene_audio.fade_remaining == 0.0, label + " preserves the existing restaurant music playback")
+
+func test_restaurant_buttons(game: Node) -> void:
+	var audio: Node = game.scene_audio
+	var stream: AudioStream = audio.music_player.stream
+	var playback: AudioStreamPlayback = audio.music_player.get_stream_playback()
+	game.progress.coins = 1000
+	game.progress.inventory.orange = 5
+	game.hud.rebuild()
+	var panel: Node = game.hud.restaurant_ui
+	press_panel_button(panel,"下一页")
+	check(panel.warehouse_page == 1,"Actual warehouse next-page button changes the page")
+	check_restaurant_playback(game,stream,playback,"Warehouse next page")
+	press_panel_button(panel,"上一页")
+	check(panel.warehouse_page == 0,"Actual warehouse previous-page button restores the page")
+	check_restaurant_playback(game,stream,playback,"Warehouse previous page")
+	for price: int in [40,100,70]:
+		press_panel_button(panel,"%d G · 施工" % price)
+		check_restaurant_playback(game,stream,playback,"Restaurant renovation %d" % price)
+	press_panel_button(panel,"备菜菜单")
+	check(game.restaurant_tab == "menu","Actual tab button opens the preparation menu")
+	check_restaurant_playback(game,stream,playback,"Preparation menu tab")
+	press_panel_button(panel,"+")
+	check(int(game.menu_plan.orange) == 1,"Actual menu quantity button adds a dish")
+	check_restaurant_playback(game,stream,playback,"Changing a menu quantity")
+	press_panel_button(panel,game.bestiary_button_label(true))
+	check(game.bestiary_open,"Actual restaurant journal button opens the journal")
+	check_restaurant_playback(game,stream,playback,"Restaurant journal")
+	press_panel_button(game.hud.bestiary_ui,"返回 · B / Esc")
+	check(not game.bestiary_open,"Actual journal return button closes the journal")
+	check_restaurant_playback(game,stream,playback,"Journal return")
+	press_panel_button(panel,"开门营业   →")
+	check(game.state == "service","Actual opening button starts restaurant service")
+	check_restaurant_playback(game,stream,playback,"Starting restaurant service")
+	game.toggle_pause()
+	check(game.state == "service_paused","Service can pause without leaving the restaurant")
+	check_restaurant_playback(game,stream,playback,"Pausing restaurant service")
+	press_panel_button(panel,"继续营业")
+	check(game.state == "service","Actual resume button continues service")
+	check_restaurant_playback(game,stream,playback,"Resuming restaurant service")
+	press_panel_button(panel,"提前打烊")
+	check(game.state == "restaurant" and game.summary_visible,"Actual closing button shows the restaurant settlement")
+	check_restaurant_playback(game,stream,playback,"Restaurant settlement")
+	press_panel_button(panel,"收好账单 · 继续整备")
+	check_restaurant_playback(game,stream,playback,"Dismissing the settlement")
+	await process_frame
+
 func test_main_scene() -> void:
 	var game: Node = load("res://scenes/main.tscn").instantiate()
 	game.progress = MemoryProgression.new()
@@ -120,10 +179,13 @@ func test_main_scene() -> void:
 	game.open_restaurant()
 	game._physics_process(0.25)
 	check(game.scene_audio.music_current == "dock", "Actual restaurant entry starts an outgoing fade")
-	game._physics_process(0.251)
+	game._physics_process(0.549)
+	check(game.scene_audio.music_current == "dock", "Actual restaurant transition keeps outgoing music until 0.799 seconds")
+	game._physics_process(0.002)
 	check(game.scene_audio.music_current == "restaurant", "Actual restaurant entry completes the music switch")
+	await test_restaurant_buttons(game)
 	game.return_to_dock()
-	game._physics_process(0.501)
+	game._physics_process(0.801)
 	game.start_dive(true, false)
 	game._physics_process(0.01)
 	check(not game.scene_audio.underwater_player.playing, "The boat launch does not start underwater sound while above water")

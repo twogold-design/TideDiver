@@ -108,11 +108,9 @@ func resume_point() -> Vector2:
 
 func _layout() -> void:
 	size = get_viewport_rect().size
-	var ratio := 1.0
-	if OS.has_feature("web"):
-		var canvas = JavaScriptBridge.get_interface("document").getElementById("canvas")
-		ratio = float(canvas.width)/maxf(1.0,float(canvas.clientWidth))
-	_unit = ratio/maxf(.01,PixelText.transform_for(self).get_scale().y)
+	# Use the game's design coordinates, just like every other screen. The
+	# viewport already scales this whole panel and its input geometry together.
+	_unit = 1.0
 	var css := size/_unit
 	var short := css.y < 420
 	var top: float = 63 if short else 98

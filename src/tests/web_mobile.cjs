@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const root = path.resolve(__dirname, '../..');
+const clientRoot = process.env.TIDE_CLIENT_ROOT ? path.resolve(process.env.TIDE_CLIENT_ROOT) : root;
 const output = path.join(root, '.runtime', 'mobile', 'browser', process.argv.includes('--http') ? 'http' : 'file');
 fs.mkdirSync(output, { recursive: true });
 
@@ -60,14 +61,24 @@ fs.mkdirSync(output, { recursive: true });
     const p = await center(`#touch-layer [data-action="${name}"]`);
     await page.touchscreen.tap(p.x, p.y);
   }
-  async function menu(index) {
-    await page.waitForTimeout(400); // Let the mobile header and Godot canvas resize settle.
-    const p = await canvasPoint('menu', index);
+  async function menu(name) {
+    await page.waitForTimeout(400); // Let landscape resizing and Godot anchors settle.
+    const p = await canvasPoint(name);
     await page.touchscreen.tap(p.x, p.y);
     await page.waitForTimeout(500);
   }
-  async function canvasPoint(kind, index = 0) {
-    return page.evaluate(({ kind, index }) => {
+  async function canvasPoint(name) {
+    // Use the original 1440x900 desktop design and anchors, including when
+    // portrait browsers rotate the stage instead of locking the screen.
+    const targets = {
+      dive: [345, 518, 0, .5],
+      restaurant: [345, 585.5, 0, .5],
+      resume: [720, 439, .5, .5],
+      book: [1206, 110, .5, .5],
+      dock: [107, 51.5, 0, 0],
+    };
+    assert(targets[name], `Known desktop-layout target ${name}`);
+    return page.evaluate(target => {
       const stage = document.getElementById('stage');
       const canvas = document.getElementById('canvas');
       const rect = Element.prototype.getBoundingClientRect.call(stage);
@@ -75,21 +86,22 @@ fs.mkdirSync(output, { recursive: true });
       const corners = [[0,0],[stage.clientWidth,0],[0,stage.clientHeight],[stage.clientWidth,stage.clientHeight]];
       const left = Math.min(...corners.map(([x,y]) => matrix.a*x+matrix.c*y));
       const top = Math.min(...corners.map(([x,y]) => matrix.b*x+matrix.d*y));
-      const width = (canvas.clientWidth-32)/2;
-      const x = canvas.offsetLeft + (kind === 'book' ? canvas.clientWidth/2 : 12+(index%2)*(width+8)+width/2);
-      const y = canvas.offsetTop + (kind === 'book' ? canvas.clientHeight-31 : 76+Math.floor(index/2)*52+23);
+      const scale = Math.min(canvas.clientWidth / 1440, canvas.clientHeight / 900);
+      const [designX, designY, anchorX, anchorY] = target;
+      const x = canvas.offsetLeft + designX * scale + (canvas.clientWidth - 1440 * scale) * anchorX;
+      const y = canvas.offsetTop + designY * scale + (canvas.clientHeight - 900 * scale) * anchorY;
       return {x:rect.left+matrix.a*x+matrix.c*y-left,y:rect.top+matrix.b*x+matrix.d*y-top};
-    }, {kind,index});
+    }, targets[name]);
   }
   try {
-    await page.goto(process.argv.includes('--http') ? 'http://127.0.0.1:8060/' : pathToFileURL(path.join(root, 'index.html')).href);
+    await page.goto(process.argv.includes('--http') ? 'http://127.0.0.1:8060/' : pathToFileURL(path.join(clientRoot, 'index.html')).href);
     assert.equal(await page.evaluate(() => window.tideMobileEnabled), true, 'A real touch viewport automatically enables mobile controls');
     await page.getByRole('button', { name: '启程 · 开始游戏' }).tap();
     await page.waitForFunction(() => window.tideGameReady === true, null, { timeout: 150000 });
     await page.waitForTimeout(1200);
     await shot('dock-landscape');
     assert.equal(await page.evaluate(() => window.tideMobileState.state), 'dock');
-    await menu(0);
+    await menu('dive');
     await page.waitForFunction(() => window.tideMobileState.state === 'dive', null, { timeout: 10000 });
     await page.waitForFunction(() => !window.tideMobileState.entryActive, null, { timeout: 20000 });
     await page.locator('#touch-joystick').waitFor({ state: 'visible' });
@@ -138,14 +150,14 @@ fs.mkdirSync(output, { recursive: true });
     await page.waitForFunction(() => window.tideMobileState.state === 'paused');
     await page.locator('#touch-layer').waitFor({ state: 'hidden' });
     await shot('paused-menu');
-    await menu(1);
+    await menu('resume');
     await page.waitForFunction(() => window.tideMobileState.state === 'dive');
     await page.locator('#touch-layer').waitFor({ state: 'visible' });
     await action('bestiary');
     await page.waitForFunction(() => window.tideMobileState.bestiaryOpen === true);
     await page.locator('#touch-layer').waitFor({ state: 'hidden' });
     await shot('bestiary-landscape');
-    // Dedicated mobile journal controls use a full-width, three-button bottom row.
+    // The journal retains the desktop top-right return button on phones.
     const bookClose = await canvasPoint('book');
     await page.touchscreen.tap(bookClose.x, bookClose.y);
     await page.waitForFunction(() => window.tideMobileState.bestiaryOpen === false, null, { timeout: 5000 });
@@ -172,7 +184,7 @@ fs.mkdirSync(output, { recursive: true });
     await finger('touchCancel');
     await action('pause');
     await page.waitForFunction(() => window.tideMobileState.state === 'paused');
-    await menu(1);
+    await menu('resume');
     await page.waitForFunction(() => window.tideMobileState.state === 'dive');
     await action('bestiary');
     await page.waitForFunction(() => window.tideMobileState.bestiaryOpen === true);
@@ -182,14 +194,14 @@ fs.mkdirSync(output, { recursive: true });
     await page.waitForFunction(() => window.tideMobileState.bestiaryOpen === false);
     await page.setViewportSize({ width: 844, height: 390 });
     await page.waitForTimeout(500);
-    if (await page.evaluate(() => window.tideMobileState.state === 'paused')) await menu(1);
+    if (await page.evaluate(() => window.tideMobileState.state === 'paused')) await menu('resume');
     await page.locator('#touch-layer').waitFor({ state: 'visible' });
     assert.equal(await page.evaluate(() => document.pointerLockElement), null);
     await page.setViewportSize({width:667,height:300});
     await page.waitForTimeout(400);
     const compactBar=await page.locator('#touch-topbar').boundingBox();
-    assert(compactBar.x>=667-148 && compactBar.y<=8 && compactBar.height===44,'Compact toolbar stays at the upper-right with a 44px hit area');
-    assert(compactBar.x>667-160,'Toolbar stays to the right of the backpack text plate');
+    assert(compactBar.x>667/2+50 && compactBar.y<=8 && compactBar.height===44,'Toolbar retains 44px hit areas beside the original HUD');
+    assert(compactBar.x+compactBar.width<=667-300*.30,'Toolbar does not cover the original depth and backpack panel');
     await shot('compact-dive-667');
     // A real surface ascent exposes the normal pickup action. Keep the ascent
     // finger down while calling, so the return must clear all held input itself.
@@ -210,13 +222,25 @@ fs.mkdirSync(output, { recursive: true });
     await shot('boat-return-dock');
     await page.setViewportSize({width:844,height:390});
     await page.waitForTimeout(400);
-    await menu(4); // Restaurant.
+    await menu('restaurant');
     await page.waitForFunction(() => window.tideMobileState.state === 'restaurant');
     await shot('restaurant-landscape');
-    await menu(0);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.waitForTimeout(500);
+    await shot('restaurant-portrait-fallback');
+    await menu('dock');
+    await page.waitForFunction(() => window.tideMobileState.state === 'dock');
+    await shot('dock-portrait-fallback');
+    await page.setViewportSize({ width: 667, height: 300 });
+    await page.waitForTimeout(500);
+    await shot('dock-667');
+    await menu('restaurant');
+    await page.waitForFunction(() => window.tideMobileState.state === 'restaurant');
+    await shot('restaurant-667');
+    await menu('dock');
     await page.waitForFunction(() => window.tideMobileState.state === 'dock');
     assert.deepEqual(errors, [], 'No browser, script, shader, or resource errors');
-    console.log('PASS: compact mobile tools, real surface boat pickup, held-input reset, dock/restaurant menus, multitouch, weapons, pause/journal and rotated landscape.');
+    console.log('PASS: original desktop layout on phones, landscape and portrait dock/restaurant hitboxes, real surface boat pickup, held-input reset, multitouch, weapons and pause/journal.');
   } finally {
     samples.last = await stats().catch(() => null);
     samples.pointerEvents = await page.evaluate(() => window.touchTrace).catch(() => null);

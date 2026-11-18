@@ -1,6 +1,6 @@
 extends Node
 
-const FADE_SECONDS := 0.5
+const FADE_SECONDS := 0.8
 const MUSIC_VOLUME_DB := -10.0
 const UNDERWATER_VOLUME_DB := -8.0
 const MENU_MUSIC = preload("res://assets/audio/main_menu_bgm.mp3")
@@ -23,7 +23,9 @@ func _ready() -> void:
 		music_tracks[entry[0]] = track
 	music_player = AudioStreamPlayer.new()
 	music_player.name = "SceneMusic"
-	music_player.playback_type = AudioServer.PLAYBACK_TYPE_STREAM
+	# Browser-owned sample playback keeps mixing while UI/model rebuilds occupy
+	# the single-threaded Web engine. The exporter enables native full-track loops.
+	music_player.playback_type = AudioServer.PLAYBACK_TYPE_SAMPLE if OS.has_feature("web") else AudioServer.PLAYBACK_TYPE_STREAM
 	music_player.volume_db = MUSIC_VOLUME_DB
 	add_child(music_player)
 	underwater_player = AudioStreamPlayer.new()

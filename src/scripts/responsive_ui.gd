@@ -70,8 +70,8 @@ func screen_bar(height: float, color: Color, bottom: bool = false) -> void:
 
 func native_text(face: Font, pos: Vector2, value: String, size: int, color: Color, centered: bool = false, minimum_size: int = 1) -> void:
 	if OS.has_feature("web"):
-		# Panels can opt into a readable CSS-pixel minimum while keeping native glyphs.
-		NativeText.draw(self,face,pos+draw_offset,value,size,color,centered,minimum_size)
+		# Text follows the same scale as panels and hitboxes in embedded players.
+		NativeText.draw(self,face,pos+draw_offset,value,size,color,centered,1)
 		draw_set_transform(draw_offset)
 	else:
 		var origin := pos
@@ -86,7 +86,7 @@ func native_button_label(button: Button, face: Font, size: int, normal: Color, h
 	label.button = button
 	label.font = face
 	label.design_size = size
-	label.minimum_size = minimum_size
+	label.minimum_size = 1
 	label.normal_color = normal
 	label.hover_color = hover
 	label.disabled_color = disabled
@@ -129,8 +129,9 @@ func mobile_enabled() -> bool:
 	return is_instance_valid(owner_game) and bool(owner_game.get("mobile_controls"))
 
 func compact_enabled() -> bool:
-	var screen := ui_size()/mobile_unit()
-	return mobile_enabled() or screen.x < 1100.0 or screen.y < 650.0
+	# Every player size keeps the full composition; the viewport scales it to fit.
+	# An embedded desktop player must behave like the fullscreen game too.
+	return false
 
 func mobile_unit() -> float:
 	var ratio := 1.0

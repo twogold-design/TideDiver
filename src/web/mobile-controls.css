@@ -22,12 +22,12 @@ html.tide-touch { overscroll-behavior:none; -webkit-text-size-adjust:100%; }
 #touch-look { position:absolute; inset:0; touch-action:none; }
 #touch-layer button { min-height:48px; min-width:48px; font-size:14px; line-height:1; padding:8px; touch-action:none; color:#e9f5ec; border:1px solid #a9ead282; background:#092c3bbd; box-shadow:0 2px 5px #02131a30; }
 #touch-layer button.pressed { background:#a9ead2e8; color:#123c44; border-color:#e7fff3; }
-#touch-topbar { position:absolute; display:flex; gap:2px; right:max(8px,var(--tide-safe-right)); top:max(2px,var(--tide-safe-top)); }
+#touch-topbar { position:absolute; display:flex; gap:2px; right:max(calc(var(--tide-game-height,100dvh) * .32),var(--tide-safe-right)); top:max(2px,var(--tide-safe-top)); }
 #touch-topbar button { display:grid; place-items:center; width:44px; height:44px; min-height:44px; min-width:44px; padding:0; border:0; border-radius:0; background:transparent; box-shadow:none; }
 #touch-topbar .tool-icon { display:grid; place-items:center; width:30px; height:30px; border:1px solid #b8e8df4d; border-radius:8px; background:#092c3b70; color:#d5eee8; font-size:24px; line-height:1; pointer-events:none; }
 #touch-topbar svg { width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
 #touch-topbar button.pressed .tool-icon,#touch-topbar button[aria-expanded="true"] .tool-icon { background:#a9ead2df; color:#123c44; }
-#touch-tools { position:absolute; display:grid; gap:4px; right:max(8px,var(--tide-safe-right)); top:max(48px,calc(var(--tide-safe-top) + 46px)); padding:6px; border-radius:10px; background:#092c3be8; box-shadow:0 3px 12px #0006; z-index:2; }
+#touch-tools { position:absolute; display:grid; gap:4px; right:max(calc(var(--tide-game-height,100dvh) * .32),var(--tide-safe-right)); top:max(48px,calc(var(--tide-safe-top) + 46px)); padding:6px; border-radius:10px; background:#092c3be8; box-shadow:0 3px 12px #0006; z-index:2; }
 #touch-tools button { min-height:44px; min-width:112px; font-size:12px; }
 #touch-call-boat { position:absolute; left:50%; transform:translateX(-50%); bottom:max(74px,calc(var(--tide-safe-bottom) + 68px)); width:clamp(150px,calc(100% - 400px),184px); min-height:54px; border-color:#a9ead2 !important; background:#153f49ed !important; color:#e9fff5; box-shadow:0 2px 10px #03151a70; }
 #touch-call-boat span { display:block; font-size:15px; }

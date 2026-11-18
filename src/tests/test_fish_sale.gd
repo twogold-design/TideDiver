@@ -137,7 +137,7 @@ func test_ui() -> void:
 	await process_frame
 	await process_frame
 	button = sale_button(game)
-	check(button != null and game.hud.restaurant_ui._mobile_actions.has(button), "Mobile restaurant pagination includes the same batch-sale action")
+	check(button != null and button.is_visible_in_tree() and button.has_meta("layout_anchor") and game.hud.restaurant_ui._mobile_actions.is_empty(), "Mobile restaurant preserves the original batch-sale action without pagination")
 	if button != null:
 		button.pressed.emit()
 	check(progress.inventory.barracuda == 0 and progress.coins == 285, "The mobile action uses the same protected sale callback")

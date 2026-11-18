@@ -103,6 +103,7 @@ func _button(label: String, rect: Rect2, callback: Callable, primary: bool = fal
 		var label_node = PixelButtonLabel.new()
 		label_node.button = button
 		label_node.font = font
+		label_node.minimum_size = 1
 		label_node.normal_color = INK if primary else LIGHT
 		label_node.hover_color = INK if primary else Color.WHITE
 		for key in ["font_color", "font_hover_color", "font_pressed_color", "font_hover_pressed_color", "font_focus_color", "font_disabled_color"]:
@@ -192,14 +193,14 @@ func _dock_left_region(anchor: Vector2) -> void:
 
 func _text(pos: Vector2, text: String, size: int, color: Color = LIGHT, english: bool = false) -> void:
 	if _use_pixel_text():
-		PixelText.draw(self, latin if english else font, pos + draw_offset, text, size, color)
+		PixelText.draw(self, latin if english else font, pos + draw_offset, text, size, color, false, 1)
 		draw_set_transform(draw_offset)
 		return
 	draw_string(latin if english else font,pos,text,HORIZONTAL_ALIGNMENT_LEFT,-1,size,color)
 
 func _center(pos: Vector2, text: String, size: int, color: Color = LIGHT) -> void:
 	if _use_pixel_text():
-		PixelText.draw(self, font, pos + draw_offset, text, size, color, true)
+		PixelText.draw(self, font, pos + draw_offset, text, size, color, true, 1)
 		draw_set_transform(draw_offset)
 		return
 	var width: float = font.get_string_size(text,HORIZONTAL_ALIGNMENT_LEFT,-1,size).x
